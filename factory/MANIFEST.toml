@@ -24,6 +24,7 @@ paths = [
   "docs/adr/README.md",
   "docs/superpowers/specs/.gitkeep",
   "docs/superpowers/plans/.gitkeep",
+  "changelog.d/.gitkeep",          # changelog fragments (0.2.4): `scripts/changelog.jl fold`
   "test/runtests.jl",
   "test/contracts/upstreams.toml",
   "test/contracts/USED.md",

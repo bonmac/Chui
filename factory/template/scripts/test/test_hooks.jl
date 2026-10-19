@@ -5,7 +5,8 @@ function hook(name, payload, root; env = Dict{String, String}(), hooks = HOOKS)
     p = run(pipeline(ignorestatus(cmd); stdin = IOBuffer(payload), stdout = out, stderr = err))
     return p.exitcode, String(take!(out)), String(take!(err))
 end
-json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n")
+# 0.2.4: tabs are escaped too; a raw tab is invalid JSON, which the guards now refuse (fail closed)
+json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t")
 bash(cmd; cwd = "") = "{\"session_id\":\"s1\",\"cwd\":\"$(json(cwd))\",\"tool_input\":{\"command\":\"$(json(cmd))\"}}"
 write_payload(path; key = "file_path") = "{\"session_id\":\"s1\",\"tool_input\":{\"$key\":\"$(json(path))\"}}"
 blocked(name, payload, root; kw...) = hook(name, payload, root; kw...)[1] == 2
@@ -13,11 +14,13 @@ const OUT = "/opt/factory-test-outside" # a path outside every allowed location
 # fixture reference repos (never created): a ~ path, an absolute one, another ~ path
 const REF_ROOTS = ["/tmp/ro-fixture/ref-b", "~/ro-fixture/ref-a",
                    "~/ro-fixture/ref-c"]
-"A copy of the hooks with `roots` as the generated read-only-roots.txt."
-function hooks_with_roots(roots)
+"A copy of the hooks with `roots` as the generated read-only-roots.txt (and roots not required, 0.2.4: hermetic in the coordinator profile too)."
+function hooks_with_roots(roots; required = false, src = HOOKS)
     h = joinpath(mktempdir(), "hooks")
-    cp(HOOKS, h)
+    cp(src, h)
     write(joinpath(h, "read-only-roots.txt"), "# test\n" * join(roots .* "\n"))
+    env = joinpath(h, "limits.env")
+    write(env, replace(read(env, String), r"READ_ONLY_ROOTS_REQUIRED=\d" => "READ_ONLY_ROOTS_REQUIRED=$(required ? 1 : 0)"))
     return h
 end
 
@@ -191,7 +194,7 @@ end
     end
 
     @testset "guards fail CLOSED when a sourced library is missing (0.2.2)" begin
-        for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh", "_bash_guard_cmd.sh")
+        for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh", "_bash_guard_cmd.sh", "_bash_guard_write.sh")
             h = joinpath(mktempdir(), "hooks"); cp(HOOKS, h); rm(joinpath(h, lib))
             rc, _, err = hook("bash_guard.sh", bash("ls"), root; hooks = h)
             @test rc == 2 && occursin("missing", err)
@@ -223,11 +226,14 @@ end
         write(joinpath(lane, ".git"), "gitdir: elsewhere\n")
         @test blocked("write_guard.sh", write_payload("$lane/.github/workflows/CI.yml"), root)
         @test !blocked("write_guard.sh", write_payload("$lane/src/A.jl"), root)
-        @test !blocked("write_guard.sh", "{}", root)
+        @test blocked("write_guard.sh", "{}", root)            # 0.2.4: no target key fails closed (0.2.3: rc 0)
         if IN_FACTORY # 0.2.2: the template seed (and the coordinator overlay) protect the gate itself
             gate = [".agents/bodies/*", ".agents/checks.toml", ".claude/agents/*", ".codex/agents/*",
                     "scripts/dod.jl", "scripts/ratchet.jl", "scripts/gen.jl", "scripts/check_docs.jl",
-                    "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl"]
+                    "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl",
+                    # 0.2.4: the gate's own tests and the new gate scripts
+                    "scripts/test/*", "scripts/lane.jl", "scripts/lane", "scripts/bench.jl", "scripts/changelog.jl",
+                    "scripts/check_claims.jl", "scripts/evidence.jl"]
             for f in (joinpath(ROOT, "risk.toml"), joinpath(FACTORY, "profiles/coordinator/risk.toml"))
                 t3 = reduce(vcat, [p["globs"] for p in TOML.parsefile(f)["protected"] if p["tier"] == "T3"])
                 @test issubset(gate, t3) || (println("$f misses ", setdiff(gate, t3)); false)
@@ -235,10 +241,11 @@ end
             end
             for rel in (".agents/bodies/reviewer.md", ".agents/checks.toml", ".claude/agents/critic.md", ".agents/factory.local.toml",
                         "scripts/dod.jl", "scripts/ratchet.jl", "scripts/gen.jl", "scripts/check_docs.jl",
-                        "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl")
+                        "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl", "scripts/test/test_dod.jl",
+                        "scripts/test/runtests.jl", "scripts/lane.jl", "scripts/check_claims.jl")
                 @test blocked("write_guard.sh", write_payload("$root/$rel"), root) || (println("not blocked: $rel"); false)
             end
-            @test !blocked("write_guard.sh", write_payload("$root/scripts/lane.jl"), root)
+            @test !blocked("write_guard.sh", write_payload("$root/scripts/new_tool.jl"), root)
         end
     end
 
@@ -356,11 +363,36 @@ end
         end
         println("bash_guard.sh with 3 read-only roots, 6 segments: $(round(1000t / n; digits = 1)) ms per call (n=$n, includes spawning sh from Julia)")
         @test t / n < 0.25
+        # 0.2.4: every in-root write target is matched against the T3 globs (no fork unless a path has capitals)
+        c = "echo x > notes.md && sed -i '' s/a/b/ src/A.jl && cp a.txt docs/ && touch Build/x && rm -r build && mv a b"
+        t = @elapsed for _ in 1:n
+            hook("bash_guard.sh", bash(c; cwd = root), root)
+        end
+        println("bash_guard.sh with 7 in-root write targets (T3 check): $(round(1000t / n; digits = 1)) ms per call (n=$n)")
+        @test t / n < 0.25
     end
 end
 
 @testset "hook payloads in these tests are valid JSON" begin
     for p in (bash("a\nb \"q\" \\x"), write_payload("/x\ny"))
         @test success(pipeline(`jq -e .tool_input`; stdin = IOBuffer(p), stdout = devnull))
+    end
+end
+
+@testset "hooks: helpers" begin
+    @testset "sandbox helpers are hermetic in a host that requires read-only roots (0.2.4)" begin
+        # a coordinator checkout sets require_read_only_roots = true: 0.2.3's helpers copied that
+        # setting and two tests failed there (861 pass / 2 fail). Build such a host and use it.
+        host = gen_sandbox_noroots()
+        write(joinpath(host, ".agents/factory.toml"), "version = 1\n[bash_guard]\nread_only_roots = []\nrequire_read_only_roots = true\n")
+        capture(() -> Gen.write_all(host))
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=1", read(joinpath(host, ".claude/hooks/limits.env"), String))
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=0", Gen.outputs(gen_sandbox_noroots(host))[".claude/hooks/limits.env"])
+        hh = joinpath(host, ".claude/hooks")
+        r = realpath(mktempdir())
+        c = bash("cd ~/ro-fixture/ref-a && uv run x")
+        @test hook("bash_guard.sh", c, r; hooks = hh)[1] == 2               # the host itself fails closed (no roots)
+        @test hook("bash_guard.sh", c, r; hooks = hooks_with_roots(String[]; src = hh))[1] == 0
+        @test hook("bash_guard.sh", c, r; hooks = hooks_with_roots(String[]; src = hh, required = true))[1] == 2
     end
 end

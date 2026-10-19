@@ -11,7 +11,9 @@ default_tier = "T1"
 # `requires` names what scripts/dod.jl checks:
 #   ci (CI itself), ref (PR links a spec or plan under docs/superpowers/),
 #   spec (PR links a spec), tests (src/ or ext/ changed => test/ changed),
-#   changelog (CHANGELOG.md changed), review (branch protection; dod.jl only reports it),
+#   changelog (CHANGELOG.md changed, or a new changelog.d/*.md fragment, which the release
+#             manager folds into CHANGELOG.md with `julia scripts/changelog.jl fold`),
+#   review (branch protection; dod.jl only reports it),
 #   adr (an ADR added or changed in the repo's ADR directory, or the PR cites a coordinator
 #        ADR-NNNN; the directory is the profile's `adr_dir`, recorded in .factory-version).
 [tiers.T0]
@@ -52,6 +54,14 @@ globs = [
   "scripts/contract_usage.jl",
   "scripts/ci.jl",
   "scripts/_common.jl",
+  "scripts/bench.jl",
+  "scripts/lane",
+  "scripts/lane.jl",                   # `scripts/lane audit` gates /change-review (0.2.4)
+  "scripts/changelog.jl",
+  "scripts/check_claims.jl",
+  "scripts/evidence.jl",
+  # the gate's own tests (0.2.4): a lane must not weaken a test so its gate passes
+  "scripts/test/*",
   "risk.toml",
   "ratchets.toml",
   ".factory-version",

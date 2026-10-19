@@ -1,11 +1,11 @@
 using TOML
 
 "Copy only the generator's sources and outputs into a scratch dir."
-function gen_sandbox()
+function gen_sandbox(root = ROOT)
     d = mktempdir()
     for rel in (".agents", ".claude/agents", ".codex/agents", ".claude/hooks", "CLAUDE.md", "AGENTS.md",
                 "risk.toml", ".github/pull_request_template.md", "docs/CHECK_COVERAGE.md")
-        src = joinpath(ROOT, rel)
+        src = joinpath(root, rel)
         ispath(src) || continue
         mkpath(dirname(joinpath(d, rel)))
         cp(src, joinpath(d, rel))
@@ -13,6 +13,13 @@ function gen_sandbox()
     return d
 end
 quiet_check(d) = capture(() -> Gen.check(d))
+"A gen sandbox whose factory.toml requires no read-only roots, whatever the host checkout says (0.2.4)."
+function gen_sandbox_noroots(root = ROOT)
+    d = gen_sandbox(root)
+    rm(joinpath(d, ".agents/factory.local.toml"); force = true)   # machine-local roots (a coordinator has them)
+    write(joinpath(d, ".agents/factory.toml"), "version = 1\n[bash_guard]\nread_only_roots = []\nrequire_read_only_roots = false\n")
+    return d
+end
 
 @testset "gen.jl" begin
     @test first(quiet_check(ROOT))
@@ -67,7 +74,8 @@ quiet_check(d) = capture(() -> Gen.check(d))
             endswith(f, ".sh") && !startswith(f, "_") || continue   # _*.sh: sourced libraries
             @test ".claude/hooks/$f" in by
         end
-        for s in ("gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl")
+        for s in ("gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl",
+                  "check_claims.jl", "evidence.jl", "changelog.jl")
             @test "scripts/$s" in by
         end
         for c in checks
@@ -103,7 +111,8 @@ quiet_check(d) = capture(() -> Gen.check(d))
             @test_throws Gen.GenError Gen.outputs(d)
         end
         rm(loc)
-        @test occursin("READ_ONLY_ROOTS_REQUIRED=0", Gen.outputs(gen_sandbox())[".claude/hooks/limits.env"])
+        # hermetic (0.2.4): the coordinator's own factory.toml requires roots
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=0", Gen.outputs(gen_sandbox_noroots())[".claude/hooks/limits.env"])
         rm(cfg)                                                        # no config: an empty list
         @test count(l -> !startswith(l, "#"), split(Gen.outputs(d)[".claude/hooks/read-only-roots.txt"], '\n'; keepempty = false)) == 0
     end

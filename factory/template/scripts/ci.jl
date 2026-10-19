@@ -7,6 +7,13 @@
 #
 # Jobs: setup, test, quality, jet, format, docs, contracts, bench, coverage, guards, dod.
 # Extra args after `--` go to the job: `test -- laws property`, `contracts -- main`.
+#
+# A job that cannot run returns a Skip of one of three kinds (0.2.4: 0.2.3 printed "skipped" and
+# exited 0 for all of them, so deleting test/jet/runjet.jl turned the jet job green):
+#   not_applicable  the job does not apply to this repo (not a package)      exit 0
+#   waiting         it applies but waits on something external (no upstream  exit 0, with a loud
+#                   URL, no benchmark suite yet)                              NOT RUN notice
+#   missing         a file the profile seeds or expects is gone               exit 1 (red)
 module CI
 
 using TOML
@@ -53,11 +60,40 @@ const Argv = Vector{String}
 
 struct Job
     summary::String
-    commands::Function # (root, extra) -> Vector{Argv}, or a String explaining a skip
+    commands::Function # (root, extra) -> Vector{Argv}, or a Skip
 end
+
+"A job that did not run: `kind` is one of SKIP_KINDS (see the header), `why` says what is absent."
+struct Skip
+    kind::Symbol
+    why::String
+    Skip(kind, why) = kind in SKIP_KINDS ? new(kind, why) : error("unknown skip kind $kind")
+end
+const SKIP_KINDS = (:not_applicable, :waiting, :missing)
 
 upstreams(root) = (p = joinpath(root, "test/contracts/upstreams.toml");
                    isfile(p) ? get(TOML.parsefile(p), "upstreams", Dict()) : Dict())
+"Top-level tables of upstreams.toml other than [upstreams] and [contract_files] (a typo would read as \"no upstreams\")."
+upstream_typos(root) = (p = joinpath(root, "test/contracts/upstreams.toml");
+                        isfile(p) ? sort!([k for k in keys(TOML.parsefile(p)) if !(k in ("upstreams", "contract_files"))]) : String[])
+profile(root) = try string(get(factory_record(root), "profile", "none")) catch; "unreadable" end
+"A package checkout: synced with the package profile, or a Project.toml at the root."
+is_package(root) = profile(root) == "package" || isfile(joinpath(root, "Project.toml"))
+"""
+    needs(root, files, cmds) -> commands or Skip
+
+`:not_applicable` outside a package; `:missing` (red) when one of `files`, which the package
+profile seeds (test/jet/*, test/contracts/*) or expects (docs/ for Docs.yml), is gone; else `cmds()`.
+"""
+function needs(root, files, cmds)
+    profile(root) == "unreadable" && return Skip(:missing, ".factory-version is not valid TOML, so the profile is unknown")
+    is_package(root) || return Skip(:not_applicable, "not a Julia package (no Project.toml; profile `$(profile(root))`)")
+    for f in files
+        isfile(joinpath(root, f)) ||
+            return Skip(:missing, "$f is missing, and the package profile seeds or expects it. Restore it (`julia scripts/sync_factory.jl --from <factory>` shows the seed)")
+    end
+    return cmds()
+end
 
 const SETUP = "using Pkg; Pkg.Registry.add(\"General\"); u = get(ENV, \"ECOSYSTEM_REGISTRY_URL\", \"\"); isempty(u) || Pkg.Registry.add(Pkg.RegistrySpec(url = u))"
 
@@ -67,31 +103,34 @@ const JOBS = Dict{String, Job}(
     "test" => Job("Unit tests via Pkg.test; extra args select tags (`all` = every tag).",
         (root, extra) -> [["julia", "--project=.", "-e", PKG_TEST, "--", extra...]]),
     "jet" => Job("JET in a scratch copy of test/jet/ (JET 0.12 needs Julia >= 1.12; run on stable only).",
-        (root, extra) -> isfile(joinpath(root, "test/jet/runjet.jl")) ?
-            in_scratch("test/jet", "test/jet/runjet.jl", "develop") : "no test/jet/runjet.jl"),
+        (root, extra) -> needs(root, ("test/jet/Project.toml", "test/jet/runjet.jl"),
+                               () -> in_scratch("test/jet", "test/jet/runjet.jl", "develop"))),
     "quality" => Job("Aqua and ExplicitImports test items (tag :quality). JET is the separate `jet` job.",
         (root, extra) -> [["julia", "--project=.", "-e", PKG_TEST, "--", "quality"]]),
     "format" => Job("Runic check (ADR-0007): fails if any file is not formatted.",
         (root, extra) -> [["julia", "--project=@runic", "-e", RUNIC_ADD],
                           ["julia", "--project=@runic", "-e", RUNIC_RUN, "--", "--check", "--diff", "."]]),
     "docs" => Job("Build Documenter docs from a scratch copy of docs/ (doctests run in the test suite too).",
-        (root, extra) -> isfile(joinpath(root, "docs/make.jl")) ?
-            in_scratch("docs", "docs/make.jl", "develop") : "no docs/make.jl"),
+        (root, extra) -> needs(root, ("docs/Project.toml", "docs/make.jl"),
+                               () -> in_scratch("docs", "docs/make.jl", "develop"))),
     "contracts" => Job("Contract tests (tag :contract) in their own env test/contracts/ (a scratch copy): the latest upstream release, or `-- main`.",
-        function (root, extra)
-            isempty(upstreams(root)) && return "no upstreams in test/contracts/upstreams.toml"
-            isfile(joinpath(root, "test/contracts/Project.toml")) ||
-                return "no test/contracts/Project.toml (seeded by factory 0.2.2; see its CHANGELOG)"
-            return in_scratch("test/contracts", "test/contracts/runtests.jl", "main" in extra ? "main" : "")
-        end),
+        (root, extra) -> needs(root, ("test/contracts/upstreams.toml", "test/contracts/Project.toml", "test/contracts/runtests.jl"),
+            () -> !isempty(upstream_typos(root)) ?
+                Skip(:missing, "test/contracts/upstreams.toml has unknown tables $(upstream_typos(root)) (expected [upstreams], [contract_files])") :
+            isempty(upstreams(root)) ?
+                Skip(:waiting, "no upstreams in test/contracts/upstreams.toml yet (no upstream URL; a root package has none)") :
+                in_scratch("test/contracts", "test/contracts/runtests.jl", "main" in extra ? "main" : ""))),
     "bench" => Job("Benchmark HEAD vs the merge base; fails beyond ratchets.toml bench.time_tolerance.",
-        (root, extra) -> isfile(joinpath(root, "benchmark/benchmarks.jl")) ?
-            [["julia", "scripts/bench.jl", extra...]] : "no benchmark/benchmarks.jl"),
+        (root, extra) -> needs(root, (), () -> isfile(joinpath(root, "benchmark/benchmarks.jl")) ?
+            [["julia", "scripts/bench.jl", extra...]] : isdir(joinpath(root, "benchmark")) ?
+            Skip(:missing, "benchmark/ exists but benchmark/benchmarks.jl is missing") :
+            Skip(:waiting, "no benchmark suite yet (no benchmark/ directory)"))),
     "coverage" => Job("Check lcov.info (from julia-processcoverage) against the coverage floor.",
         (root, extra) -> [["julia", "scripts/ratchet.jl", "--lcov", isempty(extra) ? "lcov.info" : extra[1]]]),
-    "guards" => Job("Factory guards: generated files, ratchets, doc references, contract usage, factory tests.",
+    "guards" => Job("Factory guards: generated files, ratchets, doc references, doc claims, contract usage, factory tests.",
         (root, extra) -> [["julia", "scripts/gen.jl", "--check"], ["julia", "scripts/ratchet.jl"],
-                          ["julia", "scripts/check_docs.jl"], ["julia", "scripts/contract_usage.jl"],
+                          ["julia", "scripts/check_docs.jl"], ["julia", "scripts/check_claims.jl"],
+                          ["julia", "scripts/contract_usage.jl"],
                           ["julia", "scripts/test/runtests.jl"]]),
     "dod" => Job("Definition of done for a PR (PR_LABELS, PR_BODY_FILE, BASE_REF from the environment).",
         (root, extra) -> [["julia", "scripts/dod.jl", "--base", get(ENV, "BASE_REF", "main"),
@@ -106,14 +145,26 @@ end
 show_argv(argv) = join((a == SCRATCH_ENV ? "<SCRATCH_ENV in scripts/ci.jl>" :
                          occursin(r"[\s\"'$;&|]", a) ? repr(a) : a for a in argv), ' ')
 
+"Print a skip by its kind; the exit status: 1 for :missing, else 0."
+function report_skip(name, s::Skip; io = stdout)
+    if s.kind == :missing
+        println(io, "ci.jl $name: FAILED (missing): ", s.why)
+        return 1
+    elseif s.kind == :waiting
+        println(io, "ci.jl $name: NOT RUN (waiting): ", s.why, ". This job did not run: its exit 0 is not a pass.")
+        get(ENV, "GITHUB_ACTIONS", "") == "true" && println(io, "::warning title=ci.jl $name did not run::", s.why)
+        return 0
+    end
+    println(io, "ci.jl $name: skipped (not applicable): ", s.why)
+    return 0
+end
+
 function run_job(name, root, extra; dry = false, io = stdout)
     haskey(JOBS, name) || (println(stderr, "ci.jl: unknown job `$name` (try --list)"); return 2)
     try
+        foreach(w -> println(io, "ci.jl $name: warning: ", w), env_warnings())
         cmds = JOBS[name].commands(root, extra)
-        if cmds isa String
-            println(io, "ci.jl $name: skipped: $cmds")
-            return 0
-        end
+        cmds isa Skip && return report_skip(name, cmds; io)
         for argv in cmds
             println(io, "ci.jl $name\$ ", show_argv(argv))
             dry && continue
@@ -136,6 +187,7 @@ function main(args)
         for k in sort!(collect(keys(JOBS)))
             println(rpad(k, 10), JOBS[k].summary)
         end
+        println("\nSkips: not_applicable (exit 0), waiting (exit 0, a loud NOT RUN notice), missing (exit 1).")
         return 0
     end
     dry = "--dry-run" in head

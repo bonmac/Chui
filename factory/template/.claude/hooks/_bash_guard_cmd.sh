@@ -3,6 +3,7 @@
 # _bash_guard_cmd.sh: bash_guard.sh's check of ONE simple command (factory 0.2.3: ratchets.toml caps
 # hooks at 150 lines). Sourced after _bash_guard_lib.sh and _read_only_roots.sh; costs no fork.
 
+FIND_RO=' grep egrep fgrep rg cat head tail ls wc file stat echo printf test true false basename dirname ' # find -exec commands that write nothing
 # check_cmd WORD...: skip assignments, leading redirections, shell keywords (if then else elif
 # while until do ! { }) and wrappers with their options (env sudo doas nice time timeout <n> xargs
 # caffeinate exec nohup builtin command eval), then check the command that runs: where it runs
@@ -26,13 +27,15 @@ check_cmd() {
         esac
         case ${1##*/} in
             if | then | else | elif | while | until | do | '!' | '{' | '}') _w=""; shift ;;
-            env | sudo | doas | nice | time | timeout | xargs | caffeinate | exec | nohup | builtin | command) _w=${1##*/} _w1=${_w1:-${1##*/}}; shift ;;
+            env | sudo | doas | nice | time | timeout | xargs | caffeinate | exec | nohup | builtin | command | genv | gnice | gtimeout | gxargs)
+                _w=${1##*/} _w1=${_w1:-${1##*/}}; _w=${_w#g}; shift ;; # g*: GNU coreutils names
             *) break ;;
         esac
     done
     [ $# -gt 0 ] || return 0
     case $1 in *'$'* | *'`'*) deny "a command name built from an expansion is blocked ($1): the guard cannot see what runs. Write the command name literally." ;; esac
     name=${1##*/}
+    case $name in gsed | grm | gcp | gmv | gtee | gtouch | gln | ginstall | gtruncate | gdd | gchmod | gchown | gmkdir | grmdir | gfind) name=${name#g} ;; esac # GNU coreutils names
     shift
     # where this command runs: the tracked cwd, or the directory a -C style flag names
     rundir=$cwd
@@ -69,55 +72,50 @@ check_cmd() {
     [ -z "$_w1" ] || read_only_check "$_w1" "$rundir" # a wrapper (xargs, sudo, ...) does not run in a read-only root either
     read_only_check "$name" "$rundir" "$@"
     _e=""
+    case $name in rm | rmdir | mv | cp | ln | install | rsync | chmod | chown | tar | unzip | find | git) T3_DIR=1 ;; *) T3_DIR="" ;; esac
+    _occ=$cwd
+    [ -z "$envdir" ] || cwd=$rundir # `env -C DIR cmd`: cmd's relative targets are below DIR
     case $name in
         rm) rm_check "$@" ;;
         eval) deny "eval is blocked: its string is not inspected. Run the command directly." ;;
-        rmdir | mkdir | touch | chmod | chown | truncate | tee | mv)
+        rmdir | mkdir | touch | chmod | chown | truncate | tee)
             for tok in "$@"; do outside "$tok"; done
             ;;
-        cp | ln | install | rsync)
-            last=""
-            for tok in "$@"; do last=$tok; done
-            outside "$last"
+        cp | ln | install | rsync | mv) # the last operand (not an option); into a directory: DIR/<source name>
+            last="" _srcs=""
+            for tok in "$@"; do case $tok in -*) ;; *) [ -z "$last" ] || _srcs="$_srcs $last"; last=$tok ;; esac; done
+            [ "$name" != mv ] || for tok in $_srcs; do outside "$tok"; done # mv removes its sources
+            if [ "$name" != rsync ] && [ -n "$_srcs" ] && [ -d "$(abspath "$last" "$cwd")" ]; then
+                for tok in $_srcs; do outside "${last%/}/${tok##*/}"; done
+            else outside "$last"; fi
             [ "$name" = rsync ] || optw " -t --target-directory " "$@"
             ;;
         dd) for tok in "$@"; do case $tok in of=*) outside "${tok#of=}" ;; esac; done ;;
-        sed | perl) # in place (sed -i, -i.bak, --in-place; perl -i, -pi): every file argument is written
-            _i=""
-            for tok in "$@"; do case $name:$tok in sed:-i* | sed:--in-place* | perl:-i* | perl:-[pnla0]*i*) _i=1 ;; esac; done
-            [ -z "$_i" ] || {
-                _p="" _s=""
-                for tok in "$@"; do
-                    if [ -n "$_p" ]; then _p=""; continue; fi
-                    case $name:$tok in
-                        *:-e | *:-f | sed:--expression | sed:--file | perl:-E) _p=1; _s=1 ;;
-                        *:-e?* | *:-f?* | sed:--expression=* | sed:--file=*) _s=1 ;;
-                        *:-*) ;;
-                        *) if [ -n "$_s" ]; then outside "$tok"; else _s=1; fi ;; # the first is the script
-                    esac
-                done
-            }
-            ;;
+        sed | perl) inplace "$name" "$@" ;; # in place: every file argument is written (_bash_guard_write.sh)
         curl) optw " -o --output --output-dir " "$@" ;;
         wget) optw " -O --output-document -o --output-file -a --append-output -P --directory-prefix " "$@" ;;
-        tar) case ${1:-} in --extract | --get | -x* | -[!-]*x* | x* | [!-]*x*) optw " -C --directory " "$@" ;; esac ;;
-        unzip) optw " -d " "$@" ;;
+        tar) case ${1:-} in --extract | --get | -x* | -[!-]*x* | x* | [!-]*x*) # no -C: it extracts into the cwd
+            case " $* " in *" -C"* | *" --directory"*) optw " -C --directory " "$@" ;; *) outside . ;; esac ;; esac ;;
+        unzip) case " $* " in *" -d"*) optw " -d " "$@" ;; *) outside . ;; esac ;;
         find) # -delete removes below its start paths; -fprint/-fls write a file; -exec runs a command
             optw " -fprint -fprint0 -fprintf -fls " "$@"
-            case " $* " in *" -delete "*)
-                for tok in "$@"; do case $tok in -[HLP]) ;; -* | '!' | _) break ;; *) outside "$tok" ;; esac; done ;;
-            esac
+            _st=""
+            for tok in "$@"; do case $tok in -[HLP]) ;; -* | '!' | _) break ;; *) _st="$_st $tok" ;; esac; done
+            case " $* " in *" -delete "*) for tok in ${_st:-.}; do outside "$tok"; done ;; esac
             _in=""
-            for tok in "$@"; do
+            for tok in "$@"; do # -exec CMD: checked as CMD; one that is not read-only writes below the start paths
                 case $tok in
                     -exec | -execdir | -ok | -okdir) _in=1; _e="$_e
 " ;;
                     _ | ';' | '+') _in="" ;;
-                    *) [ -z "$_in" ] || _e="$_e $tok" ;;
+                    *) [ -z "$_in" ] || _e="$_e $tok"
+                       [ "$_in" != 1 ] || { _in=2; case $FIND_RO in
+                           *" ${tok##*/} "*) ;; *) for _x in ${_st:-.}; do outside "$_x"; done ;; esac; } ;;
                 esac
             done
             ;;
         git)
+            git_writes "$@"
             if [ -n "$_gd" ]; then
                 dir=$(abspath "$_gd" "$cwd")
                 _s=$(git_sub "$@")
@@ -137,6 +135,7 @@ check_cmd() {
             esac
             ;;
     esac
+    cwd=$_occ
     [ -n "$_e" ] || return 0
     _ifs=$IFS
     IFS='

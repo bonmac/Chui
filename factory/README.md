@@ -66,11 +66,14 @@ session says so.
 The seeded `risk.toml` makes `.agents/agent-registry.toml`, `.agents/factory.toml`,
 `.agents/bodies/*`, `.agents/checks.toml`, `.claude/agents/*`, `.codex/agents/*`, `risk.toml`,
 `ratchets.toml`, `.claude/settings.json`, `.claude/hooks/*`, `.github/workflows/*`,
-`.factory-version` and the gate scripts (`scripts/dod.jl`, `ratchet.jl`, `gen.jl`,
-`check_docs.jl`, `contract_usage.jl`, `ci.jl`, `_common.jl`) T3, and `write_guard.sh` blocks
-Edit/Write to them.
-A first vendoring writes them anyway because `sync_factory.jl --apply` runs as a Julia process
-from Bash, which write_guard does not see; only the Edit/Write tools are blocked. To tailor
+`.factory-version`, the gate scripts (`scripts/dod.jl`, `ratchet.jl`, `gen.jl`,
+`check_docs.jl`, `contract_usage.jl`, `ci.jl`, `_common.jl`, `bench.jl`, `lane`, `lane.jl`,
+`changelog.jl`, `check_claims.jl`, `evidence.jl`) and their tests (`scripts/test/*`) T3.
+`write_guard.sh` blocks Edit/Write to them, and since 0.2.4 `bash_guard.sh` blocks the Bash
+writes it models (redirections, `tee`, `sed -i`, `cp`/`mv` targets, `rm`, ...; the list is in
+`.agents/checks.toml`) with the same `FACTORY_ALLOW_T3=1` override.
+A first vendoring writes them anyway because `sync_factory.jl --apply` runs as a Julia process,
+which neither guard models; `julia scripts/gen.jl` rewrites generated T3 files the same way. To tailor
 those files afterwards (a new repo's registry, the coordinator's read-only roots), either:
 
 1. the user starts the session with `FACTORY_ALLOW_T3=1` in its environment for that
@@ -92,11 +95,12 @@ Either way the change lands through a reviewed PR labelled T3.
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |
 | `.claude/commands/*.md` | intake, lanes, change-review, contract-check, release-check, test-changed | managed |
 | `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules | managed |
-| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_read_only_roots.sh`; guards fail closed if their script or a library is missing | managed |
+| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_bash_guard_write.sh`, `_read_only_roots.sh`; guards fail closed if their script, a library, `protected-paths.txt` or a readable payload is missing | managed |
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
 | `LICENSE` | MIT (ADR-0011); replace `<YEAR>` and `<COPYRIGHT HOLDER>` when scaffolding | seeded |
-| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, contract_usage, ci, bench, lane, sync_factory | managed |
+| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, check_claims, contract_usage, ci, bench, lane (new, list, audit, remove), changelog (fold), evidence, sync_factory | managed |
+| `changelog.d/.gitkeep` | where lanes add changelog fragments (`changelog.d/<lane>.md`); folded at release | seeded |
 | `test/contracts/USED.md`, `test/contracts/upstreams.toml` | contract IDs relied on; upstream URLs and contract-file copies | seeded (package) |
 | `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |
 | `test/jet/Project.toml`, `test/jet/runjet.jl` | JET's own environment (`ci.jl jet`, stable only) | seeded (package) |
@@ -122,6 +126,19 @@ Either way the change lands through a reviewed PR labelled T3.
 - **One CI entry point:** every workflow step that runs Julia calls `julia scripts/ci.jl <job>`;
   `scripts/test/test_ci.jl` fails if a workflow calls an unknown job or runs other Julia code,
   or if a job is never called.
+- **A CI skip says which kind it is** (0.2.4): `not applicable` (exit 0), `waiting` on
+  something external such as an upstream URL (exit 0, a loud `NOT RUN` line and a GitHub
+  warning), or `missing` a file the package profile seeds or expects (exit 1).
+- **Lanes are audited after the fact** (0.2.4). Hooks cannot bind a subagent whose cwd never
+  left the main checkout, nor every write made through Bash; `scripts/lane audit <lane>`
+  compares the lane's diff with the globs it owns (`scripts/lane new <lane> --owns ...`) and
+  with the files it reported. `/change-review` runs it before a lane lands.
+- **Lanes share no file for the changelog** (0.2.4): each adds `changelog.d/<lane>.md`, which
+  `dod.jl` accepts; the release manager folds the fragments (`scripts/changelog.jl fold`).
+- **Numbers in docs are derived** (0.2.4): a `<!-- claim: key=value -->` marker on the line
+  that states a number makes `scripts/check_claims.jl` (in `ci.jl guards`) compare it with the
+  registry, `ratchets.toml`, the factory version, or the test totals of an evidence file that
+  `scripts/evidence.jl <kind> -- <cmd>` wrote for that commit.
 - **Unit tests are hermetic; repo-wide checks are `ci.jl guards` steps.** `scripts/test/` builds
   its own scratch repos, hook copies and roots files, so it passes in any profile. The
   template-only self-checks (no stale references in the template, the seeded `USED.md` lists
@@ -147,7 +164,8 @@ Either way the change lands through a reviewed PR labelled T3.
 ```sh
 cd factory/template
 julia --startup-file=no scripts/gen.jl --check
-julia --startup-file=no scripts/test/runtests.jl
+julia --startup-file=no scripts/evidence.jl tests -- julia --startup-file=no scripts/test/runtests.jl
+julia --startup-file=no scripts/check_claims.jl
 julia --startup-file=no scripts/check_docs.jl --external docs/agent/ECOSYSTEM.md,docs/agent/BRIEF.md,.factory-version
 (cd .claude/hooks && shellcheck -x -S warning *.sh)
 uvx --from actionlint-py actionlint .github/workflows/*.yml

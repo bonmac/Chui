@@ -62,7 +62,7 @@ description = "Use to implement one task from an approved plan, in one worktree 
 model = "inherit"
 color = "green"
 default_mode = "write"
-file_scope = ["src/**", "test/**", "ext/**", "CHANGELOG.md"]
+file_scope = ["src/**", "test/**", "ext/**", "changelog.d/**"]
 scorecard = ["failing test written first", "tests pass with output pasted", "stays in file scope", "CHANGELOG entry"]
 output_format = "summary, files changed, commands run with output, checks not run and why, scorecard"
 
@@ -162,7 +162,7 @@ description = "Use when a package is ready to release; runs /release-check and d
 model = "inherit"
 color = "pink"
 default_mode = "write"
-file_scope = ["Project.toml", "CHANGELOG.md"]
+file_scope = ["Project.toml", "CHANGELOG.md", "changelog.d/**"]
 scorecard = ["semver bump justified", "compat bounds on every dependency", "release-check output pasted", "no tag or registration without confirmation"]
 output_format = "proposed version, changes since last release, release-check output, actions needing confirmation, scorecard"
 

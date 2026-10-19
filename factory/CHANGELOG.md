@@ -5,6 +5,198 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.4 (2026-10-19)
+
+Gates that hold when an agent works around them: T3 paths guarded through Bash, the gate's own
+tests protected, CI skips that say whether they ran, lanes audited after the fact, and numbers in
+docs derived instead of typed. Most of the items come from a study of a reference project's agent
+workflow. Template tests: 1346/1346 on Julia 1.13.2 and 1.10.12 (1006 in 0.2.3), recorded by
+`scripts/evidence.jl` in `.lanes/evidence/tests-5052c66.txt` and `tests-lts-5052c66.txt` (dirty
+tree: 0.2.4 uncommitted on 5052c66). Each new test was run against the 0.2.3 tree first and failed
+there (see "Evidence" below).
+**Stricter guards**: bash_guard denies Bash writes to T3 paths, both guards deny a payload they
+cannot read, and `ci.jl` fails when a seeded file is missing. The CHANGELOG rule says a stricter
+guard bumps the minor version; the lead chose 0.2.4. New T3 files and manual edits: read the
+migration notes.
+
+- **T3 through Bash** (`.claude/hooks/_bash_guard_write.sh`, new). Every write target bash_guard
+  already models (redirections incl. `>|` and heredoc targets, `tee`, `sed -i`/`perl -i`,
+  `cp`/`mv`/`install`/`ln`/`rsync` targets, `rm`, `rmdir`, `truncate`, `touch`, `mkdir`,
+  `chmod`, `chown`, `dd of=`, `curl -o`, `wget -O/-P`, `tar -x -C`, `unzip -d`,
+  `find -delete/-fprint`, `git init/clone/worktree`) now goes through `t3_check`, plus the new
+  `git rm`, `git mv`, `git restore` and `git checkout ... -- PATHS`. A target matching a T3 glob of
+  its checkout's `protected-paths.txt` (the nearest enclosing git checkout, as in write_guard;
+  compared lowercased) is denied unless the SESSION has `FACTORY_ALLOW_T3=1`. A directory
+  target that holds a T3 path is denied for the commands that change what is inside it
+  (`rm -r scripts`, `mv .claude x`, `cp x scripts/`, `find . -name x -delete`, `tar -x -C .`,
+  `chmod -R`), as is a target that is a nested git checkout. 0.2.3 gave rc 0 for
+  `sed -i '' s/T3/T0/ risk.toml`, `printf x > scripts/dod.jl` and
+  `rm scripts/test/test_dod.jl`; all 46 deny cases of the new test passed on 0.2.3. With no
+  `protected-paths.txt` at all, a write inside the repo fails closed. The in-place editor code
+  moved from `_bash_guard_cmd.sh` into the new library, and so did `outside()` (cmd 148 lines, lib
+  140, write 148; the 150-line ratchet holds). Cost, 100 calls each from sh: 62 → 54 ms for
+  `git status && ls -la src` (noise), 60 → 67 ms for a 6-segment command with 7 in-root targets
+  (no fork unless a path has capitals or glob characters). In the test suite, which spawns sh
+  from Julia: 55-80 ms per call on a loaded machine; the ≤ 250 ms test bound holds. `checks.toml` now says exactly what is still uncovered:
+  any write bash_guard does not model, such as julia/python/sh code, `git apply`, `patch`,
+  editors, and targets held in variables.
+- **Fixes from the 0.2.4 adversarial review** (each reproducer gave rc 0 before its fix and is a
+  test now):
+  - A bare `.git` marker (a `.git` directory made inside `scripts/`, an empty `.git` file inside `.claude/`) made a directory a
+    "checkout" with no T3 paths, for both guards. A checkout now needs `.git/HEAD` or a
+    `gitdir:` file. A target is checked against its nearest checkout's list AND the repo root's,
+    and writes below any `.git` directory are denied. write_guard now uses bash_guard's
+    `t3_check`, so it also fails closed without `protected-paths.txt` (0.2.3: rc 0).
+  - Glob characters in a target (`rm risk.tom?`, `rm scripts/dod.j*`, `printf x > risk.tom?`) are
+    expanded by the guard as the shell would expand them; a brace list (`rm {risk,x}.toml`) inside
+    the repo is denied.
+  - Targets that resolved to the wrong path: `$'risk.toml'` and `$"risk.toml"` (the `$` is
+    dropped), `~+/` (and `~-/` is denied), `x->f` redirects (the `->` exemption predates quote
+    handling and is gone), `git --git-dir=.git rm`, repeated `git -C` (cumulative now),
+    `env -C DIR rm f`, `rsync a dst -q` (last non-option operand), `find ... -exec rm {} +`
+    (an -exec command outside a short read-only list checks find's start paths as directory
+    targets), and the GNU names (`gsed`, `grm`, `gtimeout`, ...). `git -c alias.*` is blocked.
+  - False positives removed: `cp`/`mv`/`install`/`ln` into an existing directory check
+    `DIR/<source name>` (so `cp /tmp/notes.md .` passes and `cp -r /tmp/scripts .` does not);
+    `git rm --cached` and `git restore --staged` touch only the index.
+  - `lane audit` read `git diff <merge-base>` (working tree only): a commit reverted in the
+    working tree, or a staged change reverted on disk, passed. It now takes the union of the
+    commits, the index, the working tree and the untracked files, with `core.quotePath=false`.
+  - dod.jl no longer counts an empty fragment or a dotfile fragment (`changelog.d/.mine.md`),
+    neither of which `fold` would release. `test_totals` sums every `Test Summary:` table (one per
+    top-level testset; 0.2.4-pre read the last one) and strips ANSI colour. check_claims reports
+    a mistyped marker (`<!-- Claim: ... -->`, `<!--claim x=1-->`) instead of ignoring it, and the
+    template and package `factory.toml` now seed `required = ["max_open"]`. ci.jl treats an
+    unknown table in `upstreams.toml` and an unreadable `.factory-version` as `missing` (red).
+    bash_guard denies a payload with no command string (`{}`, a number, an array); write_guard
+    denies a non-string target. `changelog.jl` knows `## [Unreleased]` and indented headings.
+  - From the re-verification: `unzip` without `-d` and `tar -x` without `-C` extract into the cwd,
+    which is now checked as a directory target. `lane audit` fails when the lane's base was
+    rewritten to its own branch or to a ref that is not a commit.
+  - Still open (declared in `checks.toml`): targets from stdin via `xargs`, `stdbuf` and other
+    unmodelled wrappers, symlinks, `lane-base` rewritten to another real branch and `lane-owns`
+    widened, hand-written evidence files, and prose matching any occurrence of the number.
+- **Edit/Write only.** `CLAUDE.md`, every write-mode agent body and the lane-lifecycle skill say
+  to change files with Edit/Write, never `sed -i`, redirects or heredocs onto tracked files.
+- **The gate's own tests are T3**: `scripts/test/*`, plus `scripts/bench.jl`, `scripts/lane`,
+  `scripts/lane.jl`, `scripts/changelog.jl`, `scripts/check_claims.jl` and
+  `scripts/evidence.jl`, in the template `risk.toml` and the coordinator overlay. The dod.jl and
+  ratchet.jl CLI tests now assert the exact `[FAIL] <requirement>` / `FAIL <limit>` lines. With
+  the changelog check of dod.jl mutated to always pass, the 0.2.3 tests still passed 29 of 30
+  and the new ones fail 11. With the size-raise check of ratchet.jl mutated to stop at the first
+  rule, the 0.2.3 tests passed 17 of 17 and the new ones fail 1.
+- **CI skips declare their kind** (`ci.jl`): `not_applicable` (not a package: exit 0), `waiting`
+  (no upstreams, no `benchmark/` directory: exit 0, a `NOT RUN (waiting) ... its exit 0 is not a
+  pass` line and a GitHub `::warning`), `missing` (a file the package profile seeds or expects is
+  gone: `test/jet/{Project.toml,runjet.jl}`, `docs/{Project.toml,make.jl}`,
+  `test/contracts/{upstreams.toml,Project.toml,runtests.jl}`, `benchmark/benchmarks.jl` when
+  `benchmark/` exists: exit 1). In 0.2.3, deleting any of these printed "skipped" and exited 0.
+  `ci.jl` and `scripts/lane new` warn when `JULIA_PROJECT`, `JULIA_LOAD_PATH` or
+  `JULIA_DEPOT_PATH` is inherited.
+- **Lane scope audit** (`scripts/lane.jl`). `scripts/lane new <name> --owns '<globs>'` records the
+  owned globs (plus `changelog.d/<name>.md`) in `git config branch.<branch>.lane-owns` and as a
+  `lane-new` line in `.lanes/ledger.jsonl`. `scripts/lane audit <name> [--reported FILE]
+  [--owns GLOBS]` fails when the lane's committed, uncommitted or untracked changes since the merge
+  base touch a path outside the owned globs, when it has none recorded, or when they differ from
+  the lane's reported file list. It is wired into `/change-review`, the reviewer body and the
+  lane-lifecycle skill. Tested on real temporary git repos.
+- **Changelog fragments.** `dod.jl` accepts a newly ADDED `changelog.d/<name>.md` as the
+  `changelog` evidence (editing an old fragment, `README.md`, `.gitkeep` or a nested file does
+  not count). The new `scripts/changelog.jl list|fold [--dry-run]` folds the fragments, in name
+  order, under `## Unreleased` and deletes them; an empty fragment or one with a heading stops
+  the fold. The release-check command and the release_manager body run it. `changelog.d/.gitkeep`
+  is seeded.
+- **Close by reproducer.** The reviewer, critic and contract_steward bodies and
+  `/change-review` require a `Reproducer:` command on every blocker and every cross-repo request.
+  Closing it needs that command's RED run (before the fix) and GREEN run (after), quoted.
+  `/contract-check` drafts requests with a `- **Reproducer:**` line.
+- **Numbers in docs** (`scripts/check_claims.jl`, in `ci.jl guards`). A `<!-- claim: key=value -->`
+  marker on the line that states the number is checked against the derived value: `max_open`,
+  `roles`, `factory_version`, `max_lines:<glob>` (ratchets.toml), and `tests_pass/fail/error/
+  broken/total` from an evidence file. The value must also appear in the line's prose. Each file
+  is checked against the nearest enclosing checkout with a registry, so a coordinator's
+  `factory/template/CLAUDE.md` is checked against the template. `.agents/factory.toml
+  [check_claims]` holds `files` (globs; default every tracked `*.md`) and `required` (keys that
+  must have a marker). Missing evidence makes a claim UNVERIFIED: that is exit 0, and exit 1 with
+  `--strict`. The template's CLAUDE.md lane-cap line carries a marker.
+- **Evidence files** (`scripts/evidence.jl <kind> -- <cmd...>`, `latest <kind>`). It writes
+  `.lanes/evidence/<kind>-<sha7>.txt` (gitignored) with the head sha, a dirty flag, the command,
+  its exit code, the seconds, the date, the parsed test totals and the full output, and it exits
+  with the command's code. `CLAUDE.md` says that test counts in docs cite one.
+- **Fail closed on unreadable payloads** (an extra from the same study). bash_guard and
+  write_guard deny a payload that is not a JSON object; write_guard also denies one with no
+  target key, and it reads `tool_input.path` too. In 0.2.3 both cases gave rc 0. The test
+  helper `json()` now escapes tabs: a raw tab is invalid JSON, so one heredoc case in 0.2.3 had
+  passed only because the guard failed open.
+- **Other extras done**: a critic gate-audit checklist (make each gate go red, NOT RUN vs found
+  nothing, delete the gate and look for a red test, list the exemptions, "this is not
+  verification"); the lane-lifecycle skill checks once more for a late message before recording
+  `no_report`; env hygiene (above). **Skipped**: dated harness probes (their home is the
+  coordinator's `research/`) and mutation specs for contract tests (L).
+- **Hermetic tests in every profile.** Two tests failed in a coordinator checkout on 0.2.3,
+  because they read the checkout's own `require_read_only_roots = true`: `test_gen.jl`'s
+  `READ_ONLY_ROOTS_REQUIRED=0` and the "package profile seeds no roots" case. `hooks_with_roots`
+  now writes its own `limits.env` (`required = false` by default; `src` selects the hooks to
+  copy), and the new `gen_sandbox_noroots` writes its own `factory.toml`. A regression test builds
+  a host with `require_read_only_roots = true`, checks that the host itself fails closed, and
+  checks that the helpers do not inherit it. The new T3 tests use a fixture
+  `protected-paths.txt`, and `ci.jl`'s not-applicable test uses an empty directory, not the
+  checkout.
+- **Exec bits restored.** 15280a8 (0.2.3) committed `.claude/hooks/bash_guard.sh`,
+  `dispatch_limit.sh`, `scripts/_common.jl` and `scripts/gen.jl` as 644 (0.2.2: 755), and the
+  `_bash_guard_cmd.sh` (new in 0.2.3) and `scripts/contract_usage.jl` had never been executable; sync copies template
+  modes, so vendored repos got 644. Every hook, every `scripts/*.jl`, `scripts/lane` and
+  `scripts/test/runtests.jl` is now 755. `test_sync_factory.jl` asserts it for the template and
+  for a synced repo; on 0.2.3 that test fails 12 times. Sync already preserved modes, and a test
+  already covered a mode-only repair.
+
+### Evidence
+
+- Template: `julia scripts/evidence.jl tests -- julia --startup-file=no scripts/test/runtests.jl`
+  gives 1346/1346 on Julia 1.13.2 and 1.10.12 (evidence files named above).
+- RED on 0.2.3: the final 0.2.4 test files run against the 0.2.3 scripts and hooks (a copy of the
+  0.2.3 tree in a fresh git repo) give 1086 passed, 147 failed and 28 errored. By test set:
+  bash_guard T3/payload/review 98 failed and 1 errored; hooks 7 failed and 1 errored (gate globs,
+  `{}` payload); ci.jl 22 failed (skip kinds); sync_factory 13 failed (exec bits); dod.jl 2 failed
+  and 2 errored (fragments); gen.jl 4 failed (new scripts not registered); lane audit 1 failed
+  and 6 errored; changelog, check_claims and evidence errored (the scripts do not exist).
+- Mutation check of the new reason-specific asserts: see the gate-tests item.
+- Sync rehearsals:
+  - Coordinator copy (`--profile coordinator`, `require_read_only_roots = true`, gen run):
+    `ci.jl guards` OK with its tests at 1139/1139. The same copy on 0.2.3 gave 860/3. Still OK
+    after the manual edits below, and check_claims fails a `max_open=4` marker in HANDOFF.md.
+  - ChuiCore.jl copy (`--profile package`, 0.2.1 → 0.2.4, no conflicts): `ci.jl guards` OK with
+    its tests at 1188/1188. `ci.jl test`, `jet` and `docs` are OK; `contracts` and `bench` print
+    NOT RUN (waiting).
+
+### Migration notes
+
+- New managed files: `.claude/hooks/_bash_guard_write.sh` (bash_guard fails closed without it),
+  `scripts/changelog.jl`, `scripts/check_claims.jl`, `scripts/evidence.jl` and their tests. Seeded
+  when missing: `changelog.d/.gitkeep`. Sync writes them as a Julia process, which bash_guard does
+  not model; after the manual `risk.toml` edit below, editing `scripts/test/*` needs
+  `FACTORY_ALLOW_T3=1` like the other gate files.
+- Seeded files are not updated by a sync. Make these edits by hand, as a T3 change with an ADR:
+  - `risk.toml` T3 globs: add `scripts/bench.jl`, `scripts/lane`, `scripts/lane.jl`,
+    `scripts/changelog.jl`, `scripts/check_claims.jl`, `scripts/evidence.jl` and `scripts/test/*`.
+    A repo seeded before 0.2.2 also lacks the 0.2.2 gate list (`.agents/bodies/*`,
+    `.agents/checks.toml`, `.claude/agents/*`, `.codex/agents/*`, `scripts/dod.jl` ...
+    `scripts/_common.jl`, `.agents/factory.local*`), so copy the template's whole T3 block. Then
+    run `julia scripts/gen.jl`.
+  - `.agents/factory.toml`: add `[check_claims]` with `files = []` and `required = []`, or with
+    the keys you want enforced. The table is optional: without it no key is required.
+  - `.agents/agent-registry.toml`: the implementer's `file_scope` takes `changelog.d/**` instead
+    of `CHANGELOG.md`; the release_manager's adds `changelog.d/**`. Run `julia scripts/gen.jl`.
+  - `CLAUDE.md`: rule 5 (changelog fragments), the new rule 7 (Edit/Write only; evidence files),
+    the lane line (`--owns`, `lane audit`) and the lane-cap claim marker, as in the template.
+    `CHANGELOG.md`'s intro mentions fragments.
+- `ci.jl jet`, `docs` and `contracts` now FAIL in a package that lacks their seeded files; restore
+  them from the seed (a sync shows them).
+- A command that wrote into a directory holding T3 paths through Bash, such as
+  `find . -name '*.tmp' -delete`, is now denied: name a narrower start path (`find build ...`).
+- The coordinator's `requests/README.md` (outside the factory) should add a `- **Reproducer:**`
+  field to its request format, matching the contract_steward body and `/contract-check`.
+
 ## 0.2.3 (2026-10-19)
 
 Security fixes from the second guard review (guard-rereview), plus three follow-ups from the L0

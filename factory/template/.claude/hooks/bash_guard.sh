@@ -7,17 +7,23 @@
 # (an inline `FACTORY_ALLOW_PUSH=1 git push` does not reach this hook):
 #   FACTORY_ALLOW_PUSH=1     allow `git push` (not --force) once the user approved pushing
 #   FACTORY_ALLOW_OUTWARD=1  allow gh actions that create or change things on GitHub
+#   FACTORY_ALLOW_T3=1       allow modelled Bash writes to T3 paths (as for write_guard; 0.2.4)
 d=$(dirname -- "$0")
-for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh; do # a missing library must block (exit 2), not fail open
+for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh _bash_guard_write.sh; do # a missing library must block (exit 2), not fail open
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; bash_guard fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
 . "$d/_bash_guard_lib.sh"
 . "$d/_read_only_roots.sh"
 . "$d/_bash_guard_cmd.sh"
+. "$d/_bash_guard_write.sh"
+T3_HINT=" For other files use the Edit/Write tools, not sed -i, redirects or heredocs."
 need_jq
-raw=$(field '.tool_input.command')
-[ -n "$raw" ] || exit 0
+raw=$(field '.tool_input.command | strings')
+if [ -z "$raw" ]; then # 0.2.4: no command string to check is not "nothing to check" (an empty command runs nothing)
+    printf '%s' "$PAYLOAD" | jq -e '.tool_input.command == ""' >/dev/null 2>&1 && exit 0
+    deny "the hook payload has no command string (not JSON, or tool_input.command missing or not a string); bash_guard fails closed."
+fi
 # A huge command could outlast the 10 s hook timeout, which fails OPEN: refuse it (0.2.3).
 [ ${#raw} -le 65536 ] || deny "this command is longer than 64 KiB, too long to check within the hook timeout. Split it, or write a script file and review it first."
 cwd=$(field '.cwd')
@@ -47,6 +53,7 @@ if has "${G}stash([[:space:]]|$)"; then
 fi
 has "${G}[a-z-]+[[:space:]].*--no-verify" && deny "--no-verify is blocked: fix the failing hook instead."
 has "${G}commit[[:space:]](.*[[:space:]])?-[a-ln-zA-Z]*n" && deny "git commit -n (--no-verify) is blocked: fix the failing hook instead."
+has "${S}git[[:space:]](.*[[:space:]])?-c[[:space:]]*alias\." && deny "git -c alias.* is blocked: an alias hides the command that runs."
 has "${S}(pkill|killall)[[:space:]]" && deny "pkill/killall are blocked: kill a named PID you started."
 if has "${G}push([[:space:]]|$)"; then
     has "--force([^-]|$)|[[:space:]]-f([[:space:]]|$)" && deny "git push --force is blocked; use --force-with-lease, with the user's approval."
@@ -65,10 +72,10 @@ printf '%s\n' "$segs" | {
     while IFS= read -r seg; do
         # shellcheck disable=SC2086
         set -- $seg
-        prev=""
-        for tok in "$@"; do # redirection targets: >f, >>f, 2>f, &>f, >|f, or `> f` (not `->`)
-            case $prev in *'->') ;; *'>') outside "$tok" ;; esac
-            case $tok in *'->'*) ;; *'>'?*) outside "${tok##*>}" ;; esac
+        prev="" T3_DIR=""
+        for tok in "$@"; do # redirection targets: >f, >>f, 2>f, &>f, >|f, x->f, or `> f` (quoted text is never one)
+            case $prev in *'>') outside "$tok" ;; esac
+            case $tok in *'>'?*) outside "${tok##*>}" ;; esac
             prev=$tok
         done
         check_cmd "$@"
