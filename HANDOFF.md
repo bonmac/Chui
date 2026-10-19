@@ -20,7 +20,7 @@ Updated: 2026-10-19 · Phase: **★ L0 answered (2026-10-19): "accept all recomm
 - **Julia:** `release` 1.13.2 (default), `lts` 1.10.12 and 1.11.7, all via juliaup.
 - **Session:** the lead runs interactively in tmux session `junta`; teammates open as panes.
 - **Where to run the L1 lead (coord-review S5):** from the main checkout `<root>`, not from this worktree. From the worktree, write_guard blocks writes into `<root>/Chui*.jl/`, which are outside the worktree root. From `<root>`, nested repos are checked against their own protected paths. Spawn package lanes with cwd = the package repo.
-- **Hooks:** live for teammates rooted in any vendored checkout. In the coordinator, `prompts/*` and `contracts/*` are T3, so write_guard blocks them unless the user sets `FACTORY_ALLOW_T3=1`. The lane cap is 4.
+- **Hooks:** live for teammates rooted in any vendored checkout. In the coordinator, `prompts/*` and `contracts/*` are T3, so write_guard blocks them unless the user sets `FACTORY_ALLOW_T3=1`. The lane cap is 6 (decision 12).
 - **User-authorized T3 bypasses on 2026-10-19 (complete list):**
   1. **coord-setup:** the coordinator bootstrap. Files written around the guard: `.agents/agent-registry.toml` and the `coord_*` bodies, `risk.toml`, and the skeletons. Other files it touched, such as `CLAUDE.md`, are not T3.
   2. **The 0.2.0 sync** into the coordinator, plus the lead's follow-up edit adding `.agents/factory.toml` to the T3 globs. The 0.2.1 sync, which writes only `.factory-version`, is counted under this one.
@@ -31,8 +31,7 @@ Updated: 2026-10-19 · Phase: **★ L0 answered (2026-10-19): "accept all recomm
 
 | Lane | Agent | File scope | Status | Report |
 |---|---|---|---|---|
-| checkpoint-apply | general-purpose | ADR statuses, contracts banners, common.md §1.7, brief 20, max_open=6 (user-authorized T3) | running | — |
-| factory-023 | general-purpose | `factory/` → 0.2.3 (closes the guard-rereview bypasses; no sync) | running | — |
+| factory-024 | general-purpose | `factory/` → 0.2.4 (8 hardening items from the reference-project study, plus hermetic tests and exec bits) | running | — |
 
 Closed this phase:
 - **ref-research:** done. Incident: one of its sub-lanes ran `uv run` in a reference repo, which re-synced the gitignored `.venv`; the git tree there stayed clean.
@@ -47,6 +46,10 @@ Closed this phase:
 - **factory-maint:** done (0.2.0).
 - **factory-patch:** done (0.2.1); its reviewer covered contract_usage.
 - **scaffold-core, scaffold-types, scaffold-frames:** done.
+- **checkpoint-apply:** done (`c32cbbc`).
+- **factory-023:** done. Factory 0.2.3 committed `15280a8` (1006/1006 tests; M1–M3 re-verified by the lead).
+- **coord-redact:** done. 0.2.3 synced into the coordinator and the reference projects redacted, committed `ac62485`. Coordinator runtests: 861/863 (2 tests not hermetic under `require_read_only_roots`; fixed in 0.2.4). History-rewrite inputs are in `private/`.
+- **cc-lessons:** done. Studied a 4th private reference project for lessons; the study is in `private/`, and 8 recommendations were accepted by the user and go into 0.2.4.
 - **coord-review:** done; changes requested, fixed in `604115e` (dod.jl: DONE).
 - **factory-022:** done. Factory 0.2.2 committed `1aa6117` (807/807 tests; ratchet OK, verified by the lead). Not synced into any repo yet. Its reviewer requested changes, all fixed.
 - **guard-rereview:** done. Changes requested: M1 is a regression from 0.2.2 (`unset TMPDIR; rm -rf $TMPDIR/opt` passes); M2: shell keywords and wrappers hide `rm`; M3: a false heredoc start hides every later line. The lead reproduced M1 and M2 (rc=0). **Do not sync 0.2.2**; factory-023 is fixing them in 0.2.3.
