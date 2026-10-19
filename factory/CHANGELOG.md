@@ -39,6 +39,15 @@ No guard is stricter; nothing to migrate.
   passed there for the wrong reason. The tests now run `TEST_HOOKS` by default, a copy with no
   roots, not required; tests that need roots or `REQUIRED=1` already build their own. The
   settings.json wiring test runs its command against a scratch project holding that copy.
+- **Every template Julia file is Runic-formatted** (ADR-0007). The `Runic` CI job
+  (`scripts/ci.jl format`) failed in every package on the factory-managed `scripts/*.jl` and
+  `scripts/test/*.jl` (27 of the template's 30 Julia files). They are formatted with Runic
+  v1.13.0 (`--inplace scripts`, the version CI installs); no file is excluded and the check is
+  unchanged. Formatting grew `scripts/test/test_hooks.jl` to 432 lines, over the 400-line
+  `scripts/*.jl` ratchet, so its lifecycle and settings.json testsets moved verbatim to the new
+  managed `scripts/test/test_hooks_lifecycle.jl` first (`checks.toml` points teammate_idle,
+  dispatch_limit, lane_ledger, precompact and session_start at it). Repos that edited a
+  managed script will see a sync CONFLICT on it: re-apply the edit on the formatted file.
 - How the class was searched: the full template suite in a fresh clone of the coordinator
   (1345/1346 on 0.2.4, the gen.jl test above), the coordinator's own suite in a fresh clone of a
   scratch coordinator synced to 0.2.5 (which found the hook tests), and a static search of the
@@ -46,7 +55,11 @@ No guard is stricter; nothing to migrate.
 - Template tests: 1356/1356 on Julia 1.13.2 and 1.10.12 (1346 in 0.2.4). In fresh clones with
   no local files, `scripts/ci.jl guards` passes for a scratch coordinator and a scratch copy of a
   pushed package, each synced to 0.2.5 (both failed on 0.2.4), and for a package bootstrapped
-  from 0.2.5 into an empty repo with a doc that names the roots file.
+  from 0.2.5 into an empty repo with a doc that names the roots file. `scripts/ci.jl format`
+  passes in the package copy and the bootstrapped package. In the coordinator it still fails, on
+  coordinator-owned files only (`contracts/*.jl`, `reference/prototype/**`), and the coordinator
+  has no CI format job. Spec: `docs/superpowers/specs/2026-10-20-factory-025-clean-clone.md` in
+  the coordinator.
 
 ## 0.2.4 (2026-10-19)
 
