@@ -1,6 +1,6 @@
 # HANDOFF — Chui coordinator (lead)
 
-Updated: 2026-10-19 · Phase: **★ L0 checkpoint: waiting on the user.** guard-rereview (read-only) is running.
+Updated: 2026-10-19 · Phase: **★ L0 answered (2026-10-19): "accept all recommendations; GitHub owner bonmac, public, push yes".** Applying the decisions; factory 0.2.3 is in progress.
 
 ## State
 
@@ -31,6 +31,7 @@ Updated: 2026-10-19 · Phase: **★ L0 checkpoint: waiting on the user.** guard-
 
 | Lane | Agent | File scope | Status | Report |
 |---|---|---|---|---|
+| checkpoint-apply | general-purpose | ADR statuses, contracts banners, common.md §1.7, brief 20, max_open=6 (user-authorized T3) | running | — |
 | factory-023 | general-purpose | `factory/` → 0.2.3 (closes the guard-rereview bypasses; no sync) | running | — |
 
 Closed this phase:
@@ -79,7 +80,11 @@ All entries below are actual runs (`subagent_mode: actual`). The lead re-ran the
 - **Package scaffolds not reviewed:** no separate reviewer pass. Each lane verified its own repo, and the lead re-ran tests and check_docs. They are initial scaffolds on main with no remote.
 - **Lane cap:** whether teammates emit SubagentStart, and so count toward the cap, is UNVERIFIED.
 
-## Blockers and decisions waiting (★ L0 checkpoint)
+## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
+
+Owner `bonmac`, public visibility; push the three package repos and ChuiRegistry once their mains are green after the 0.2.3 sync. The coordinator repo stays local; pushing it was not asked. Item 13 (permission mode) had no recommendation, so it stays unchanged.
+
+The list as it was asked:
 
 1. **Accept the ADRs** (0001–0011, all Proposed). The DRAFT contracts become binding once 0002/0004/0007/0009/0010 are Accepted.
 2. **GitHub:** owner and visibility, and whether to create and push ChuiRegistry plus the three package repos (the ADR-0005 gate). Until then, everything stays local.
