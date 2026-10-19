@@ -41,4 +41,4 @@ Run from the coordinator worktree:
 - `julia scripts/test/runtests.jl` → 581/581
 - `julia scripts/check_docs.jl` → OK
 - `julia scripts/dod.jl --base main` → must pass on the branch before main is fast-forwarded
-- Reviewer: coord-review on 275e879 (changes requested: this spec, the ratchet, a stale HANDOFF, and a stale safety claim). The ratchet failure is a factory bug, fixed in factory 0.2.2, whose sync awaits the user.
+- Reviewer: coord-review on aa41bbd (changes requested: this spec, the ratchet, a stale HANDOFF, and a stale safety claim). The ratchet failure is a factory bug, fixed in factory 0.2.2, whose sync awaits the user.
