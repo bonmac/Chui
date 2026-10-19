@@ -36,8 +36,9 @@ Later packages (ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot) start from `prompts
 2. **No commands in the reference repos.** `~/reference-project-b`,
    `~/reference-project-a` and `~/reference-project-c` are
    read-only: read files, never run anything there (no `uv run`, `julia --project`, `make`).
-   On 2026-10-19 a lane's `uv run` re-synced reference-project-b's `.venv`; **no hook catches this**,
-   so every lane brief must say it. Everything else outside `<root>` is off limits.
+   On 2026-10-19 a lane's `uv run` re-synced reference-project-b's `.venv`. Since factory 0.2.0,
+   `bash_guard` blocks the common forms, but it misses `sh -c` strings, scripts run by path and
+   env-var project selection (`docs/CHECK_COVERAGE.md`), so every lane brief must still say it. Everything else outside `<root>` is off limits.
 3. **One commit never spans repos.** A two-package change is two commits in dependency order:
    upstream first, released, then downstream (ADR-0010 rule 4).
 4. **Outward actions need the user:** creating GitHub repos, visibility, pushing, tagging,
