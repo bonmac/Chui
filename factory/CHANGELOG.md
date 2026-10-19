@@ -5,6 +5,35 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.5 (2026-10-20)
+
+Checks that give the same answer in a fresh clone as in a dev checkout. The first GitHub
+Actions runs (2026-10-19) failed where every local run passed, because
+`.claude/hooks/read-only-roots.txt` is gitignored: rendered in a dev checkout, absent in CI.
+No guard is stricter; nothing to migrate.
+
+- **check_docs: a reference to a gitignored path is never stale** (`scripts/check_docs.jl`).
+  A reference that does not resolve is asked of `git check-ignore --no-index` (as a file and as
+  a directory, against each root it may resolve in); if git ignores it, it is machine-local and
+  passes. 0.2.4 reported `missing .claude/hooks/read-only-roots.txt` for every doc naming it in
+  a fresh clone (CI of the coordinator: HANDOFF.md, factory/CHANGELOG.md, factory/README.md; of
+  a package: HANDOFF.md, changelog.d) and passed in a dev checkout. The gitignore decides, not
+  a name list, so Manifests and `.lanes/` are covered the same way. New blind spot in
+  `.agents/checks.toml`: a typo that still matches an ignore pattern passes. The new test failed
+  on the 0.2.4 tree (2 failed, 1 errored) and passes now.
+- **gen.jl tests are hermetic** (`scripts/test/test_gen.jl`). `gen_sandbox` copied the host's
+  gitignored `.agents/factory.local.toml` and rendered `read-only-roots.txt` when present, so the
+  drift test (`--check` must fail after `read_only_roots` changes) passed only where the roots
+  file existed: in a fresh clone `--check` skips the absent local output and reported OK
+  (CI of a package: `test_gen.jl:91`, `Evaluated: !(first((true, "gen.jl --check: OK (30 files)\n")))`).
+  The sandbox now drops both and renders the roots file from the committed config alone; the
+  test also checks that an absent roots file is skipped, not reported missing. A full template
+  run in a fresh clone of the coordinator found no other test that depends on gitignored files
+  (1345/1346 on 0.2.4, the one failure being this test).
+- Template tests: 1353/1353 on Julia 1.13.2 and 1.10.12 in a dev checkout (1346 in 0.2.4). A
+  package bootstrapped from 0.2.5 into an empty repo, committed and cloned afresh (no local
+  files), passes `scripts/ci.jl guards`, including a doc that names the roots file.
+
 ## 0.2.4 (2026-10-19)
 
 Gates that hold when an agent works around them: T3 paths guarded through Bash, the gate's own

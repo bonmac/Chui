@@ -8,6 +8,8 @@
 #   - backticked repo paths (tokens starting with a known top-level directory such as
 #     `scripts/`, `docs/`, `.claude/`) exist, relative to the repo root.
 # Skipped: URLs, anchors, and tokens with placeholders (< > * { } $ YYYY ...).
+# A reference to a gitignored path (`git check-ignore`) never counts as stale: such a path is
+# machine-local, present in a dev checkout and absent in a fresh clone or CI (0.2.5).
 # --external lists paths provided by someone else (e.g. the lead copies docs/agent/*.md).
 # Repo-owned settings live in .agents/factory.toml [check_docs] (seeded per profile):
 #   exclude        globs of Markdown files not checked (e.g. "research/**")
@@ -34,6 +36,15 @@ const CONVENTIONS = Set(["src", "ext", "benchmark/benchmarks.jl", "test/snapshot
 placeholder(t) = occursin(r"[<>*{}$|]|YYYY|\.\.\.", t)
 
 """
+True when `rel` (relative to the checkout `root`) is a path git ignores, as a file or as a
+directory. Such a path is machine-local (`.claude/hooks/read-only-roots.txt`, a Manifest): it
+exists in a dev checkout and not in a fresh clone, so its presence cannot decide staleness
+(0.2.5). Asked only for a reference that does not resolve; false outside a git checkout.
+"""
+gitignored(root, rel) = !startswith(rel, "..") &&
+    any(p -> git(root, "check-ignore", "-q", "--no-index", "--", p) !== nothing, (rel, rel * "/"))
+
+"""
 Return (line, reference) pairs in `text` that fail to resolve. `external` holds exact paths or
 globs; `also` lists further directories a backticked path (not a link) may resolve against.
 """
@@ -41,7 +52,8 @@ function stale(root, mdrel, text; external = Set{String}(), ignore_fenced = fals
     bad = Tuple{Int, String}[]
     # `dir/*` also covers a bare `dir/` reference (it is rstripped to `dir` below)
     ext(rel) = rel in external || any(g -> occursin('*', g) && (globmatch(g, rel) || globmatch(g, rel * "/")), external)
-    exists(rel; roots = [root]) = ext(rel) || rel in CONVENTIONS || any(r -> ispath(joinpath(r, rel)), roots)
+    exists(rel; roots = [root]) = ext(rel) || rel in CONVENTIONS || any(r -> ispath(joinpath(r, rel)), roots) ||
+                                  any(r -> gitignored(root, relpath(joinpath(r, rel), root)), roots)
     fence = nothing # the opening fence (``` or ~~~, possibly longer) while inside a block
     for (n, line) in enumerate(split(text, '\n'))
         if ignore_fenced

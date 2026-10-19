@@ -71,6 +71,26 @@
         @test occursin("4 stale", capture(() -> CheckDocs.main(["--root", r]))[2])
     end
 
+    @testset "references to gitignored (machine-local) paths are not stale (0.2.5)" begin
+        # a fresh clone lacks gitignored files; CI on bonmac/Chui failed on `.claude/hooks/read-only-roots.txt`
+        r = tmp_repo(Dict(".gitignore" => "/.claude/hooks/read-only-roots.txt\n/.lanes/\n/Manifest*.toml\n",
+                          "README.md" => "`.claude/hooks/read-only-roots.txt` `.lanes/evidence/` `scripts/gone.jl`\n" *
+                                         "[m](Manifest.toml) [g](scripts/ghost.jl)\n",
+                          "factory/MANIFEST.toml" => "version = 1\n", "factory/template/.gitignore" => "/scripts/local.txt\n",
+                          "factory/template/scripts/x.jl" => "",
+                          "factory/README.md" => "`scripts/local.txt` `.claude/hooks/read-only-roots.txt` `scripts/nope.jl`\n"))
+        @test !isfile(joinpath(r, ".claude/hooks/read-only-roots.txt"))       # as in a fresh clone
+        rc, out = capture(() -> CheckDocs.main(["--root", r]))
+        @test rc == 1 && occursin("3 stale", out) && occursin("README.md:1: missing `scripts/gone.jl`", out) &&
+              occursin("README.md:2: missing `scripts/ghost.jl`", out) && occursin("factory/README.md:1: missing `scripts/nope.jl`", out)
+        @test !occursin("read-only-roots", out) && !occursin("Manifest", out) && !occursin(".lanes", out)
+        # the gitignore decides, not the file name: unignored, the same reference is stale again
+        commit!(r, Dict(".gitignore" => "/.lanes/\n"))
+        rc, out = capture(() -> CheckDocs.main(["--root", r]))
+        @test rc == 1 && occursin("README.md:1: missing `.claude/hooks/read-only-roots.txt`", out)
+        @test !CheckDocs.gitignored(mktempdir(), ".lanes")                    # not a git checkout: never ignored
+    end
+
     if IN_FACTORY
         # the template itself has no stale references (docs/agent/* are copied in by the lead).
         # Only here: in a vendored repo the repo-wide run is `ci.jl guards`'s own check_docs step,

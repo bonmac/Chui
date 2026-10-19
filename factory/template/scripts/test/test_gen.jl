@@ -1,6 +1,12 @@
 using TOML
 
-"Copy only the generator's sources and outputs into a scratch dir."
+"""
+Copy only the generator's sources and outputs into a scratch dir. Hermetic (0.2.5): the host's
+gitignored, machine-local files (`.agents/factory.local.toml`, the rendered
+`.claude/hooks/read-only-roots.txt`) exist in a dev checkout and not in a fresh clone, so they are
+dropped and the roots file is re-rendered from the committed config alone. A sandbox looks the
+same in every checkout.
+"""
 function gen_sandbox(root = ROOT)
     d = mktempdir()
     for rel in (".agents", ".claude/agents", ".codex/agents", ".claude/hooks", "CLAUDE.md", "AGENTS.md",
@@ -10,13 +16,16 @@ function gen_sandbox(root = ROOT)
         mkpath(dirname(joinpath(d, rel)))
         cp(src, joinpath(d, rel))
     end
+    rm(joinpath(d, ".agents/factory.local.toml"); force = true)
+    for rel in Gen.LOCAL_OUTPUTS
+        write(joinpath(d, rel), Gen.outputs(d)[rel])
+    end
     return d
 end
 quiet_check(d) = capture(() -> Gen.check(d))
 "A gen sandbox whose factory.toml requires no read-only roots, whatever the host checkout says (0.2.4)."
 function gen_sandbox_noroots(root = ROOT)
-    d = gen_sandbox(root)
-    rm(joinpath(d, ".agents/factory.local.toml"); force = true)   # machine-local roots (a coordinator has them)
+    d = gen_sandbox(root)                                          # machine-local files already dropped
     write(joinpath(d, ".agents/factory.toml"), "version = 1\n[bash_guard]\nread_only_roots = []\nrequire_read_only_roots = false\n")
     return d
 end
@@ -88,7 +97,14 @@ end
         d = gen_sandbox()
         cfg = joinpath(d, ".agents/factory.toml")
         write(cfg, "version = 1\n[bash_guard]\nread_only_roots = [\"~/ref/a/\", \"/abs/b\"]\n")
-        @test !first(quiet_check(d))                                   # drifted until regenerated
+        roots = joinpath(d, ".claude/hooks/read-only-roots.txt")
+        @test isfile(roots)                                            # gen_sandbox rendered it (0.2.5)
+        ok, out = quiet_check(d)
+        @test !ok && occursin("drifted  .claude/hooks/read-only-roots.txt", out)   # drifted until regenerated
+        # a fresh clone has no roots file (gitignored): --check skips it rather than reporting it missing
+        mv(roots, roots * ".bak")
+        @test first(quiet_check(d))
+        mv(roots * ".bak", roots)
         capture(() -> Gen.write_all(d))
         txt = read(joinpath(d, ".claude/hooks/read-only-roots.txt"), String)
         @test occursin("GENERATED", txt) && occursin("\n~/ref/a\n/abs/b\n", txt)   # trailing / dropped
