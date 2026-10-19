@@ -5,6 +5,7 @@ T3 .claude/settings.json
 T3 .claude/hooks/*
 T3 .agents/agent-registry.toml
 T3 .agents/factory.toml
+T3 .agents/factory.local*
 T3 .agents/bodies/*
 T3 .agents/checks.toml
 T3 .claude/agents/*

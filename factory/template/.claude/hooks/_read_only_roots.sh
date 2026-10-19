@@ -20,6 +20,11 @@ if [ -f "$HOOKS_DIR/read-only-roots.txt" ]; then
             l = tolower(c); u = toupper(c); o = o (l != u ? "[" l u "]" : c) } print o }')
     fi
 fi
+# The roots file is gitignored (0.2.3: it may name private paths, from .agents/factory.local.toml).
+# READ_ONLY_ROOTS_REQUIRED=1 (limits.env, from require_read_only_roots) with no roots means it was
+# never generated on this machine: bash_guard fails closed (RO_MISSING) except for gen.jl itself.
+RO_MISSING=""
+[ "${READ_ONLY_ROOTS_REQUIRED:-0}" != 1 ] || [ -n "$RO_ROOTS" ] || RO_MISSING=1
 
 # in_read_only ABS: true if ABS is inside a read-only root; sets RO_HIT to that root's glob.
 in_read_only() {

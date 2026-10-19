@@ -9,13 +9,15 @@ version = 1
 # less, grep, rg, find (no -exec/-delete), ls, wc, stat, file, cd/pwd, and git
 # log/show/diff/status/blame/ls-files. Anything else whose working directory (cwd, a tracked
 # `cd`, `git -C`, `make -C`, `uv --directory/--project`, `julia --project=`) is inside one is
-# blocked. Rendered into .claude/hooks/read-only-roots.txt by scripts/gen.jl.
-# The reference repos of research/reference-projects.md: read them, never run anything there.
-read_only_roots = [
-  "~/reference-project-a",
-  "~/reference-project-b",
-  "~/reference-project-c",
-]
+# blocked. Rendered into .claude/hooks/read-only-roots.txt by scripts/gen.jl, merged with the
+# read_only_roots of .agents/factory.local.toml. Both that file and the rendered one are
+# gitignored: list private reference repos THERE, never here (this file is committed):
+#   # .agents/factory.local.toml (machine-local; T3 for agents)
+#   [bash_guard]
+#   read_only_roots = ["~/path/to/reference-repo"]
+read_only_roots = []
+# The coordinator always has reference repos: with no roots generated, bash_guard fails closed.
+require_read_only_roots = true
 
 [check_docs]
 # research/, reference/ and prompts/ quote paths of the reference projects and of the

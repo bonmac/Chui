@@ -5,6 +5,117 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.3 (2026-10-19)
+
+Security fixes from the second guard review (guard-rereview), plus three follow-ups from the L0
+checkpoint: no private project names in the factory, AirspeedVelocity benchmarks and a seeded
+LICENSE (ADR-0011). Template tests: 1006/1006 on Julia 1.13.2 and 1.10.12 (807 in 0.2.2).
+guard-rereview's 270 payloads: 260/270 under both sh and dash (the 10 misses are listed below).
+142 new payloads: 141/142 (the miss is a push dry-run, which needs `FACTORY_ALLOW_PUSH`).
+**Stricter guard**: `rm -rf $TMPDIR/...` no longer passes, and `eval` is blocked. The CHANGELOG
+rule says a stricter guard bumps the minor version; the lead chose 0.2.3. New T3 file and
+manual edits: read the migration notes.
+
+- **bash_guard M1: `rm -rf` accepts only LITERAL absolute scratch paths.** 0.2.2 trusted
+  `$TMPDIR/...` unless the command contained `TMPDIR=`, so `unset TMPDIR`, `read TMPDIR`,
+  `printf -v TMPDIR`, `for TMPDIR in /` (and `eval`, `source`, the user's profile) turned it into
+  `rm -rf /opt`. The hook cannot know the command shell's TMPDIR, so no `$TMPDIR` form passes. A
+  target ending in `/` or `/.`, or holding `{`, is refused too. `outside()` expands `$TMPDIR` to
+  the hook's own value, so it is never read as a relative path.
+- **bash_guard M2: the command name is found the way the shell finds it.** A new library,
+  `.claude/hooks/_bash_guard_cmd.sh` (`check_cmd`), skips shell keywords
+  (`if then else elif while until do ! { }`), assignments, leading redirections and wrappers
+  with their options (`env sudo doas nice time timeout N xargs caffeinate exec nohup builtin
+  command`). `find -exec/-execdir/-ok/-okdir CMD` is checked as CMD (every one of them). Quote
+  characters and backslashes are dropped from words (`'rm'`, `"rm"`, `\rm`, `r\m` read `rm`).
+  A command name containing `$` or a backtick (`$RM`, `` `echo rm` ``, `rm${IFS}-rf`) is
+  blocked, and so is `eval`. `ls | xargs rm -rf` (no visible target) is blocked. A wrapper inside
+  a read-only root is denied, as before.
+- **bash_guard M3: heredocs are detected in the quote-aware splitter.** `<<WORD` counts only
+  when it is unquoted, outside a comment, outside `$((...))`/`((...))` and not `<<<`.
+  `echo 'see <<EOF'` NL `git reset --hard` hid every later line from every check in 0.2.2. A
+  body that is never terminated is checked as commands after all, and a body starts only after
+  the line's quotes close. The denylist now reads the splitter's output, so `"git" reset --hard`,
+  `git push "--force"` and `"$(git reset --hard)"` are caught.
+- **m1: more write tools are modelled**: `>|`, `>"$HOME"/x`, `sed -i`/`-i.bak`/`--in-place`,
+  `perl -i`/`-pi`, `cp`/`ln`/`install -t`/`--target-directory`, `curl -o`, `wget -O/-P`,
+  `tar -x ... -C`, `unzip -d`, `find -delete` and `-fprint`, `git init DIR`, `git clone URL DIR`
+  and `git worktree add DIR`. Tools that are still not modelled are listed in
+  `checks.toml`.
+- **m2:** `git --git-dir DIR` / `--git-dir=DIR` / `--work-tree DIR` / `--work-tree=DIR` name the
+  repository like `-C`, both for read-only roots and for mutating git outside the root. The
+  denylist's git-options pattern also skips them.
+- **m3:** backslash-newline is joined before any check (`git reset \` NL `--hard`).
+- **m4: dispatch_limit no longer fails open on a malformed ledger.** It reads the ledger with
+  `jq -R 'fromjson?'`, so a bad or truncated line is skipped instead of making the count 0. A
+  jq error or a non-numeric count now blocks. precompact reads it the same way.
+- Speed: one awk now does the splitting, the heredocs and the denylist input (0.2.2 used awk,
+  sed and awk). 45 ms per call (70 ms in 0.2.2) and 63 ms with 3 roots and 6 segments
+  (`hook start-up cost` test). A command over 64 KiB is refused: a 288 KB one took 6 s, close to
+  the 10 s hook timeout, which fails OPEN; the worst case under the cap measured about 4 s
+  (11k `mkdir` operands; one fork each). Hook sizes: bash_guard 79 lines, `_bash_guard_lib.sh` 147,
+  `_bash_guard_cmd.sh` 150, `_read_only_roots.sh` 66; the 150-line ratchet holds.
+- **No private project names (public repos).** Test payloads use fixture roots
+  (`~/ro-fixture/ref-a`, `/tmp/ro-fixture/ref-b`, `~/ro-fixture/ref-c`), with the same cases.
+  Read-only roots can also come from **`.agents/factory.local.toml`** (only
+  `[bash_guard] read_only_roots`; T3 for agents through the `risk.toml` glob
+  `.agents/factory.local*`). `gen.jl` merges and deduplicates it into
+  `.claude/hooks/read-only-roots.txt`. Both files are gitignored by the seeded `.gitignore`, and
+  `gen.jl --check` skips the rendered roots file when it is absent. The new key
+  `require_read_only_roots` (rendered into `limits.env` as `READ_ONLY_ROOTS_REQUIRED`) makes
+  bash_guard fail closed while no root is rendered. Only `julia scripts/gen.jl` (and
+  `--check`) still run, so the file can be regenerated. The coordinator profile seeds
+  `read_only_roots = []`, `require_read_only_roots = true` and a pointer to the local file.
+- **Benchmark.yml uses AirspeedVelocity and is warning-only** (ADR-0011):
+  `MilesCranmer/AirspeedVelocity.jl@action-v1` with `job-summary: 'true'` (no PR-comment
+  permission), and `continue-on-error: true`. Inputs were read from the action's `action.yml` on
+  2026-10-19. UNVERIFIED: whether the action fails on a slowdown, and whether the registry added
+  by `ci.jl setup` survives the action's own setup-julia. To make it blocking later (a T3 edit
+  recorded in the repo's CHANGELOG): drop `continue-on-error` and add
+  `julia scripts/ci.jl bench -- --base origin/<default>`. `scripts/bench.jl` stays for that and
+  as the local runner, since it enforces `ratchets.toml` `bench.time_tolerance`.
+- **`LICENSE` is seeded** (MIT, both profiles) with `<YEAR>` and `<COPYRIGHT HOLDER>` to fill in at
+  scaffold time. Seeded means a repo that already has a LICENSE keeps it.
+- `checks.toml`: the bash_guard blind spots are rewritten. They cover variable write targets,
+  the list of modelled write tools and wrappers, the heredoc rule, and symlinks and other
+  projects' scratch dirs in the `rm -rf` rule.
+
+Review: a first read-only reviewer stalled before running anything. That lane failed, and its
+work was not counted. A second reviewer ran 70 attack payloads, all of which gave rc 0 or 2
+under both sh and dash. It confirmed two denylist bypasses that were already there in 0.2.2,
+both fixed here with tests: `git clean --force` (and a late `-f`, as in `git clean -x -d -f`),
+and `git commit -n`/`-nm` (short for `--no-verify`). It held: wrapper options, quote and escape
+desyncs, CR, CRLF and tabs, process substitution, case patterns, and name evasion. The 64 KiB
+cap came from probing its untested fail-open class. Left open, outside the guard's stated
+rules: `git reset --merge`/`--keep`, `git checkout -- .` and `git restore .`.
+
+Not fixed, and why (guard-rereview harness misses): `echo x #'; rm -rf /opt/x` is a comment in
+bash, so the harness expectation is wrong. The three `$TMPDIR` allow cases are blocked on
+purpose (M1). `julia --project <space>DIR` makes DIR the script, not the project. Symlinked
+targets (`ln -s / l && rm -rf l/opt`) and another project's scratch dir of the same uid are
+documented blind spots. `git push --force-with-lease` needs `FACTORY_ALLOW_PUSH`, which the
+harness does not set.
+
+### Migration from 0.2.2
+
+The sync writes these T3 files in every repo: `.claude/hooks/_bash_guard_cmd.sh` (new),
+`_bash_guard_lib.sh`, `_read_only_roots.sh`, `bash_guard.sh`, `dispatch_limit.sh`,
+`precompact.sh`, `.agents/checks.toml`, `.factory-version`, and in packages
+`.github/workflows/Benchmark.yml`. It also writes `scripts/_common.jl`, `scripts/gen.jl` and
+`scripts/check_docs.jl` (which treats `.agents/factory.local.toml` as external); these are T3
+once 0.2.2's `risk.toml` edit is made. And it writes `scripts/test/{runtests,test_hooks,
+test_bash_guard,test_gen,test_sync_factory}.jl`. It seeds `LICENSE` where missing. Then, by
+hand (T3: the user, or `FACTORY_ALLOW_T3=1`), run `julia scripts/gen.jl` and:
+
+- every repo, `.gitignore` (seeded): add `/.agents/factory.local.toml` and
+  `/.claude/hooks/read-only-roots.txt`, then `git rm --cached .claude/hooks/read-only-roots.txt`.
+- every repo, `risk.toml`: add `".agents/factory.local*"` to the T3 globs.
+- the coordinator, `.agents/factory.toml`: move the `read_only_roots` entries into a new
+  `.agents/factory.local.toml` (`[bash_guard] read_only_roots = [...]`), set
+  `read_only_roots = []` and add `require_read_only_roots = true`. Then run `julia scripts/gen.jl`.
+- a seeded `LICENSE`: replace `<YEAR>` and `<COPYRIGHT HOLDER>` (packages that already had one
+  keep theirs).
+
 ## 0.2.2 (2026-10-19)
 
 Fixes found by the three package scaffolds (ChuiCore, ChuiTypes, ChuiFrames) and the coordinator
@@ -108,7 +219,7 @@ contract-usage check (S6). No hook, `settings.json` or workflow changes: the onl
 
 - **Tests are hermetic across profiles.** The "package profile seeds no roots" hook test uses its
   own empty roots file instead of the checkout's generated `read-only-roots.txt` (the
-  coordinator's lists reference-project-b). The repo-wide `check_docs.jl` run and the template's
+  coordinator's lists a read-only reference repo). The repo-wide `check_docs.jl` run and the template's
   `test/contracts/` checks (seeded `USED.md` lists nothing, `upstreams.toml` has
   `[contract_files]`) run only in `factory/template`; a vendored repo already runs both
   scripts on itself in `ci.jl guards`, under its own settings.
@@ -150,8 +261,8 @@ Fixes found while vendoring the coordinator profile.
   log/show/diff/status/blame/ls-files. The run directory is the payload cwd, a tracked
   `cd`/`pushd`, `git -C`, `make -C/--directory`, `uv --directory/--project`, or
   `julia --project=`. Catches the 2026-10-19 incident
-  (`cd ~/reference-project-b && uv run ...`). The package profile seeds no roots; the
-  coordinator seeds reference-project-a, reference-project-b and reference-project-c.
+  (`cd <a read-only reference repo> && uv run ...`). The package profile seeds no roots; the
+  coordinator seeds its three read-only reference repos.
 - Review fixes (in the same release): `2>&1`/`>&2`/`&>` are no longer split as command
   separators; `git -c a=b -C dir ...` and `git --no-pager -C dir ...` are seen by both the
   read-only and the outside-root checks, and the denylist sees through git global options

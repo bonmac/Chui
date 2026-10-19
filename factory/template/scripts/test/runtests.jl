@@ -52,6 +52,7 @@ end
     t0 = time()
     include("test_gen.jl")
     include("test_hooks.jl")
+    include("test_bash_guard.jl")
     include("test_dod.jl")
     include("test_ratchet.jl")
     include("test_check_docs.jl")

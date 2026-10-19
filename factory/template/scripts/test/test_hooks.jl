@@ -10,9 +10,9 @@ bash(cmd; cwd = "") = "{\"session_id\":\"s1\",\"cwd\":\"$(json(cwd))\",\"tool_in
 write_payload(path; key = "file_path") = "{\"session_id\":\"s1\",\"tool_input\":{\"$key\":\"$(json(path))\"}}"
 blocked(name, payload, root; kw...) = hook(name, payload, root; kw...)[1] == 2
 const OUT = "/opt/factory-test-outside" # a path outside every allowed location
-# the coordinator profile's reference repos (factory/profiles/coordinator/.agents/factory.toml)
-const REF_ROOTS = ["~/reference-project-a", "~/reference-project-b",
-                   "~/reference-project-c"]
+# fixture reference repos (never created): a ~ path, an absolute one, another ~ path
+const REF_ROOTS = ["/tmp/ro-fixture/ref-b", "~/ro-fixture/ref-a",
+                   "~/ro-fixture/ref-c"]
 "A copy of the hooks with `roots` as the generated read-only-roots.txt."
 function hooks_with_roots(roots)
     h = joinpath(mktempdir(), "hooks")
@@ -78,34 +78,34 @@ end
     @testset "bash_guard: read-only roots allow only read-only commands" begin
         h = hooks_with_roots(REF_ROOTS)
         ro(c; cwd = root) = hook("bash_guard.sh", bash(c; cwd), root; hooks = h)
-        mt = "~/reference-project-b"
-        # the 2026-10-19 incident: a lane re-synced reference-project-b's .venv this way
-        rc, _, err = ro("cd ~/reference-project-b && uv run python -m pytest -q")
+        mt = "~/ro-fixture/ref-a"
+        # the 2026-10-19 incident: a lane re-synced a reference repo's .venv this way
+        rc, _, err = ro("cd ~/ro-fixture/ref-a && uv run python -m pytest -q")
         @test rc == 2 && occursin("read-only reference root", err) && occursin("`uv`", err)
         for c in ("cd $mt && uv sync", "cd $mt; make test", "cd $mt && julia --project -e 1",
                   "cd $mt && git checkout main", "cd $mt && git pull", "cd $mt && git -c x=y fetch",
                   "git -C $mt checkout -b x", "git -C $mt fetch", "git -C $mt stash list",
-                  "make -C ~/reference-project-a all", "make --directory=$mt", "make -C$mt",
-                  "uv --directory ~/reference-project-a run x", "uv run --project $mt x",
+                  "make -C /tmp/ro-fixture/ref-b all", "make --directory=$mt", "make -C$mt",
+                  "uv --directory /tmp/ro-fixture/ref-b run x", "uv run --project $mt x",
                   "uv run --directory=$mt x", "uvx --directory $mt ruff", "julia --project=$mt -e 'using Pkg; Pkg.instantiate()'",
-                  "cd \$HOME/reference-project-b && python x.py", "cd \"$mt\" && npm install",
+                  "cd \$HOME/ro-fixture/ref-a && python x.py", "cd \"$mt\" && npm install",
                   "cd $mt/sub/dir && touch notes", "cd $mt && find . -name '*.pyc' -delete",
                   "cd $mt && find . -exec rm {} +", "cd $mt && ls | xargs cat", "cd /tmp && cd $mt && sh run.sh",
-                  "pushd ~/reference-project-c && Rscript a.R")
+                  "pushd ~/ro-fixture/ref-c && Rscript a.R")
             @test ro(c)[1] == 2 || (println("not blocked: $c"); false)
         end
         for c in ("cd $mt && ls -la && git log -3 && git status", "git -C $mt log -1", "git -C $mt --no-pager show HEAD",
                   "git -C $mt diff HEAD~1", "git -C $mt blame README.md", "git -C $mt ls-files",
                   "cat $mt/README.md | head -20", "rg -n foo $mt", "grep -r foo $mt/src", "find $mt -name '*.py'",
                   "cd $mt && wc -l *.py && stat x && file y && tail z && less w && pwd",
-                  "cd $mt && cd - && ls", "cd ~/reference-project-b-other && uv run x",
+                  "cd $mt && cd - && ls", "cd ~/ro-fixture/ref-a-other && uv run x",
                   "uv run python -c 1", "make -C sub all", "cd $mt && cd $root && uv run x",
-                  "git log -1 -- ~/reference-project-b")
+                  "git log -1 -- ~/ro-fixture/ref-a")
             @test ro(c)[1] == 0 || (println("blocked: $c ", ro(c)[3]); false)
         end
         # review round 2 (0.2.0): global options before -C, cd flags, case, env -C, fd duplication
         for c in ("git -c a=b -C $mt commit -m x", "git --no-pager -C $mt commit", "cd -P $mt && make",
-                  "cd -L $mt && make", "cd ~/Reference-Project-B && make", "env -C $mt make",
+                  "cd -L $mt && make", "cd ~/RO-Fixture/Ref-A && make", "env -C $mt make",
                   "env FOO=1 --chdir=$mt make", "cd $mt && git log 2>&1 | head && uv sync")
             @test ro(c)[1] == 2 || (println("not blocked: $c"); false)
         end
@@ -117,7 +117,7 @@ end
         @test ro("uv sync"; cwd = expanduser(mt))[1] == 2
         @test ro("ls"; cwd = expanduser(mt))[1] == 0
         # the package profile seeds no roots: the same commands pass. Hermetic: an empty roots file,
-        # not the checkout's generated one (a coordinator checkout lists reference-project-b there)
+        # not the checkout's generated one (a coordinator checkout lists its reference repos there)
         @test !blocked("bash_guard.sh", bash("cd $mt && uv run x"), root; hooks = hooks_with_roots(String[]))
     end
 
@@ -153,8 +153,8 @@ end
             @test blocked("bash_guard.sh", bash(c; cwd = root), root) || (println("not blocked: $c"); false)
         end
         h = hooks_with_roots(REF_ROOTS)                                    # (B1) with a read-only root
-        @test hook("bash_guard.sh", bash("echo \"\$(cd ~/reference-project-b && make install)\""; cwd = root), root; hooks = h)[1] == 2
-        @test hook("bash_guard.sh", bash("# don't\ncd ~/reference-project-b && uv sync"; cwd = root), root; hooks = h)[1] == 2
+        @test hook("bash_guard.sh", bash("echo \"\$(cd ~/ro-fixture/ref-a && make install)\""; cwd = root), root; hooks = h)[1] == 2
+        @test hook("bash_guard.sh", bash("# don't\ncd ~/ro-fixture/ref-a && uv sync"; cwd = root), root; hooks = h)[1] == 2
     end
 
     @testset "bash_guard: rm -rf only on absolute scratch paths (0.2.2)" begin
@@ -163,9 +163,13 @@ end
         u = readchomp(`id -u`)
         sc = "/private/tmp/claude-$u/proj/sess"                           # this user's session scratch
         for c in ("rm -rf $sc/scratchpad/x", "rm -rf /tmp/claude-$u/proj/sess/x", "rm -rf /fake-tmpdir/T/x",
-                  "rm -rf \"\$TMPDIR/x\"", "rm -rf \${TMPDIR}/x", "rm -rf \"\$TMPDIR\"/x", "rm -rf \"\${TMPDIR}\"/x",
                   "rm -fr /private/fake-tmpdir/T/x /fake-tmpdir/T/a/../b", "rm -r -f $sc/a $sc/b", "rm -rf $sc/x/*")
             @test !rmb(c) || (println("blocked: $c"); false)
+        end
+        # 0.2.3 (M1): no $TMPDIR form passes any more; the command shell's TMPDIR is unknowable
+        for c in ("rm -rf \"\$TMPDIR/x\"", "rm -rf \${TMPDIR}/x", "rm -rf \"\$TMPDIR\"/x", "rm -rf \"\${TMPDIR}\"/x",
+                  "rm -rf \$TMPDIR/x", "rm -rf $sc/x/", "rm -rf $sc/x/.", "rm -rf $sc/{x,..}")
+            @test rmb(c) || (println("not blocked: $c"); false)
         end
         for c in ("rm -rf build", "rm -rf", "rm -rf /private/tmp/claude-$u", "rm -rf /tmp/claude-$u/",
                   "rm -rf /private/tmp/claude-$u/proj", "rm -rf /private/tmp/claude-$u/proj/sess",
@@ -187,7 +191,7 @@ end
     end
 
     @testset "guards fail CLOSED when a sourced library is missing (0.2.2)" begin
-        for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh")
+        for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh", "_bash_guard_cmd.sh")
             h = joinpath(mktempdir(), "hooks"); cp(HOOKS, h); rm(joinpath(h, lib))
             rc, _, err = hook("bash_guard.sh", bash("ls"), root; hooks = h)
             @test rc == 2 && occursin("missing", err)
@@ -229,7 +233,7 @@ end
                 @test issubset(gate, t3) || (println("$f misses ", setdiff(gate, t3)); false)
                 @test !occursin("docs/adr/", read(f, String))                     # adr_dir is a profile parameter
             end
-            for rel in (".agents/bodies/reviewer.md", ".agents/checks.toml", ".claude/agents/critic.md",
+            for rel in (".agents/bodies/reviewer.md", ".agents/checks.toml", ".claude/agents/critic.md", ".agents/factory.local.toml",
                         "scripts/dod.jl", "scripts/ratchet.jl", "scripts/gen.jl", "scripts/check_docs.jl",
                         "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl")
                 @test blocked("write_guard.sh", write_payload("$root/$rel"), root) || (println("not blocked: $rel"); false)
@@ -282,6 +286,13 @@ end
         r3 = realpath(mktempdir())
         hook("lane_ledger.sh", nosess, r3)
         @test hook("dispatch_limit.sh", "{\"tool_input\":{}}", r3; env = Dict("FACTORY_MAX_OPEN_LANES" => "1"))[1] == 2
+        # 0.2.3 (m4): a malformed or truncated ledger line is skipped; 0.2.2 counted 0 lanes (fail open)
+        r4 = realpath(mktempdir())
+        hook("lane_ledger.sh", ev("SubagentStart", "b1"), r4)
+        hook("lane_ledger.sh", ev("SubagentStart", "b2"), r4)
+        open(io -> print(io, "garbage{\n{\"ts\":\"t\",\"ev\":\"sta"), joinpath(r4, ".lanes/ledger.jsonl"), "a")
+        @test hook("dispatch_limit.sh", spawn, r4; env = cap)[1] == 2
+        @test hook("dispatch_limit.sh", spawn, r4; env = Dict("FACTORY_MAX_OPEN_LANES" => "3"))[1] == 0
         # default cap comes from limits.env (generated from the registry)
         @test occursin("MAX_OPEN_LANES=", read(joinpath(HOOKS, "limits.env"), String))
     end
@@ -339,7 +350,7 @@ end
         println("bash_guard.sh: $(round(1000t / n; digits = 1)) ms per call (n=$n)")
         @test t / n < 0.5
         h = hooks_with_roots(REF_ROOTS)
-        c = "cd ~/reference-project-b && git log -3 && ls -la | head && cd $root && git status && echo x > out.txt"
+        c = "cd ~/ro-fixture/ref-a && git log -3 && ls -la | head && cd $root && git status && echo x > out.txt"
         t = @elapsed for _ in 1:n
             hook("bash_guard.sh", bash(c; cwd = root), root; hooks = h)
         end

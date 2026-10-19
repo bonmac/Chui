@@ -8,8 +8,12 @@ version = 1
 # less, grep, rg, find (no -exec/-delete), ls, wc, stat, file, cd/pwd, and git
 # log/show/diff/status/blame/ls-files. Anything else whose working directory (cwd, a tracked
 # `cd`, `git -C`, `make -C`, `uv --directory/--project`, `julia --project=`) is inside one is
-# blocked. Rendered into .claude/hooks/read-only-roots.txt by scripts/gen.jl.
+# blocked. Rendered into .claude/hooks/read-only-roots.txt by scripts/gen.jl, merged with the
+# read_only_roots of .agents/factory.local.toml (gitignored, like the rendered file): put
+# private paths there, never in this committed file.
 read_only_roots = []
+# true: bash_guard fails closed while no roots are rendered (a fresh clone before gen.jl).
+require_read_only_roots = false
 
 [check_docs]
 # Markdown files (repo-relative) that scripts/check_docs.jl does not check.

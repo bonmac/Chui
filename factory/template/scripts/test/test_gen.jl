@@ -90,6 +90,20 @@ quiet_check(d) = capture(() -> Gen.check(d))
         end
         write(cfg, "version = 1\n[bash_guard]\nreadonly_roots = []\n")  # a typo must not disable the guard
         @test_throws Gen.GenError Gen.outputs(d)
+        # 0.2.3: the gitignored factory.local.toml adds roots (merged, deduplicated); only that key
+        loc = joinpath(d, ".agents/factory.local.toml")
+        write(cfg, "version = 1\n[bash_guard]\nread_only_roots = [\"/abs/b\"]\nrequire_read_only_roots = true\n")
+        write(loc, "[bash_guard]\nread_only_roots = [\"~/private/ref\", \"/abs/b\"]\n")
+        out = Gen.outputs(d)
+        @test occursin("\n/abs/b\n~/private/ref\n", out[".claude/hooks/read-only-roots.txt"])
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=1", out[".claude/hooks/limits.env"])
+        for bad in ("[bash_guard]\nread_only_roots = [\"rel\"]\n", "[bash_guard]\nrequire_read_only_roots = false\n",
+                    "[check_docs]\nexclude = []\n")
+            write(loc, bad)
+            @test_throws Gen.GenError Gen.outputs(d)
+        end
+        rm(loc)
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=0", Gen.outputs(gen_sandbox())[".claude/hooks/limits.env"])
         rm(cfg)                                                        # no config: an empty list
         @test count(l -> !startswith(l, "#"), split(Gen.outputs(d)[".claude/hooks/read-only-roots.txt"], '\n'; keepempty = false)) == 0
     end

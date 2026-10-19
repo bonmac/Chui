@@ -14,6 +14,7 @@ version = 1
 paths = [
   "CLAUDE.md",
   "CHANGELOG.md",
+  "LICENSE",                  # MIT (ADR-0011); fill <YEAR> and <COPYRIGHT HOLDER> at scaffold time
   "HANDOFF.md",
   ".gitignore",
   "risk.toml",

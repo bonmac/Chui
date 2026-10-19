@@ -1,42 +1,74 @@
 # shellcheck shell=sh
-# shellcheck disable=SC2034,SC2154 # RO_GIT is read, and `cwd`/`raw` are set, by bash_guard.sh
+# shellcheck disable=SC2034,SC2154 # RO_GIT is read, and `cwd` is set, by bash_guard.sh
 # _bash_guard_lib.sh: command splitting and path helpers only bash_guard.sh needs (split out in
 # factory 0.2.2: ratchets.toml caps hooks at 150 lines). Sourced after _lib.sh; costs no fork.
 
-# segments (stdin -> stdout): one simple command per line, in one awk (no sed/tr forks).
-# Text inside '...', "..." and $'...' (and a backslashed character) is ONE argument: its blanks
-# and ; & | ( ) < > become _, so a quoted sed expression or commit message is not a redirect or
-# a second command. A "$(...)" or `...` inside double quotes still runs, so it is split like
-# unquoted text. A `#` that starts a word ends the line (a comment: its apostrophes are not
-# quotes). Then 2>&1-style duplications go, &> and >& become >, and ; & | ( ) split.
+# segments (stdin -> stdout): one simple command per line, in one awk (no sed/tr forks). Its
+# output feeds the denylist AND the per-command checks (factory 0.2.3).
+# - Text inside '...', "..." and $'...' (and a backslashed character) is ONE argument: its blanks
+#   and ; & | ( ) < > become _, and quote characters and backslashes are dropped, so 'rm', "rm",
+#   \rm and r\m all read rm, while a quoted message is never a command or a redirect.
+# - A "$(...)" or `...` inside double quotes still runs, so it is split like unquoted text; an
+#   unquoted `...` splits too. A `#` that starts a word ends the line (its apostrophes are not quotes).
+# - Backslash-newline joins lines. A heredoc (<<WORD or <<-WORD, unquoted, not <<< and not inside
+#   $((...)) or ((...))) drops its body; a body never terminated is checked as commands after all.
+# - Then 2>&1-style duplications go, &>, >& and >| become >, and ; & | ( ) split.
 segments() {
-    awk -v SQ="'" 'BEGIN { q = ""; sp = " \t;&|()<>"; b = ""; k = 0 }
-    function out() { gsub(/[0-9]*>&([0-9]+|-)/, "", b); gsub(/&>|>&/, ">", b); gsub(/[;&|()]/, "\n", b); print b; b = "" }
-    { n = length($0)
-      for (i = 1; i <= n; i++) { c = substr($0, i, 1); d = substr($0, i + 1, 1)
+    awk -v SQ="'" 'BEGIN { sp = " \t;&|()<>" }
+    function out() { gsub(/[0-9]*>&([0-9]+|-)/, "", b); gsub(/&>|>&|>\|/, ">", b); gsub(/[;&|()]/, "\n", b); print b; b = "" }
+    function scan(s,   i, n, c, d, w) { n = length(s)
+      for (i = 1; i <= n; i++) { c = substr(s, i, 1); d = substr(s, i + 1, 1)
         if (q == "") { # unquoted: top level, or inside a "$(...)" / "`...`" (t[k] = depth or `)
-          if (c == "\\") { b = b (index(sp "\"#`$" SQ, d) ? "_" : c d); i++ }
-          else if (c == "#" && (i == 1 || index(" \t;&|(", substr($0, i - 1, 1)))) i = n
-          else if (c == "$" && d == SQ) { q = "A"; b = b c d; i++ }
-          else if (c == "\"" || c == SQ) { q = c; b = b c }
+          if (c == "(") { if (ar || d == "(") ar++ } else if (c == ")" && ar) ar-- # ar: arithmetic depth
+          if (c == "\\") { if (i == n) return; b = b (index(sp "\"#`$" SQ, d) ? "_" : d); i++ }
+          else if (c == "#" && (i == 1 || index(" \t;&|(", substr(s, i - 1, 1)))) i = n
+          else if (c == "<" && d == "<" && !ar) {
+            if (substr(s, i + 2, 1) == "<") { b = b "<<<"; i += 2; continue }
+            i += 2; dash = substr(s, i, 1) == "-"; if (dash) i++
+            while (i <= n && index(" \t", substr(s, i, 1))) i++
+            for (w = ""; i <= n && !index(sp, substr(s, i, 1)); i++) if (!index("\"\\" SQ, substr(s, i, 1))) w = w substr(s, i, 1)
+            if (w != "") hd = w; b = b " "; i-- }
+          else if (c == "$" && d == SQ) { q = "A"; b = b c; i++ }
+          else if (c == "\"" || c == SQ) q = c
           else if (k && t[k] == "`" && c == "`") { k--; q = "\""; b = b ";" }
+          else if (c == "`") { bt = !bt; b = b (bt ? "$;" : ";") } # $: an expansion
           else if (k && t[k] != "`" && (c == "(" || c == ")")) {
             t[k] += (c == "(" ? 1 : -1); b = b c; if (t[k] == 0) { k--; q = "\"" } }
           else b = b c }
         else if (c == "\\" && q != SQ) { b = b "__"; i++ }
-        else if ((c == SQ && q != "\"") || (c == "\"" && q == "\"")) { q = ""; b = b c }
+        else if ((c == SQ && q != "\"") || (c == "\"" && q == "\"")) q = ""
         else if (q == "\"" && (c == "`" || (c == "$" && d == "("))) {
-          q = ""; k++; if (c == "`") { t[k] = "`"; b = b ";" } else { t[k] = 1; b = b "$("; i++ } }
+          q = ""; k++; if (c == "`") { t[k] = "`"; b = b ";" } else { t[k] = 1; b = b "$("; i++; if (substr(s, i + 1, 1) == "(") ar = 1 } }
         else b = b (index(sp, c) ? "_" : c) }
-      if (q != "") b = b "_"; else if (k) b = b ";"; else out() }
-    END { if (b != "") out() }'
+      if (q != "") b = b "_"; else { if (k) b = b ";"; else out(); if (hd != "") { body = hd; hd = "" } } }
+    body != "" { l = $0; if (dash) sub(/^\t+/, "", l); if (l == body) { body = ""; nb = 0 } else hb[++nb] = $0; next }
+    { scan($0) }
+    END { if (body != "") { body = ""; for (j = 1; j <= nb; j++) scan(hb[j]) } if (b != "") out() }'
 }
 
 outside() { # outside TOKEN: deny if TOKEN names a path outside the root and scratch dirs
-    _t=${1#[\"\']} && _t=${_t%[\"\']} # no $(unquote): a fork per token
-    case $_t in '' | -* | '&'*) return 0 ;; esac
-    _a=$(abspath "$_t" "$cwd")
+    case $1 in
+        '' | -* | '&'*) return 0 ;;
+        '$TMPDIR' | '$TMPDIR'/*) _t="${TMPDIR%/}${1#'$TMPDIR'}" ;; # never a relative path; unset -> /
+        '${TMPDIR}' | '${TMPDIR}'/*) _t="${TMPDIR%/}${1#'${TMPDIR}'}" ;;
+        *) _t=$1 ;;
+    esac
+    _a=$(abspath "${_t:-/}" "$cwd")
     allowed "$_a" || deny "write outside the repo root blocked: $_a (root: $ROOT). Lanes write only inside their repo; use the scratchpad or \$TMPDIR for temp files."
+}
+
+# optw " -o --output " WORD...: outside() the argument of each listed option (-o F, -oF, --output=F).
+optw() {
+    _o=$1 _p=""
+    shift
+    for _v in "$@"; do
+        if [ -n "$_p" ]; then _p=""; outside "$_v"; continue; fi
+        case $_o in *" $_v "*) _p=1; continue ;; esac
+        case $_v in
+            --*=*) case $_o in *" ${_v%%=*} "*) outside "${_v#*=}" ;; esac ;;
+            -[!-]?*) case $_o in *" ${_v%"${_v#-?}"} "*) outside "${_v#-?}" ;; esac ;;
+        esac
+    done
 }
 
 # scratch ABS: true if ABS is strictly below $TMPDIR, or at least three levels below this
@@ -60,9 +92,10 @@ scratch() {
     return 1
 }
 
-# rm_check ARGS...: `rm -rf` only on ABSOLUTE scratch targets (or $TMPDIR/..., unless the command
-# assigns TMPDIR); a relative target is never trusted, since the tracked cwd can be wrong
-# (bare `cd`, `cd -`, subshells, popd). Every target must be inside the root or scratch.
+# rm_check ARGS...: `rm -rf` only on ABSOLUTE, LITERAL scratch targets (factory 0.2.3: no
+# $TMPDIR form; the hook cannot know the command shell's TMPDIR: unset, read, printf -v, for,
+# eval, source and the user's profile all change it). Never a relative target (the tracked cwd
+# can be wrong), an expansion, a brace list, or a path ending in / or /. (a symlink's target).
 rm_check() {
     _r="" _f="" _n=0 _ok=1
     for _t in "$@"; do
@@ -71,45 +104,44 @@ rm_check() {
             -*) case $_t in *[rR]*) _r=1 ;; esac; case $_t in *f*) _f=1 ;; esac ;;
             *)
                 _n=$((_n + 1))
-                _u=$(unquote "$_t")
-                case $_u in '$TMPDIR'/* | '${TMPDIR}'/* | '$TMPDIR"/'* | '${TMPDIR}"/'*)
-                    case $raw in *TMPDIR=*) _ok="" ;; *) _u="${TMPDIR%/}/${_u#*/}" ;; esac ;;
-                esac
-                case $_u in *'$'* | *'`'*) _ok="" ;; /*) scratch "$(abspath "$_u")" || _ok="" ;; *) _ok="" ;; esac
+                case $_t in *'$'* | *'`'* | *'{'* | */ | */. | */..) _ok="" ;; /*) scratch "$(abspath "$_t")" || _ok="" ;; *) _ok="" ;; esac
                 ;;
         esac
     done
     if [ -n "$_r" ] && [ -n "$_f" ] && { [ "$_n" -eq 0 ] || [ -z "$_ok" ]; }; then
-        deny "rm -rf is blocked except on absolute paths below \$TMPDIR or your session scratchpad (/private/tmp/claude-<uid>/<project>/<session>/). Remove named paths with \`rm -r <path>\`, or ask the lead."
+        deny "rm -rf is blocked except on literal absolute paths below \$TMPDIR or your session scratchpad (/private/tmp/claude-<uid>/<project>/<session>/), not \$TMPDIR/... or a relative path. Remove named paths with \`rm -r <path>\`, or ask the lead."
     fi
     for _t in "$@"; do outside "$_t"; done
 }
 
 RO_GIT=' status log show diff rev-parse ls-files ls-tree grep blame describe cat-file merge-base for-each-ref shortlog reflog '
 
-unquote() { _u=${1#[\"\']}; printf '%s' "${_u%[\"\']}"; }
-# git_dir ARGS...: the last -C DIR among git's global options (empty if none).
+# git_dir ARGS...: the last -C DIR, --git-dir DIR or --work-tree DIR (or =DIR) among git's global
+# options (empty if none): the repository git acts on.
 git_dir() {
     _gd=""
     while [ $# -gt 0 ]; do
-        case $1 in -C) _gd=${2:-}; shift 2 ;; -c | --git-dir | --work-tree | --namespace) shift 2 ;; -*) shift ;; *) break ;; esac
+        case $1 in
+            -C | --git-dir | --work-tree) _gd=${2:-}; shift $(($# > 1 ? 2 : 1)) ;;
+            --git-dir=* | --work-tree=*) _gd=${1#*=}; shift ;;
+            -c | --namespace) shift $(($# > 1 ? 2 : 1)) ;; -*) shift ;; *) break ;;
+        esac
     done
     printf '%s' "$_gd"
 }
 # git_sub ARGS...: git's subcommand after its global options (-C dir, -c k=v, --no-pager, ...).
 git_sub() {
     while [ $# -gt 0 ]; do
-        case $1 in -C | -c | --git-dir | --work-tree | --namespace) shift 2 ;; -*) shift ;; *) break ;; esac
+        case $1 in -C | -c | --git-dir | --work-tree | --namespace) shift $(($# > 1 ? 2 : 1)) ;; -*) shift ;; *) break ;; esac
     done
     printf '%s' "${1:-}"
 }
 # newdir TARGET: the directory `cd TARGET` moves to, or empty if it cannot be known statically.
 newdir() {
-    _d=$(unquote "$1")
-    case $_d in
+    case $1 in
         '' | -) return 0 ;;
         '$HOME' | '${HOME}' | '$HOME/'* | '${HOME}/'*) ;;
         *'$'* | *'`'*) return 0 ;;
     esac
-    abspath "$_d" "$cwd"
+    abspath "$1" "$cwd"
 }

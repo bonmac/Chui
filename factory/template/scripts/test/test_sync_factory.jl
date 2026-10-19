@@ -93,6 +93,8 @@
         @test rc == 0 || (print(out); false)
         rm(joinpath(to, "docs/agent"); recursive = true); rm(joinpath(to, "test/contracts/chui-core.md"))
         @test isfile(joinpath(to, "test/contracts/Project.toml")) && isfile(joinpath(to, "test/contracts/runtests.jl"))
+        lic = read(joinpath(to, "LICENSE"), String)                                # 0.2.3: seeded MIT, to fill in
+        @test startswith(lic, "MIT License") && occursin("<YEAR> <COPYRIGHT HOLDER>", lic) && !haskey(rec["managed"], "LICENSE")
 
         # the coordinator profile skips package-only files, takes its overlay, and keeps ADRs in adr/
         c = tmp_repo()
@@ -103,10 +105,27 @@
         @test crec["adr_dir"] == "adr" && DoD.adr_dir(c) == "adr"
         @test !isdir(joinpath(c, "docs/adr")) && !isdir(joinpath(c, "adr"))      # adr/ is the coordinator's own
         cfg = CheckDocs.factory_config(c)                                          # overlay, seeded
-        @test "~/reference-project-b" in CheckDocs.config_list(cfg, "bash_guard", "read_only_roots")
+        # 0.2.3: no committed roots (they are private); they come from the gitignored factory.local.toml
+        @test isempty(CheckDocs.config_list(cfg, "bash_guard", "read_only_roots")) && cfg["bash_guard"]["require_read_only_roots"]
         @test !haskey(crec["managed"], ".agents/factory.toml")                     # seeded: repo-owned
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=1", read(joinpath(c, ".claude/hooks/limits.env"), String))
         roots = read(joinpath(c, ".claude/hooks/read-only-roots.txt"), String)     # rendered by gen.jl after sync
-        @test occursin("~/reference-project-b\n", roots) && occursin("reference-project-c", roots)
+        @test all(l -> startswith(l, "#"), split(roots, '\n'; keepempty = false))
+        guard(cmd) = run(pipeline(ignorestatus(addenv(`sh $(joinpath(c, ".claude/hooks/bash_guard.sh"))`, "CLAUDE_PROJECT_DIR" => c));
+                                  stdin = IOBuffer(bash(cmd)), stdout = devnull, stderr = devnull)).exitcode
+        @test guard("ls") == 2 && guard("julia scripts/gen.jl") == 0                 # required, none: fails closed
+        write(joinpath(c, ".agents/factory.local.toml"), "[bash_guard]\nread_only_roots = [\"~/ro-fixture/ref-a/\"]\n")
+        capture(() -> Gen.write_all(c))
+        @test occursin("\n~/ro-fixture/ref-a\n", read(joinpath(c, ".claude/hooks/read-only-roots.txt"), String))
+        @test guard("ls") == 0 && guard("cd ~/ro-fixture/ref-a && uv sync") == 2
+        for f in (".agents/factory.local.toml", ".claude/hooks/read-only-roots.txt")   # never committed
+            @test success(pipeline(`git -C $c check-ignore -q --no-index $f`))
+        end
+        rm(joinpath(c, ".claude/hooks/read-only-roots.txt"))
+        @test guard("ls") == 2                                                     # the rendered file missing
+        @test first(capture(() -> Gen.check(c)))                                   # gitignored: --check skips it
+        capture(() -> Gen.write_all(c))
+        rm(joinpath(c, ".agents/factory.local.toml"))
         @test occursin("`adr/0000-template.md`", read(joinpath(c, ".agents/bodies/architect.md"), String))
         @test !occursin("docs/adr/", read(joinpath(c, "CLAUDE.md"), String))      # seeded text rewritten
         @test !occursin("docs/adr/", read(joinpath(c, ".claude/commands/intake.md"), String))

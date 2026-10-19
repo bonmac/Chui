@@ -49,6 +49,7 @@ globs = [
   ".claude/hooks/*",
   ".agents/agent-registry.toml",
   ".agents/factory.toml",
+  ".agents/factory.local*",            # machine-local roots (gitignored)
   # agent rules and the check register: a lane must not delete a body rule or a blind spot
   ".agents/bodies/*",
   ".agents/checks.toml",

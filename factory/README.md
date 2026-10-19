@@ -41,7 +41,11 @@ A `MANIFEST.toml` profile adapts the template to a kind of repo:
 
 `.agents/factory.toml` (seeded, T3) holds the repo's own settings: `[bash_guard]
 read_only_roots` (rendered by `gen.jl` into `.claude/hooks/read-only-roots.txt`; inside those
-directories bash_guard lets only read-only commands run) and `[check_docs]` (`exclude`,
+directories bash_guard lets only read-only commands run) and `require_read_only_roots`. Private
+roots go in `.agents/factory.local.toml` (`[bash_guard] read_only_roots` only), which is
+gitignored like the rendered file, so real paths are never committed; with
+`require_read_only_roots = true` (the coordinator) bash_guard fails closed until `gen.jl` has
+rendered at least one root and `[check_docs]` (`exclude`,
 `external`, `ignore_fenced`). In a checkout that holds the factory (the coordinator),
 `check_docs.jl` also resolves the backticked paths of `factory/*.md` against `factory/template/`,
 since these files describe the template's layout.
@@ -83,20 +87,21 @@ Either way the change lands through a reviewed PR labelled T3.
 |---|---|---|
 | `CLAUDE.md` → `AGENTS.md` | short instructions; AGENTS.md generated | seeded → generated |
 | `.agents/agent-registry.toml`, `.agents/bodies/*.md` | 12 roles: data + prose | seeded / managed |
-| `.agents/factory.toml` → `.claude/hooks/read-only-roots.txt` | read-only roots, check_docs settings | seeded (per profile) → generated |
+| `.agents/factory.toml` (+ `.agents/factory.local.toml`) → `.claude/hooks/read-only-roots.txt`, `limits.env` | read-only roots, check_docs settings; the local file and the roots file are gitignored | seeded (per profile) / local → generated |
 | `.claude/agents/*.md`, `.codex/agents/*.toml` | generated agent files | generated |
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |
 | `.claude/commands/*.md` | intake, lanes, change-review, contract-check, release-check, test-changed | managed |
 | `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules | managed |
-| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_read_only_roots.sh`; guards fail closed if their script or a library is missing | managed |
+| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_read_only_roots.sh`; guards fail closed if their script or a library is missing | managed |
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
+| `LICENSE` | MIT (ADR-0011); replace `<YEAR>` and `<COPYRIGHT HOLDER>` when scaffolding | seeded |
 | `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, contract_usage, ci, bench, lane, sync_factory | managed |
 | `test/contracts/USED.md`, `test/contracts/upstreams.toml` | contract IDs relied on; upstream URLs and contract-file copies | seeded (package) |
 | `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |
 | `test/jet/Project.toml`, `test/jet/runjet.jl` | JET's own environment (`ci.jl jet`, stable only) | seeded (package) |
 | `scripts/test/` | tests for every script and hook | managed |
-| `.github/workflows/*.yml` | CI, Docs, Contracts, Benchmark, Guards, CompatHelper, TagBot | managed |
+| `.github/workflows/*.yml` | CI, Docs, Contracts, Benchmark (AirspeedVelocity, warning-only), Guards, CompatHelper, TagBot | managed |
 | `docs/adr/0000-template.md` | copy of the coordinator's `adr/0000-template.md` (lands in the profile's `adr_dir`) | managed |
 | `../profiles/<profile>/` | overlay files for a profile (outside `template/`): `coordinator`, `package` | per profile |
 
