@@ -83,6 +83,16 @@
 
         @test rec["adr_dir"] == "docs/adr"
         @test isempty(CheckDocs.config_list(CheckDocs.factory_config(to), "bash_guard", "read_only_roots"))
+        # 0.2.2: the package overlay excludes the verbatim copies every package carries
+        pcfg = CheckDocs.factory_config(to)
+        @test CheckDocs.config_list(pcfg, "check_docs", "exclude") == ["docs/agent/*", "test/contracts/*.md"]
+        @test !haskey(rec["managed"], ".agents/factory.toml")                   # seeded: repo-owned
+        mkpath(joinpath(to, "docs/agent")); write(joinpath(to, "docs/agent/ECOSYSTEM.md"), "See `contracts/README.md`.\n")
+        write(joinpath(to, "test/contracts/chui-core.md"), "See `adr/0010-cross-repo-workflow.md`.\n")
+        rc, out = capture(() -> CheckDocs.main(["--root", to, "--external", "docs/agent/*"]))   # CLAUDE.md names them; the lead copies them in
+        @test rc == 0 || (print(out); false)
+        rm(joinpath(to, "docs/agent"); recursive = true); rm(joinpath(to, "test/contracts/chui-core.md"))
+        @test isfile(joinpath(to, "test/contracts/Project.toml")) && isfile(joinpath(to, "test/contracts/runtests.jl"))
 
         # the coordinator profile skips package-only files, takes its overlay, and keeps ADRs in adr/
         c = tmp_repo()

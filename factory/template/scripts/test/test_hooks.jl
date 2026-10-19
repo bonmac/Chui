@@ -131,6 +131,74 @@ end
         @test !blocked("bash_guard.sh", bash("cd $root/sub && touch f"; cwd = root), root)
     end
 
+    @testset "bash_guard: quoted arguments are not redirects or commands (0.2.2)" begin
+        # 0.2.1 read `'s/<Package>/X/g'` as a redirect to /X/g, and split commit messages at `;`
+        for c in ("sed -i '' -e 's/<Package>/X/g' CLAUDE.md", "sed -e \"s/<a>/b/\" f", "git commit -m \"a; rm -rf x\"",
+                  "git commit -m 'x > /opt/y'", "grep -E '(a|b)>c' f", "awk '{print > \"/dev/stderr\"}' f",
+                  "git commit -m \"line one\nline; two > /opt/z\"", "echo \\> x", "jq '.[] | select(.a > 2)' f.json",
+                  "echo \$'a\\'; rm -rf x'", "echo \"\$(git rev-parse HEAD) > /opt/x\"", "ls # it's > /opt/x",
+                  "echo \${#x} && ls", "echo a#b > out.txt", "printf '%s' \"\$(printf '; rm -rf x')\"")
+            @test !blocked("bash_guard.sh", bash(c; cwd = root), root) || (println("blocked: $c"); false)
+        end
+        for c in ("echo \"a>b\" > $OUT/x", "touch \"$OUT/a b\"", "sed -e 's/a/b/' f > $OUT/out",
+                  "sed 's/x/y/' f >\"$OUT/q\"", "echo 'a;b' ; rm -rf build", "git commit -m 'x' && touch $OUT/f",
+                  "echo \"it's\" > $OUT/f", "git commit -m \"a\nb\" && git reset --hard",
+                  # review of 0.2.2 (B1): command substitution inside double quotes still runs
+                  "echo \"\$(rm -rf ~)\"", "echo \"\$(echo x > $OUT/foo)\"", "echo \"a\" \"\$(cd ~ && rm -rf Documents)\"",
+                  "echo \"`rm -rf ~`\"", "echo \"x \$(echo \"\$(touch $OUT/n)\")\"", "echo \"\$( (cd /; rm -rf x) )\"",
+                  # (B2): an apostrophe in a comment is not a quote
+                  "echo hi # it's\nrm -rf ~", "echo hi # it's\necho x > $OUT/evil", "# we don't want this\ngit reset --hard",
+                  # (B4): ANSI-C quoting
+                  "echo \$'\\'' ; rm -rf ~", "echo \$'a\\'b' > $OUT/f")
+            @test blocked("bash_guard.sh", bash(c; cwd = root), root) || (println("not blocked: $c"); false)
+        end
+        h = hooks_with_roots(REF_ROOTS)                                    # (B1) with a read-only root
+        @test hook("bash_guard.sh", bash("echo \"\$(cd ~/reference-project-b && make install)\""; cwd = root), root; hooks = h)[1] == 2
+        @test hook("bash_guard.sh", bash("# don't\ncd ~/reference-project-b && uv sync"; cwd = root), root; hooks = h)[1] == 2
+    end
+
+    @testset "bash_guard: rm -rf only on absolute scratch paths (0.2.2)" begin
+        tmp = Dict("TMPDIR" => "/fake-tmpdir/T/")
+        rmb(c; env = tmp) = blocked("bash_guard.sh", bash(c; cwd = root), root; env)
+        u = readchomp(`id -u`)
+        sc = "/private/tmp/claude-$u/proj/sess"                           # this user's session scratch
+        for c in ("rm -rf $sc/scratchpad/x", "rm -rf /tmp/claude-$u/proj/sess/x", "rm -rf /fake-tmpdir/T/x",
+                  "rm -rf \"\$TMPDIR/x\"", "rm -rf \${TMPDIR}/x", "rm -rf \"\$TMPDIR\"/x", "rm -rf \"\${TMPDIR}\"/x",
+                  "rm -fr /private/fake-tmpdir/T/x /fake-tmpdir/T/a/../b", "rm -r -f $sc/a $sc/b", "rm -rf $sc/x/*")
+            @test !rmb(c) || (println("blocked: $c"); false)
+        end
+        for c in ("rm -rf build", "rm -rf", "rm -rf /private/tmp/claude-$u", "rm -rf /tmp/claude-$u/",
+                  "rm -rf /private/tmp/claude-$u/proj", "rm -rf /private/tmp/claude-$u/proj/sess",
+                  "rm -rf /private/tmp/claude-$u/*/sess/x", "rm -rf /private/tmp/claude-$u/proj/*/x",
+                  "rm -rf /private/tmp/claude-$u/*", "rm -rf /private/tmp/claude-99999/proj/sess/x",
+                  "rm -rf /private/tmp/claude-*/proj/sess/x", "rm -rf $sc/x/../../../..", "rm -rf /tmp/other",
+                  "rm -rf \$TMPDIR", "rm -rf /fake-tmpdir/T", "rm -rf $sc/x build",
+                  "rm -rf \$HOME/x", "rm -rf \$X/y", "rm -rf \$(pwd)/x", "rm -rf $sc/x \$TMPDIR/..",
+                  # review of 0.2.2 (B3): the tracked cwd can be wrong, so relative targets never pass
+                  "cd $sc/x && cd && rm -rf *", "cd ~ && cd $sc/x && cd - && rm -rf *",
+                  "cd $sc/x && cd \"\$(git rev-parse --show-toplevel)\" && rm -rf *", "(cd $sc/x); rm -rf *",
+                  "pushd $sc/x && popd && rm -rf *", "cd /fake-tmpdir/T && rm -rf x",
+                  "TMPDIR=/Users/x; rm -rf \$TMPDIR/x", "export TMPDIR=\$HOME; rm -rf \"\$TMPDIR/Documents\"")
+            @test rmb(c) || (println("not blocked: $c"); false)
+        end
+        @test rmb("rm -rf \$TMPDIR/x"; env = Dict("TMPDIR" => ""))           # no TMPDIR: no scratch root
+        @test rmb("rm -rf $root/sub"; env = Dict("TMPDIR" => dirname(root)))  # the repo is never scratch
+        @test !rmb("rm -rf $(dirname(root))/other"; env = Dict("TMPDIR" => dirname(root)))
+    end
+
+    @testset "guards fail CLOSED when a sourced library is missing (0.2.2)" begin
+        for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh")
+            h = joinpath(mktempdir(), "hooks"); cp(HOOKS, h); rm(joinpath(h, lib))
+            rc, _, err = hook("bash_guard.sh", bash("ls"), root; hooks = h)
+            @test rc == 2 && occursin("missing", err)
+            lib == "_lib.sh" || continue
+            for g in ("write_guard.sh", "dispatch_limit.sh")
+                rc, _, err = hook(g, write_payload("$root/a.jl"), root; hooks = h)
+                @test rc == 2 && occursin("missing", err)
+            end
+        end
+    end
+
     @testset "write_guard" begin
         @test blocked("write_guard.sh", write_payload("$OUT/x.jl"), root)
         @test blocked("write_guard.sh", write_payload(expanduser("~/x.md")), root)
@@ -152,6 +220,22 @@ end
         @test blocked("write_guard.sh", write_payload("$lane/.github/workflows/CI.yml"), root)
         @test !blocked("write_guard.sh", write_payload("$lane/src/A.jl"), root)
         @test !blocked("write_guard.sh", "{}", root)
+        if IN_FACTORY # 0.2.2: the template seed (and the coordinator overlay) protect the gate itself
+            gate = [".agents/bodies/*", ".agents/checks.toml", ".claude/agents/*", ".codex/agents/*",
+                    "scripts/dod.jl", "scripts/ratchet.jl", "scripts/gen.jl", "scripts/check_docs.jl",
+                    "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl"]
+            for f in (joinpath(ROOT, "risk.toml"), joinpath(FACTORY, "profiles/coordinator/risk.toml"))
+                t3 = reduce(vcat, [p["globs"] for p in TOML.parsefile(f)["protected"] if p["tier"] == "T3"])
+                @test issubset(gate, t3) || (println("$f misses ", setdiff(gate, t3)); false)
+                @test !occursin("docs/adr/", read(f, String))                     # adr_dir is a profile parameter
+            end
+            for rel in (".agents/bodies/reviewer.md", ".agents/checks.toml", ".claude/agents/critic.md",
+                        "scripts/dod.jl", "scripts/ratchet.jl", "scripts/gen.jl", "scripts/check_docs.jl",
+                        "scripts/contract_usage.jl", "scripts/ci.jl", "scripts/_common.jl")
+                @test blocked("write_guard.sh", write_payload("$root/$rel"), root) || (println("not blocked: $rel"); false)
+            end
+            @test !blocked("write_guard.sh", write_payload("$root/scripts/lane.jl"), root)
+        end
     end
 
     @testset "teammate_idle: first unreported idle blocked, report demanded" begin

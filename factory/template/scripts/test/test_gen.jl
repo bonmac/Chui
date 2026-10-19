@@ -64,7 +64,7 @@ quiet_check(d) = capture(() -> Gen.check(d))
         checks = Gen.load_checks(ROOT)
         by = Set(c["prevented_by"] for c in checks)
         for f in readdir(HOOKS)
-            endswith(f, ".sh") && f != "_lib.sh" || continue
+            endswith(f, ".sh") && !startswith(f, "_") || continue   # _*.sh: sourced libraries
             @test ".claude/hooks/$f" in by
         end
         for s in ("gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl")
@@ -98,7 +98,7 @@ quiet_check(d) = capture(() -> Gen.check(d))
         settings = joinpath(ROOT, ".claude/settings.json")
         @test success(pipeline(`jq -e .hooks $settings`; stdout = devnull))
         wired = Set(m.captures[1] for m in eachmatch(r"\.claude/hooks/([a-z_]+\.sh)", read(settings, String)))
-        hooks = Set(f for f in readdir(HOOKS) if endswith(f, ".sh") && f != "_lib.sh")
+        hooks = Set(f for f in readdir(HOOKS) if endswith(f, ".sh") && !startswith(f, "_"))
         @test wired == hooks
     end
 

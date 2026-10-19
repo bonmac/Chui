@@ -26,6 +26,8 @@ paths = [
   "test/runtests.jl",
   "test/contracts/upstreams.toml",
   "test/contracts/USED.md",
+  "test/contracts/Project.toml",
+  "test/contracts/runtests.jl",
   "test/jet/Project.toml",
   "test/jet/runjet.jl",
 ]
@@ -42,7 +44,10 @@ paths = [
   "docs/CHECK_COVERAGE.md",
 ]
 
+# A package repo. The overlay seeds check_docs exclusions for the verbatim copies every
+# package carries (docs/agent/*, test/contracts/*.md).
 [profiles.package]
+overlay = "profiles/package"
 exclude = []
 
 # The coordinator repo (root) is not a Julia package: no package CI, no test/ tree.

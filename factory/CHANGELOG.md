@@ -5,6 +5,100 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.2 (2026-10-19)
+
+Fixes found by the three package scaffolds (ChuiCore, ChuiTypes, ChuiFrames) and the coordinator
+review (S2). Template tests: 807/807 on Julia 1.13.2 and 1.10.12 (683 in 0.2.1); each new test
+fails against the 0.2.1 code. New T3 paths and a new contract-test environment: read the
+migration notes.
+
+- **`ratchet.jl` passes again (it failed in every repo).** `bash_guard.sh` (210 lines) was over
+  the seeded 150-line hook budget. Its helpers moved to two new sourced libraries,
+  `.claude/hooks/_bash_guard_lib.sh` (command splitting, paths, `rm`) and `_read_only_roots.sh`
+  (bash_guard 142 lines, the libraries 115 and 61, `_lib.sh` 103), instead of a per-file
+  exception: a `.` source costs no fork, a per-file rule would be a raised limit, and the
+  read-only-roots parsing now runs in bash_guard only, not on every write_guard/dispatch_limit/
+  advisory call. The command splitter is one awk instead of sed + tr. New test: every profile's files, as sync renders
+  them, pass the seeded `ratchets.toml`.
+- **Guards fail closed when a sourced library is missing.** `. _lib.sh` on a missing file exits
+  1, which Claude Code treats as non-blocking: bash_guard, write_guard and dispatch_limit now
+  check their libraries and exit 2.
+- **bash_guard: quoted text is one argument.** `sed -i '' -e 's/<Package>/X/g' f` was read as a
+  redirect to `/X/g`, and `git commit -m "a; rm -rf x"` as a second command. Inside `'...'`,
+  `"..."` and `$'...'` (and after a backslash) blanks, `; & | ( ) < >` no longer split or
+  redirect. A `"$(...)"` or backtick substitution inside double quotes is still split and checked,
+  and a `#` comment ends its line (an apostrophe in it is not a quote). Real redirects of quoted
+  paths (`> "/opt/x"`) are still caught. A `sh -c '...'` string is not inspected (it was caught
+  in 0.2.1 only by accident, since `;` split everywhere).
+- **bash_guard: `rm -rf` on scratch paths** (lanes could not clean their scratchpads). Allowed only
+  when every target is ABSOLUTE (or `$TMPDIR/...`, `"$TMPDIR"/...`) and lies strictly below
+  `$TMPDIR` or at least three levels below this user's `/private/tmp/claude-<uid>/` (a
+  `<project>/<session>/...` path, no glob in those two parts). Never a relative target (the
+  tracked cwd can be wrong after a bare `cd`, `cd -`, a subshell or `popd`), never in the repo
+  root, never `$TMPDIR/...` when the command assigns TMPDIR, never another uid.
+- **`ci.jl docs`, `jet` and `contracts` never rewrite tracked files.** They developed the
+  checkout into `docs/` and `test/jet/` in place; on Julia >= 1.11 that wrote
+  `[sources] Pkg = {path = "/abs/..."}`, added the package to `[deps]` and dropped comments
+  (reproduced on a ChuiCore copy). They now copy the env's `Project.toml` to a scratch directory
+  (relative `[sources]` paths made absolute), develop there, run there and delete it. Test: a
+  fixture package's tracked files are byte-identical and `git status` clean after all three jobs.
+- **Contract tests run in their own environment** (the coordinator's `contracts/README.md`): new
+  seeded `test/contracts/Project.toml` (Test, TestItemRunner; upstreams added per repo) and
+  `test/contracts/runtests.jl` (`TestItemRunner.run_tests` over `test/contracts/`, `:contract`
+  items only). `ci.jl contracts` resolves a scratch copy against the latest upstream release, or
+  upstream main with `-- main`, so the old `--in-place` gate is gone. A repo without
+  `test/contracts/Project.toml` is skipped with a message. The seeded `test/runtests.jl` never
+  selects `:contract` items, even with `-- all`.
+- **Package profile overlay** `profiles/package/.agents/factory.toml`: `[check_docs] exclude =
+  ["docs/agent/*", "test/contracts/*.md"]` for the verbatim copies every package carries.
+- **Seeded `.gitignore`** ignores `/test/jet/Manifest*.toml` and `/test/contracts/Manifest*.toml`
+  (`/docs/Manifest*.toml` was already there). Test: every seeded env directory's Manifest is ignored.
+- **Seeded `test/jet/Project.toml`** has `[compat]` for TOML and `julia = "1.12"` (ADR-0004 rule 3).
+  Test: every seeded `Project.toml` has compat for `julia` and each dep.
+- **CI.yml: no Codecov upload.** ADR-0011 wants a local floor and no external service; the
+  existing `ci.jl coverage` step (`ratchet.jl --lcov`, floor in `ratchets.toml`) is the check.
+  ADR-0011 (Proposed) names a coverage-floor.txt file read by a coverage_floor.jl script; the
+  factory keeps the floor in `ratchets.toml` (same one-way rule, one file). The ADR text should
+  follow at its ★.
+- **Protected paths (S2).** The seeded `risk.toml` makes `.agents/bodies/*`, `.agents/checks.toml`,
+  `.claude/agents/*`, `.codex/agents/*` and the gate scripts (`scripts/dod.jl`, `ratchet.jl`,
+  `gen.jl`, `check_docs.jl`, `contract_usage.jl`, `ci.jl`, `_common.jl`) T3. New coordinator
+  overlay `profiles/coordinator/risk.toml`: the coordinator's current `risk.toml` plus the same
+  globs. Its `adr` comment is profile-neutral (it named `docs/adr/`).
+- `checks.toml`: bash_guard blind spots updated (quoting, the scratch `rm -rf` rule, edited
+  libraries are trusted).
+
+Review (one read-only reviewer over this diff) found three bash_guard bypasses that the first
+draft of this release introduced, all fixed above with tests: a `"$(...)"` substitution was masked
+as quoted text, an apostrophe in a `#` comment masked every later line, and the scratch `rm -rf`
+rule trusted the tracked cwd and `$TMPDIR` (`cd /scratch/x && cd && rm -rf *` passed). Also
+fixed from it: `$'...'` quoting, the rule naming every session's scratch, `"$TMPDIR"/x` blocked,
+the test now proves the scratch envs are deleted, and `ci.jl test -- contract` says where
+contract items run.
+
+### Migration from 0.2.1 (seeded files are not updated by sync)
+
+The sync writes these T3 files: `.claude/hooks/_bash_guard_lib.sh` and `_read_only_roots.sh` (new), `_lib.sh`,
+`bash_guard.sh`, `dispatch_limit.sh`, `write_guard.sh`, `.factory-version`, and in packages
+`.github/workflows/CI.yml`; plus `.agents/checks.toml` and `scripts/ci.jl`, which are T3 once
+the `risk.toml` edit below is made. It seeds `test/contracts/Project.toml` and
+`test/contracts/runtests.jl` in packages (T2). Then make these edits by hand (T3: the user, or
+a session with `FACTORY_ALLOW_T3=1`), and run `julia scripts/gen.jl`:
+
+- every repo, `risk.toml`: add the 11 globs above to the T3 `[[protected]]` list and reword the
+  `adr` comment. The coordinator can take `factory/profiles/coordinator/risk.toml` as is (it is
+  its current file plus these lines); an untailored package `risk.toml` can take
+  `factory/template/risk.toml` as is.
+- packages, `.gitignore`: add `/test/contracts/Manifest*.toml` (and `/test/jet/Manifest*.toml`
+  if missing).
+- packages, `test/jet/Project.toml`: under `[compat]` add `TOML = "1"` and `julia = "1.12"`.
+- packages, `test/runtests.jl`: first line of the filter, `:contract in ti.tags && return false`.
+- packages, `test/contracts/Project.toml`: add each upstream of `upstreams.toml` to `[deps]` with
+  a `[compat]` bound before its contract tests are written.
+- packages synced from 0.2.1 whose `.agents/factory.toml` lacks
+  `exclude = ["docs/agent/*", "test/contracts/*.md"]`: add it (ChuiCore, ChuiTypes and
+  ChuiFrames already have it).
+
 ## 0.2.1 (2026-10-19)
 
 Fixes found running the 0.2.0 tests in the coordinator checkout (540 passed, 2 failed,

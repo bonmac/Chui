@@ -30,8 +30,11 @@ A `MANIFEST.toml` profile adapts the template to a kind of repo:
 - `exclude`: template paths the profile does not take (the coordinator drops package CI,
   `test/`, and `docs/adr/*`, whose source is the coordinator's own `adr/`).
 - `overlay`: a directory under `factory/` whose files replace template files for that profile.
-  `profiles/coordinator/.agents/factory.toml` seeds the coordinator's settings: the read-only
-  reference roots and the `check_docs` exclusions.
+  `profiles/coordinator/` seeds the coordinator's `.agents/factory.toml` (the read-only
+  reference roots and the `check_docs` exclusions) and its `risk.toml` (`prompts/*` and
+  `contracts/*` T3, `adr/*` and `factory/*` T2); `profiles/package/.agents/factory.toml`
+  excludes from `check_docs` the verbatim copies every package carries (`docs/agent/*`,
+  `test/contracts/*.md`).
 - `adr_dir` (default `docs/adr`): template `docs/adr/*` lands there, `docs/adr/` in seeded
   files and managed `*.md` files is rewritten to it, and it is recorded in `.factory-version`
   so `scripts/dod.jl`'s ADR check looks there. The coordinator uses `adr`.
@@ -57,8 +60,11 @@ session says so.
 ### First vendoring: writing T3 files
 
 The seeded `risk.toml` makes `.agents/agent-registry.toml`, `.agents/factory.toml`,
-`risk.toml`, `ratchets.toml`, `.claude/settings.json`, `.claude/hooks/*`,
-`.github/workflows/*` and `.factory-version` T3, and `write_guard.sh` blocks Edit/Write to them.
+`.agents/bodies/*`, `.agents/checks.toml`, `.claude/agents/*`, `.codex/agents/*`, `risk.toml`,
+`ratchets.toml`, `.claude/settings.json`, `.claude/hooks/*`, `.github/workflows/*`,
+`.factory-version` and the gate scripts (`scripts/dod.jl`, `ratchet.jl`, `gen.jl`,
+`check_docs.jl`, `contract_usage.jl`, `ci.jl`, `_common.jl`) T3, and `write_guard.sh` blocks
+Edit/Write to them.
 A first vendoring writes them anyway because `sync_factory.jl --apply` runs as a Julia process
 from Bash, which write_guard does not see; only the Edit/Write tools are blocked. To tailor
 those files afterwards (a new repo's registry, the coordinator's read-only roots), either:
@@ -82,15 +88,17 @@ Either way the change lands through a reviewed PR labelled T3.
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |
 | `.claude/commands/*.md` | intake, lanes, change-review, contract-check, release-check, test-changed | managed |
 | `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules | managed |
-| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start; guards fail closed if their script is missing | managed |
+| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_read_only_roots.sh`; guards fail closed if their script or a library is missing | managed |
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
 | `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, contract_usage, ci, bench, lane, sync_factory | managed |
 | `test/contracts/USED.md`, `test/contracts/upstreams.toml` | contract IDs relied on; upstream URLs and contract-file copies | seeded (package) |
+| `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |
+| `test/jet/Project.toml`, `test/jet/runjet.jl` | JET's own environment (`ci.jl jet`, stable only) | seeded (package) |
 | `scripts/test/` | tests for every script and hook | managed |
 | `.github/workflows/*.yml` | CI, Docs, Contracts, Benchmark, Guards, CompatHelper, TagBot | managed |
 | `docs/adr/0000-template.md` | copy of the coordinator's `adr/0000-template.md` (lands in the profile's `adr_dir`) | managed |
-| `../profiles/<profile>/` | overlay files for a profile (outside `template/`) | per profile |
+| `../profiles/<profile>/` | overlay files for a profile (outside `template/`): `coordinator`, `package` | per profile |
 
 ## Design choices
 
@@ -116,6 +124,15 @@ Either way the change lands through a reviewed PR labelled T3.
   docs and contract usage through `check_docs.jl` and `contract_usage.jl` in `ci.jl guards`.
 - JET runs from its own env `test/jet/` in a stable-only `jet` job (JET 0.12 needs Julia >= 1.12, so it
   cannot sit in `test/Project.toml` for the LTS job); `:doctest`/`:snapshot` items are stable-only too.
+  Contract tests run from their own env `test/contracts/` (the coordinator's `contracts/README.md`),
+  so they resolve the upstream release (or upstream main) independently of `test/Project.toml`.
+- **Tracked environments are never rewritten.** `ci.jl docs`, `jet` and `contracts` copy the
+  env's `Project.toml` to a scratch directory, `Pkg.develop` the checkout (or upstream main) into
+  the copy, and run there. Developing in place wrote an absolute `[sources]` path into the
+  tracked file on Julia >= 1.11 (common.md §2 forbids committing one).
+- **Hooks stay under the 150-line budget of the seeded `ratchets.toml`** by moving code into
+  sourced libraries rather than by a per-file exception: a `.` source costs no fork, and a
+  per-file rule would be a raised limit that the ratchet only lets fall afterwards.
 - Julia versions and the formatter follow ADR-0006 (`lts`, `1`, `pre`) and ADR-0007 (Runic,
   TestItemRunner, Supposition). Both ADRs are Proposed; if they change, edit `CI.yml` and
   `scripts/ci.jl` (format job), then bump `VERSION`.

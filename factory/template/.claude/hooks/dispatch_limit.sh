@@ -4,7 +4,9 @@
 # no later SubagentStop for the same agent_id, in this session_id (written by lane_ledger.sh).
 # The cap comes from [lanes] max_open in .agents/agent-registry.toml (generated limits.env);
 # FACTORY_MAX_OPEN_LANES in the session env overrides it. Fails closed without jq.
-. "$(dirname -- "$0")/_lib.sh"
+d=$(dirname -- "$0") # a missing library must block (exit 2), not fail open
+[ -f "$d/_lib.sh" ] || { printf '[factory] %s is missing; dispatch_limit fails closed.\n' "$d/_lib.sh" >&2; exit 2; }
+. "$d/_lib.sh"
 need_jq
 max=${FACTORY_MAX_OPEN_LANES:-${MAX_OPEN_LANES:-4}}
 open=0

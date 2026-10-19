@@ -7,7 +7,13 @@
 # (an inline `FACTORY_ALLOW_PUSH=1 git push` does not reach this hook):
 #   FACTORY_ALLOW_PUSH=1     allow `git push` (not --force) once the user approved pushing
 #   FACTORY_ALLOW_OUTWARD=1  allow gh actions that create or change things on GitHub
-. "$(dirname -- "$0")/_lib.sh"
+d=$(dirname -- "$0")
+for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh; do # a missing library must block (exit 2), not fail open
+    [ -f "$d/$_l" ] || { printf '[factory] %s is missing; bash_guard fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
+done
+. "$d/_lib.sh"
+. "$d/_bash_guard_lib.sh"
+. "$d/_read_only_roots.sh"
 need_jq
 raw=$(field '.tool_input.command')
 [ -n "$raw" ] || exit 0
@@ -48,73 +54,9 @@ if has "${GH}(repo[[:space:]]+(create|delete|edit|rename|archive|fork)|release[[
     [ "${FACTORY_ALLOW_OUTWARD:-}" = 1 ] || deny "This gh command acts on GitHub and needs the user's confirmation (ECOSYSTEM.md §1.6)."
 fi
 
-# --- per command: rm -rf, writes outside the repo root ------------------------------
-outside() { # outside TOKEN: deny if TOKEN names a path outside the root and scratch dirs
-    _t=$1
-    _t=${_t#[\"\']}
-    _t=${_t%[\"\']}
-    case $_t in '' | -* | '&'*) return 0 ;; esac
-    _a=$(abspath "$_t" "$cwd")
-    allowed "$_a" || deny "write outside the repo root blocked: $_a (root: $ROOT). Lanes write only inside their repo; use the scratchpad or \$TMPDIR for temp files."
-}
-RO_GIT=' status log show diff rev-parse ls-files ls-tree grep blame describe cat-file merge-base for-each-ref shortlog reflog '
-# Inside a read-only root: the only commands allowed to run, and git's only subcommands.
-RO_CMDS=' cat head tail less grep rg find ls wc stat file cd pushd popd pwd '
-RO_ROOT_GIT=' log show diff status blame ls-files '
-
-# git_dir ARGS...: the last -C DIR among git's global options (empty if none).
-git_dir() {
-    _gd=""
-    while [ $# -gt 0 ]; do
-        case $1 in -C) _gd=${2:-}; shift 2 ;; -c | --git-dir | --work-tree | --namespace) shift 2 ;; -*) shift ;; *) break ;; esac
-    done
-    printf '%s' "$_gd"
-}
-# git_sub ARGS...: git's subcommand after its global options (-C dir, -c k=v, --no-pager, ...).
-git_sub() {
-    while [ $# -gt 0 ]; do
-        case $1 in -C | -c | --git-dir | --work-tree | --namespace) shift 2 ;; -*) shift ;; *) break ;; esac
-    done
-    printf '%s' "${1:-}"
-}
-unquote() { _u=${1#[\"\']}; printf '%s' "${_u%[\"\']}"; }
-# newdir TARGET: the directory `cd TARGET` moves to, or empty if it cannot be known statically.
-newdir() {
-    _d=$(unquote "$1")
-    case $_d in
-        '' | -) return 0 ;;
-        '$HOME' | '${HOME}' | '$HOME/'* | '${HOME}/'*) ;;
-        *'$'* | *'`'*) return 0 ;;
-    esac
-    abspath "$_d" "$cwd"
-}
-# read_only_check NAME DIR ARGS...: deny NAME unless it is read-only, when DIR is in a read-only root.
-read_only_check() {
-    _n=$1 _dir=$2
-    shift 2
-    in_read_only "$_dir" || return 0
-    _why="$RO_HIT is a read-only reference root (.agents/factory.toml [bash_guard] read_only_roots): only read-only commands may run there (cat, head, tail, less, grep, rg, find, ls, wc, stat, file, and git log/show/diff/status/blame/ls-files). Read its files with absolute paths from the repo root instead"
-    case $RO_CMDS in *" $_n "*) ;; *)
-        [ "$_n" = git ] || deny "\`$_n\` would run in $_dir. $_why."
-        ;;
-    esac
-    case $_n in
-        git)
-            _s=$(git_sub "$@")
-            case $RO_ROOT_GIT in *" $_s "*) ;; *) deny "\`git $_s\` would run in $_dir. $_why." ;; esac
-            ;;
-        find)
-            for _t in "$@"; do
-                case $_t in -exec | -execdir | -ok | -okdir | -delete | -fprint* | -fls) deny "\`find $_t\` would run in $_dir. $_why." ;; esac
-            done
-            ;;
-    esac
-    return 0
-}
-
+# --- per command: rm -rf, writes outside the repo root, read-only roots ------------
 set -f
-# shellcheck disable=SC2020 # each separator character maps to a newline
-printf '%s\n' "$cmd" | sed -E -e 's/[0-9]*>&([0-9]+|-)//g' -e 's/&>|>&/>/g' | tr ';&|()\n' '\n\n\n\n\n\n' | {
+printf '%s\n' "$cmd" | segments | {
     while IFS= read -r seg; do
         # shellcheck disable=SC2086
         set -- $seg
@@ -175,17 +117,7 @@ printf '%s\n' "$cmd" | sed -E -e 's/[0-9]*>&([0-9]+|-)//g' -e 's/&>|>&/>/g' | tr
         esac
         read_only_check "$name" "$rundir" "$@"
         case $name in
-            rm)
-                r="" f=""
-                for tok in "$@"; do
-                    case $tok in
-                        --recursive) r=1 ;; --force) f=1 ;; --*) ;;
-                        -*) case $tok in *[rR]*) r=1 ;; esac; case $tok in *f*) f=1 ;; esac ;;
-                    esac
-                done
-                [ -n "$r" ] && [ -n "$f" ] && deny "rm -rf is blocked. Remove named paths with \`rm -r <path>\`, or ask the lead."
-                for tok in "$@"; do outside "$tok"; done
-                ;;
+            rm) rm_check "$@" ;;
             rmdir | mkdir | touch | chmod | chown | truncate | tee | mv)
                 for tok in "$@"; do outside "$tok"; done
                 ;;

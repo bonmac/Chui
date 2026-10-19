@@ -38,4 +38,24 @@
         @test capture(() -> Ratchet.main(["--root", d, "--lcov", lcov]))[1] == 1   # 50% < 60%
         @test capture(() -> Ratchet.main(["--root", d]))[1] == 0                   # raising is fine
     end
+
+    if IN_FACTORY
+        # 0.2.1 shipped a 210-line bash_guard.sh under its own 150-line hook budget, so ratchet.jl
+        # failed in every repo. Every profile's files must pass the seeded ratchets.toml.
+        @testset "the factory's own files are within its seeded size budgets" begin
+            cfg = TOML.parsefile(joinpath(ROOT, "ratchets.toml"))
+            for profile in keys(TOML.parsefile(joinpath(FACTORY, "MANIFEST.toml"))["profiles"])
+                srcs, _ = SyncFactory.sources(FACTORY, profile)
+                d = mktempdir()
+                for s in srcs
+                    mkpath(dirname(joinpath(d, s.rel))); write(joinpath(d, s.rel), s.bytes)
+                end
+                bad = Ratchet.sizes(d, cfg, [s.rel for s in srcs])
+                @test isempty(bad) || (println("$profile: ", bad); false)
+            end
+            gen = TOML.parsefile(joinpath(FACTORY, "MANIFEST.toml"))["generated"]["paths"]
+            files = [relpath(joinpath(r, f), ROOT) for (r, _, fs) in walkdir(ROOT) for f in fs]
+            @test isempty(Ratchet.sizes(ROOT, cfg, filter(f -> any(g -> DoD.globmatch(g, f), gen), files)))
+        end
+    end
 end

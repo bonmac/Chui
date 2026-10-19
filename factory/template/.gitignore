@@ -3,6 +3,8 @@
 /docs/build/
 /docs/Manifest*.toml
 /test/Manifest*.toml
+/test/jet/Manifest*.toml
+/test/contracts/Manifest*.toml
 /benchmark/Manifest*.toml
 # lanes and agent scratch
 /.worktrees/

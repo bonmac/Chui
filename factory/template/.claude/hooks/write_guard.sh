@@ -6,7 +6,9 @@
 # The path is matched relative to the nearest enclosing git checkout (a worktree lane or a
 # nested package repo), using that checkout's protected-paths.txt when it has one.
 # Override (session env only, set by the user for an approved T3 change): FACTORY_ALLOW_T3=1
-. "$(dirname -- "$0")/_lib.sh"
+d=$(dirname -- "$0") # a missing library must block (exit 2), not fail open
+[ -f "$d/_lib.sh" ] || { printf '[factory] %s is missing; write_guard fails closed.\n' "$d/_lib.sh" >&2; exit 2; }
+. "$d/_lib.sh"
 need_jq
 fp=$(field '.tool_input.file_path // .tool_input.notebook_path')
 [ -n "$fp" ] || exit 0
