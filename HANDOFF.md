@@ -36,7 +36,7 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| core-p1 | ChuiCore.jl | `.worktrees/phase1-research` / `feat/phase1-research` | `docs/adr/**`, `docs/research/**`, `docs/superpowers/**`, `HANDOFF.md`, `changelog.d/phase1-research.md` | running: phase 1 Research and ADRs |
+| core-p1 | ChuiCore.jl | `.worktrees/phase1-research` / `feat/phase1-research` | `docs/adr/**`, `docs/research/**`, `docs/superpowers/**`, `HANDOFF.md`, `changelog.d/phase1-research.md` | **★ waiting for the user** (agent closed). `c8d365d`, `2362407`: ADRs 0001–0008 Proposed, 3 critics × 2 passes, no blockers left; check_docs, lane audit and dod OK (lead re-ran the first two). |
 | types-p1 | ChuiTypes.jl | same | same | running |
 | frames-p1 | ChuiFrames.jl | same | same | running |
 
@@ -68,6 +68,14 @@ All actual runs (`subagent_mode: actual`).
 - **ChuiCore on 1.10.12** after the follow-up: not re-run (the change was docs and `.factory-version` only).
 - **AirspeedVelocity failure behaviour:** UNVERIFIED.
 - **Lane cap:** whether teammates count toward the cap is UNVERIFIED.
+
+## ★ ChuiCore phase 1 (asked 2026-10-20; only ChuiCore is paused)
+
+1. ADR-0001: Monoid family as dictionary passing (instance values) with a Holy-trait classifier, not `MonoidStyle(::Type)`. Recommend yes.
+2. ADR-0005: aggregation protocol, aggregators, transducers, optics, schemes public but not exported; amend ecosystem ADR-0009 ("ChuiCore exports `partial`"). Recommend yes (alternative: opt-in `ChuiCore.Prelude`).
+3. ADR-0004/0008: own Lens/Prism, Accessors only as an extension, ConstructionBase as a hard dependency. Recommend yes.
+4. Ecosystem ADR-0007 §2 (all packages): require `@check record=false` plus an explicit `@test`, plus a planted-violation test on LTS. Cause: Julia 1.10's `Test` counts only `DefaultTestSet` children (lead reproduced: 1.10.12 rc 0, 1.13.2 rc 1). Recommend amend, no upstream issue.
+5. Contract CC-001 via a contract ADR: Chui-added `⨟` methods stay binary; the CompositionsBase fallback and a downstream closing varargs method may be variadic. Recommend yes.
 
 ## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
 
