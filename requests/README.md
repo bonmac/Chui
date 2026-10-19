@@ -44,4 +44,12 @@ Signature(s) and semantics; laws if any.
 
 Every status change adds a dated History line. Files are never deleted; history lives in git.
 
-No requests yet.
+## Open requests
+
+| File | Need | Status |
+|---|---|---|
+| [chui-types-to-chui-core-typeclass-names.md](chui-types-to-chui-core-typeclass-names.md) | R1: typeclass operation names and encoding | open (partly answered by ChuiCore ADR-0001) |
+| [chui-types-to-chui-core-law-kits.md](chui-types-to-chui-core-law-kits.md) | R2: law-kit form, Supposition 1.10 workaround | open (partly covered by ADR-0007 §2 amendment) |
+| [chui-types-to-chui-core-transducer-fold.md](chui-types-to-chui-core-transducer-fold.md) | R3: transducer names, type-stable chunk fold | open |
+| [chui-types-to-chui-core-first-snapshot.md](chui-types-to-chui-core-first-snapshot.md) | R4: first registered `0.0.x` snapshot | open (needs the user) |
+| [chui-types-to-chui-core-memoised-thunks.md](chui-types-to-chui-core-memoised-thunks.md) | R5: memoised thunks | open |

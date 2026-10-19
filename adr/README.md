@@ -5,7 +5,8 @@ Package-internal decisions live in each package's `<Package>.jl/docs/adr/`. New 
 [`0000-template.md`](0000-template.md); evidence for factual claims is in
 [`../research/ecosystem-verification.md`](../research/ecosystem-verification.md).
 ★ marks a question only the user can answer. ADRs 0001–0011 were Accepted at the L0 checkpoint
-(2026-10-19); each records the decision taken and keeps the rejected alternatives.
+(2026-10-19); each records the decision taken and keeps the rejected alternatives. ADR-0007 §2 and
+ADR-0009 §1/§5 carry dated amendment sections from the ChuiCore phase-1 ★ (2026-10-20).
 
 | # | Title | Status |
 |---|---|---|
@@ -16,8 +17,10 @@ Package-internal decisions live in each package's `<Package>.jl/docs/adr/`. New 
 | 0004 | [Versioning and compatibility policy](0004-versioning-and-compatibility.md) | Accepted (2026-10-19, L0) |
 | 0005 | [Registry strategy](0005-registry-strategy.md) | Accepted (2026-10-19, L0) |
 | 0006 | [Minimum Julia version](0006-minimum-julia-version.md) | Accepted (2026-10-19, L0) |
-| 0007 | [Test framework, quality checks and formatter](0007-test-framework-and-formatter.md) | Accepted (2026-10-19, L0) |
+| 0007 | [Test framework, quality checks and formatter](0007-test-framework-and-formatter.md) | Accepted (2026-10-19, L0); §2 amended 2026-10-20 |
 | 0008 | [Documentation layout](0008-documentation-layout.md) | Accepted (2026-10-19, L0) |
-| 0009 | [Shared vocabulary](0009-shared-vocabulary.md) | Accepted (2026-10-19, L0) |
+| 0009 | [Shared vocabulary](0009-shared-vocabulary.md) | Accepted (2026-10-19, L0); amended 2026-10-20 |
 | 0010 | [Cross-repo workflow](0010-cross-repo-workflow.md) | Accepted (2026-10-19, L0) |
 | 0011 | [License, benchmark tool and coverage floor](0011-license-benchmarks-coverage.md) | Accepted (2026-10-19, L0) |
+| 0012 | [Chui-added `⨟` methods take two arguments; only the upstream fallback and a downstream closing method are variadic](0012-chui-added-opcompose-methods-are-binary.md) | Proposed (2026-10-20; CC-001 change decided at the ChuiCore phase-1 ★, contract text awaits the user) |
+| 0013 | [Effect–Task adapters keep the exception object and the cancellation, not Base `fetch`'s shape or the `Die`/`Fail` kind](0013-chui-types-adapters-keep-the-exception-object-not-the-task.md) | Proposed (2026-10-20; wording accepted at the ChuiTypes phase-1 ★, contract text awaits the user) |
