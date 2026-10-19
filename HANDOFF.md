@@ -32,7 +32,17 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 ## Open lanes
 
-None. Closed this session (all reported; none went idle without a report):
+**L1 started 2026-10-20** (CI green on all pushed repos first: Guards, CI, Docs, Contracts).
+
+| Lane | Repo | Worktree / branch | File scope | Status |
+|---|---|---|---|---|
+| core-p1 | ChuiCore.jl | `.worktrees/phase1-research` / `feat/phase1-research` | `docs/adr/**`, `docs/research/**`, `docs/superpowers/**`, `HANDOFF.md`, `changelog.d/phase1-research.md` | running: phase 1 Research and ADRs |
+| types-p1 | ChuiTypes.jl | same | same | running |
+| frames-p1 | ChuiFrames.jl | same | same | running |
+
+Each ends at its package's ★ report; branches are not merged until the user approves that package.
+
+Closed this session (all reported; none went idle without a report):
 - **pkg-core-024, pkg-types-024, pkg-frames-024:** 0.2.4 sync and history rewrite per package.
 - **fix-core** (`acaec8c`), **fix-types** (`7d10c7a`), **fix-frames** (`f118874`): seeded-file gaps (runtests `:contract` filter, JET compat, `.gitignore`, untracked roots file in ChuiFrames), provenance re-pinned to `ff0100a`, HANDOFFs refreshed. The lead re-ran the diffs and the redaction gate.
 - **factory-025** (`a89e10f`, fast-forwarded into `main`): factory 0.2.5; nudged once (it had missed the Runic item sent after dispatch), then reported in full. Worktree removed; branch `feat/factory-025` kept.
