@@ -37,7 +37,7 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
 | core-p1 | ChuiCore.jl | `.worktrees/phase1-research` / `feat/phase1-research` | `docs/adr/**`, `docs/research/**`, `docs/superpowers/**`, `HANDOFF.md`, `changelog.d/phase1-research.md` | **★ waiting for the user** (agent closed). `c8d365d`, `2362407`: ADRs 0001–0008 Proposed, 3 critics × 2 passes, no blockers left; check_docs, lane audit and dod OK (lead re-ran the first two). |
-| types-p1 | ChuiTypes.jl | same | same | running |
+| types-p1 | ChuiTypes.jl | same | same | **★ waiting for the user** (agent closed). `aeede66`, `615a374`: ADRs 0001–0006 Proposed; 2 critics × 3 rounds, 0 blockers; check_docs and lane audit OK (lead re-ran). |
 | frames-p1 | ChuiFrames.jl | same | same | running |
 
 Each ends at its package's ★ report; branches are not merged until the user approves that package.
@@ -76,6 +76,18 @@ All actual runs (`subagent_mode: actual`).
 3. ADR-0004/0008: own Lens/Prism, Accessors only as an extension, ConstructionBase as a hard dependency. Recommend yes.
 4. Ecosystem ADR-0007 §2 (all packages): require `@check record=false` plus an explicit `@test`, plus a planted-violation test on LTS. Cause: Julia 1.10's `Test` counts only `DefaultTestSet` children (lead reproduced: 1.10.12 rc 0, 1.13.2 rc 1). Recommend amend, no upstream issue.
 5. Contract CC-001 via a contract ADR: Chui-added `⨟` methods stay binary; the CompositionsBase fallback and a downstream closing varargs method may be variadic. Recommend yes.
+
+**Answered 2026-10-20: all five accepted.** ChuiCore phase 1 merged (`8082735`, `3054d7c`); phase 2 running (core-p2). Coordinator amendments: eco-amend lane.
+
+## ★ ChuiTypes phase 1 (asked 2026-10-20; only ChuiTypes is paused)
+
+1. Accept ADRs 0001–0006 (two-slot parametric structs; `Effect{E,A}` as data with a trampoline and cooperative cancellation; cold pull streams in chunks; `ChuiTypes.Upstream` adapter; deps ScopedValues, ChuiCore snapshot, Compat; Task/Channel adapters). Recommend accept.
+2. Contract chui-types.md obligation 2 is unimplementable as written (Base `fetch` always wraps; a foreign Task can't be cancelled without a canceller; `Die` crossing a Task boundary returns as `Fail`): amend via a contract ADR using ADR-0006's wording. Recommend yes.
+3. Names: `Option`/`Either` (no aliases), `Effect{E,A}` without an environment parameter, `run` as a `Base.run` method, `interrupt!` + `await`, `this`/`that`/`both` public not exported. Recommend yes.
+4. (Already decided at the ChuiCore ★: the `@check record=false` amendment.)
+5. File requests R1–R5 to ChuiCore in `requests/` (R1 is partly answered by ChuiCore ADR-0001; R4 asks for a registered ChuiCore 0.0.1 snapshot, which is an outward action). Recommend yes.
+
+**Answered 2026-10-20: all accepted** (ADRs, contract amendment via a contract ADR, names, requests). The contract ADR and the requests go to the eco-amend lane; registration (R4) comes back to the user.
 
 ## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
 
