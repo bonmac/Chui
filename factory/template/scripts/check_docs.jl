@@ -40,9 +40,23 @@ True when `rel` (relative to the checkout `root`) is a path git ignores, as a fi
 directory. Such a path is machine-local (`.claude/hooks/read-only-roots.txt`, a Manifest): it
 exists in a dev checkout and not in a fresh clone, so its presence cannot decide staleness
 (0.2.5). Asked only for a reference that does not resolve; false outside a git checkout.
+Only a tracked `.gitignore` counts, never `.git/info/exclude` or a global excludes file (they
+differ per machine), and a negated (`!`) match is not ignored. A tracked path is never ignored,
+so a tracked file deleted in the work tree is still reported.
 """
-gitignored(root, rel) = !startswith(rel, "..") &&
-    any(p -> git(root, "check-ignore", "-q", "--no-index", "--", p) !== nothing, (rel, rel * "/"))
+function gitignored(root, rel)
+    startswith(rel, "..") && return false
+    git(root, "ls-files", "--error-unmatch", "--", rel) === nothing || return false   # tracked: never ignored
+    for p in (rel, rel * "/")
+        out = git(root, "check-ignore", "-v", "--", p)              # `source:line:pattern<TAB>path`
+        m = out === nothing ? nothing : match(r"^(.+?):\d+:(.*)\t", out)
+        m === nothing && continue
+        src, pat = m.captures
+        (startswith(pat, "!") || isabspath(src) || basename(src) != ".gitignore") && continue
+        git(root, "ls-files", "--error-unmatch", "--", src) === nothing || return true
+    end
+    return false
+end
 
 """
 Return (line, reference) pairs in `text` that fail to resolve. `external` holds exact paths or

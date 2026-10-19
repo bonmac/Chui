@@ -89,6 +89,16 @@
         rc, out = capture(() -> CheckDocs.main(["--root", r]))
         @test rc == 1 && occursin("README.md:1: missing `.claude/hooks/read-only-roots.txt`", out)
         @test !CheckDocs.gitignored(mktempdir(), ".lanes")                    # not a git checkout: never ignored
+        # only a tracked .gitignore counts: not a machine's excludes file, not a `!` match, not a tracked file
+        excl = joinpath(mktempdir(), "excl"); write(excl, "scripts/gone.jl\n")
+        sh(`git -C $r config core.excludesFile $excl`)
+        commit!(r, Dict(".gitignore" => "*.cov\n!/keep.cov\n")); write(joinpath(r, "t.cov"), "x\n")
+        sh(`git -C $r add -f -- t.cov`); sh(`git -C $r commit -q -m tracked-but-ignored`)
+        rm(joinpath(r, "t.cov"))                                     # deleted, not yet committed
+        @test CheckDocs.gitignored(r, "scripts/x.cov") && !CheckDocs.gitignored(r, "keep.cov")
+        @test !CheckDocs.gitignored(r, "scripts/gone.jl") && !CheckDocs.gitignored(r, "t.cov")
+        sh(`git -C $r rm -q --cached .gitignore`)                              # an untracked .gitignore: not CI's
+        @test !CheckDocs.gitignored(r, "scripts/x.cov")
     end
 
     if IN_FACTORY

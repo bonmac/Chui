@@ -341,9 +341,9 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
             p = run(pipeline(ignorestatus(addenv(`$s -c $c`, "CLAUDE_PROJECT_DIR" => empty_root)); stdin = IOBuffer("{}"), stdout = out, stderr = err))
             @test (p.exitcode == 2 && occursin("missing", String(take!(err)))) || (println("$s: $c -> $(p.exitcode)"); false)
         end
-        # with the scripts present the same command runs the guard (allow, then deny)
+        proj = realpath(mktempdir()); cp(dirname(TEST_HOOKS), joinpath(proj, ".claude"))  # scripts present (hermetic, 0.2.5): allow, deny
         bg = only(filter(contains("bash_guard.sh"), cmds))
-        run1(payload) = run(pipeline(ignorestatus(addenv(`sh -c $bg`, "CLAUDE_PROJECT_DIR" => ROOT)); stdin = IOBuffer(payload), stdout = devnull, stderr = devnull)).exitcode
+        run1(payload) = run(pipeline(ignorestatus(addenv(`sh -c $bg`, "CLAUDE_PROJECT_DIR" => proj)); stdin = IOBuffer(payload), stdout = devnull, stderr = devnull)).exitcode
         @test run1(bash("ls")) == 0
         @test run1(bash("git reset --hard")) == 2
         # advisory hooks stay fail-open

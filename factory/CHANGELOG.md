@@ -13,13 +13,16 @@ Actions runs (2026-10-19) failed where every local run passed, because
 No guard is stricter; nothing to migrate.
 
 - **check_docs: a reference to a gitignored path is never stale** (`scripts/check_docs.jl`).
-  A reference that does not resolve is asked of `git check-ignore --no-index` (as a file and as
-  a directory, against each root it may resolve in); if git ignores it, it is machine-local and
-  passes. 0.2.4 reported `missing .claude/hooks/read-only-roots.txt` for every doc naming it in
+  A reference that does not resolve is asked of `git check-ignore -v` (as a file and as a
+  directory, against each root it may resolve in). It passes only when it is untracked and a
+  tracked `.gitignore` ignores it with a non-negated pattern: `.git/info/exclude` and a global
+  excludes file differ per machine and do not count, and a tracked file deleted in the work
+  tree is still reported (both found by the lane's review). 0.2.4 reported `missing .claude/hooks/read-only-roots.txt` for every doc naming it in
   a fresh clone (CI of the coordinator: HANDOFF.md, factory/CHANGELOG.md, factory/README.md; of
   a package: HANDOFF.md, changelog.d) and passed in a dev checkout. The gitignore decides, not
   a name list, so Manifests and `.lanes/` are covered the same way. New blind spot in
-  `.agents/checks.toml`: a typo that still matches an ignore pattern passes. The new test failed
+  `.agents/checks.toml`: a typo that still matches an ignore pattern passes (a glob, or an
+  unanchored directory such as `dev/`). The new test failed
   on the 0.2.4 tree (2 failed, 1 errored) and passes now.
 - **gen.jl tests are hermetic** (`scripts/test/test_gen.jl`). `gen_sandbox` copied the host's
   gitignored `.agents/factory.local.toml` and rendered `read-only-roots.txt` when present, so the
@@ -34,7 +37,8 @@ No guard is stricter; nothing to migrate.
   coordinator's own test run, hidden in CI because check_docs failed first (60 in `hooks` alone
   on the 0.2.4 tree). The fail-closed message contains "missing", so the missing-library tests
   passed there for the wrong reason. The tests now run `TEST_HOOKS` by default, a copy with no
-  roots, not required; tests that need roots or `REQUIRED=1` already build their own.
+  roots, not required; tests that need roots or `REQUIRED=1` already build their own. The
+  settings.json wiring test runs its command against a scratch project holding that copy.
 - How the class was searched: the full template suite in a fresh clone of the coordinator
   (1345/1346 on 0.2.4, the gen.jl test above), the coordinator's own suite in a fresh clone of a
   scratch coordinator synced to 0.2.5 (which found the hook tests), and a static search of the
