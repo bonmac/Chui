@@ -1,0 +1,64 @@
+# How scripts/sync_factory.jl treats each file under factory/template/.
+#   managed   (default) the factory owns it: updated on sync when the repo has not edited it;
+#             a local edit is a conflict that is shown and never overwritten without --force.
+#   seeded    copied once when missing, then owned by the repo; later diffs are only shown.
+#   generated never copied; `julia scripts/gen.jl` rebuilds it from the repo's own sources
+#             after a sync (scripts/test/test_gen.jl checks this list matches gen.jl's outputs).
+# Profiles adapt the template to a kind of repo (see scripts/sync_factory.jl):
+#   exclude  template paths (globs, `*` crosses `/`) the profile does not take
+#   overlay  directory under factory/ whose files replace or add to template files
+#   adr_dir  where ADRs live (default docs/adr); recorded in .factory-version for dod.jl
+version = 1
+
+[seeded]
+paths = [
+  "CLAUDE.md",
+  "CHANGELOG.md",
+  "HANDOFF.md",
+  ".gitignore",
+  "risk.toml",
+  "ratchets.toml",
+  ".agents/agent-registry.toml",
+  ".agents/factory.toml",
+  "docs/adr/README.md",
+  "docs/superpowers/specs/.gitkeep",
+  "docs/superpowers/plans/.gitkeep",
+  "test/runtests.jl",
+  "test/contracts/upstreams.toml",
+  "test/contracts/USED.md",
+  "test/jet/Project.toml",
+  "test/jet/runjet.jl",
+]
+
+[generated]
+paths = [
+  "AGENTS.md",
+  ".claude/agents/*",
+  ".codex/agents/*",
+  ".claude/hooks/limits.env",
+  ".claude/hooks/protected-paths.txt",
+  ".claude/hooks/read-only-roots.txt",
+  ".github/pull_request_template.md",
+  "docs/CHECK_COVERAGE.md",
+]
+
+[profiles.package]
+exclude = []
+
+# The coordinator repo (root) is not a Julia package: no package CI, no test/ tree.
+# Its ADRs live in adr/, which is the SOURCE of the template's docs/adr/ files, so those
+# are not copied back. The overlay seeds coordinator settings (read-only reference roots,
+# check_docs exclusions).
+[profiles.coordinator]
+adr_dir = "adr"
+overlay = "profiles/coordinator"
+exclude = [
+  "docs/adr/*",
+  ".github/workflows/CI.yml",
+  ".github/workflows/Docs.yml",
+  ".github/workflows/Contracts.yml",
+  ".github/workflows/Benchmark.yml",
+  ".github/workflows/CompatHelper.yml",
+  ".github/workflows/TagBot.yml",
+  "test/*",
+]

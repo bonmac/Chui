@@ -1,0 +1,29 @@
+# Repo-owned factory settings (seeded once per profile, then yours). T3: risk.toml protects it,
+# because it decides what bash_guard.sh allows. After editing, run `julia scripts/gen.jl`.
+# Globs use the risk.toml rule: `*` matches any characters INCLUDING `/` (so `**` = `*`).
+# Seeded from factory/profiles/coordinator/ (profile `coordinator`).
+version = 1
+
+[bash_guard]
+# Directories (absolute or ~/...) where only read-only commands may RUN: cat, head, tail,
+# less, grep, rg, find (no -exec/-delete), ls, wc, stat, file, cd/pwd, and git
+# log/show/diff/status/blame/ls-files. Anything else whose working directory (cwd, a tracked
+# `cd`, `git -C`, `make -C`, `uv --directory/--project`, `julia --project=`) is inside one is
+# blocked. Rendered into .claude/hooks/read-only-roots.txt by scripts/gen.jl.
+# The reference repos of research/reference-projects.md: read them, never run anything there.
+read_only_roots = [
+  "~/reference-project-a",
+  "~/reference-project-b",
+  "~/reference-project-c",
+]
+
+[check_docs]
+# research/, reference/ and prompts/ quote paths of the reference projects and of the
+# packages; numbered ADRs are point-in-time records that name package and reference paths
+# (adr/README.md, the index, is still checked); factory/template/ is checked from its own
+# root by its own tests.
+exclude = ["research/**", "reference/**", "prompts/**", "adr/0*", "factory/template/**"]
+# Package-repo paths named by the managed commands and agent bodies (and by the CLAUDE.md
+# template): they exist in the package repos, not here. Plus lead worktrees (gitignored).
+external = ["docs/agent/*", "test/*", "src/*", "ext/*", "benchmark/*", ".claude/worktrees/*"]
+ignore_fenced = true
