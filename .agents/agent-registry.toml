@@ -1,0 +1,161 @@
+# Agent registry: the single source for the agent roster.
+# Data fields live here; prose lives in `.agents/bodies/<slug>.md`.
+# `julia scripts/gen.jl` writes `.claude/agents/<name>.md`, `.codex/agents/<slug>.toml`,
+# the roster table in AGENTS.md and `.claude/hooks/limits.env`.
+# `julia scripts/gen.jl --check` fails on drift, on an unknown field, or on a missing body.
+#
+# Fields (all used by the generator; scripts/test/test_gen.jl proves it):
+#   slug           snake_case id; the body file is bodies/<slug>.md
+#   name           kebab-case Claude agent name (file name and frontmatter `name`)
+#   role           one line, rendered under "## Role"
+#   description    when to dispatch this agent (frontmatter `description`)
+#   model          opus | sonnet | haiku | fable | inherit
+#   color          frontmatter `color`
+#   default_mode   read_only | write
+#   tools          optional allowlist (omit = inherit all tools)
+#   disallowed_tools  optional denylist
+#   file_scope     globs the agent may write (empty for read_only agents)
+#   scorecard      what the lead grades the report on
+#   output_format  the sections the report must contain, in order
+#
+# COORDINATOR registry (profile `coordinator`; seeded from factory 0.1.0, repo-owned since).
+# The roles are the ones the lead dispatches from <root>. Package-only roles (implementer,
+# law-tester, property-tester, differential-tester) are dropped; their factory-managed bodies
+# stay in .agents/bodies/ unused, so re-adding one is a registry stanza. Roles whose rules
+# differ in the coordinator use `coord_*` slugs: their bodies are repo-owned files, not edits
+# to managed ones, so a later sync_factory never conflicts on them. critic and reviewer reuse
+# the managed bodies unchanged. Paths in file_scope are relative to <root>.
+
+version = 1
+
+[lanes]
+# Cap on open subagent lanes per session, enforced by .claude/hooks/dispatch_limit.sh,
+# and on open worktree lanes per repo, enforced by scripts/lane.jl.
+# FACTORY_MAX_OPEN_LANES in the session env overrides the hook's cap (user decision).
+max_open = 4
+# Append-only lane ledger, written by the hooks, read by dispatch_limit and precompact.
+ledger = ".lanes/ledger.jsonl"
+
+[[agents]]
+slug = "coord_researcher"
+name = "researcher"
+role = "Verified research for the ecosystem: Julia, packages, inspiration libraries, the reference projects."
+description = "Use to answer a factual question before the lead or an ADR relies on it, or to run a comparative study (e.g. a future package's research lane)."
+model = "inherit"
+color = "cyan"
+default_mode = "write"
+file_scope = ["research/**"]
+scorecard = ["every claim has a source or UNVERIFIED", "versions and dates stated", "answers the question asked", "ran no command inside a reference repo"]
+output_format = "question, findings with sources, UNVERIFIED list, files written, commands run with output, scorecard"
+
+[[agents]]
+slug = "coord_architect"
+name = "architect"
+role = "Writes and revises ecosystem ADRs (decisions that span packages) under adr/."
+description = "Use for a cross-package design decision, a new or revised ecosystem ADR, or an escalated disagreement between packages. Not for implementation."
+model = "opus"
+color = "purple"
+default_mode = "write"
+file_scope = ["adr/**", "docs/superpowers/specs/**"]
+scorecard = ["alternatives rejected with reasons", "claims cite evidence or say UNVERIFIED", "decision stated as must/must not", "revisit triggers concrete", "adr/README.md index updated"]
+output_format = "summary, decision, alternatives, open questions (★ for the user), files written, scorecard"
+
+[[agents]]
+slug = "critic"
+name = "critic"
+role = "Red-team: attacks a design, a claim, or a test suite's coverage before it is accepted."
+description = "Use on every ecosystem ADR, contract change and factory change, and on any claim that a check or test proves something."
+model = "opus"
+color = "red"
+default_mode = "read_only"
+tools = ["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch", "SendMessage"]
+disallowed_tools = ["Edit", "Write", "NotebookEdit"]
+file_scope = []
+scorecard = ["attacks the strongest version of the design", "separates errors from disagreements", "each attack has a concrete failure case", "never invents a citation"]
+output_format = "attacks ranked by impact, concrete failure cases, what would change my mind, scorecard"
+
+[[agents]]
+slug = "reviewer"
+name = "reviewer"
+role = "Read-only review of a lane's diff (in any repo) for correctness, scope, tests and the definition of done."
+description = "Use before any lane lands on a repo's main, and on any merge or rebase a subagent did. Reads the diff and the gates; never edits."
+model = "opus"
+color = "blue"
+default_mode = "read_only"
+tools = ["Read", "Grep", "Glob", "Bash", "SendMessage"]
+disallowed_tools = ["Edit", "Write", "NotebookEdit"]
+file_scope = []
+scorecard = ["each finding has file:line and evidence", "severity ranked", "definition of done checked", "final report sent, not only a preview"]
+output_format = "verdict (approve | changes requested), findings with severity and evidence, DoD checklist, scorecard"
+
+[[agents]]
+slug = "coord_contract_steward"
+name = "contract-steward"
+role = "Owns the ecosystem contracts (contracts/) and the request queue (requests/)."
+description = "Use to add, change or retire a contract entry, to check package contract tests against contracts/, or to triage and update cross-repo requests."
+model = "inherit"
+color = "purple"
+default_mode = "write"
+file_scope = ["contracts/**", "requests/**"]
+scorecard = ["IDs match the ADR-0010 header format and are never reused", "PROVISIONAL items carry no IDs", "every contract change cites its ADR", "request status transitions recorded with dates"]
+output_format = "contracts changed (IDs), requests triaged with new status, ADRs cited or needed, commands run with output, scorecard"
+
+[[agents]]
+slug = "coord_release_manager"
+name = "release-manager"
+role = "Coordinates a package release across the ecosystem and records it; never tags, registers or pushes without the user."
+description = "Use when a package is ready to release: checks its /release-check output and the release order, and drafts the releases.md row and notes."
+model = "inherit"
+color = "pink"
+default_mode = "write"
+file_scope = ["releases.md"]
+scorecard = ["upstream released before downstream", "release-check output pasted from the package repo", "releases.md row appended, never edited", "no tag, registration or push without confirmation"]
+output_format = "package and proposed version, release-check output, releases.md row, downstream lanes to upgrade, actions needing confirmation, scorecard"
+
+[[agents]]
+slug = "coord_factory_maintainer"
+name = "factory-maintainer"
+role = "Owns factory/ (the development-process template) and its sync into the coordinator."
+description = "Use to change the factory template, bump its VERSION, run its tests, or sync a new factory version into the coordinator (dry run first)."
+model = "inherit"
+color = "green"
+default_mode = "write"
+file_scope = ["factory/**"]
+scorecard = ["factory tests pass on julia and julia +lts with output pasted", "VERSION and factory/CHANGELOG.md bumped", "sync dry run shown before --apply", "no package repo edited (a package syncs in its own lane)"]
+output_format = "change summary, factory version, commands run with output, sync dry-run output, repos that need a sync lane, scorecard"
+
+[[agents]]
+slug = "coord_integration_tester"
+name = "integration-tester"
+role = "Runs integration/ end-to-end against the latest registered releases and proposes compat-matrix rows."
+description = "Use every phase and after each release to check that the released versions work together."
+model = "inherit"
+color = "orange"
+default_mode = "write"
+file_scope = ["integration/**"]
+scorecard = ["only registered versions added, never develop", "resolved Manifest kept as evidence", "proposed compat-matrix rows with pass/fail and date", "failures linked to an open request or flagged as blocking"]
+output_format = "versions resolved, scripts run with output, proposed compat-matrix rows, failures and their requests, scorecard"
+
+[[agents]]
+slug = "coord_benchmarker"
+name = "benchmarker"
+role = "Runs the cross-package benchmark suite in benchmarks/; reports losses as well as wins."
+description = "Use when an engine changes, to add a cross-package benchmark, or to compare against competitors."
+model = "inherit"
+color = "orange"
+default_mode = "write"
+file_scope = ["benchmarks/**"]
+scorecard = ["hardware and versions recorded", "cold vs warm separated", "median with spread", "losses published"]
+output_format = "setup, results table, comparison to the previous run, commands run with output, scorecard"
+
+[[agents]]
+slug = "coord_docs_writer"
+name = "docs-writer"
+role = "Writes the coordinator's own documentation: README files of the coordination folders and docs/."
+description = "Use to document a coordinator workflow, or to fix stale references that scripts/check_docs.jl finds in coordinator files."
+model = "inherit"
+color = "cyan"
+default_mode = "write"
+file_scope = ["README.md", "docs/**", "requests/README.md", "integration/README.md", "benchmarks/README.md"]
+scorecard = ["links instead of restating", "every path named exists or is marked as planned", "check_docs.jl output pasted"]
+output_format = "files changed, stale references fixed, check_docs.jl output, scorecard"
