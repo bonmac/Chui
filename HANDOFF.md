@@ -82,7 +82,7 @@ All entries below are actual runs (`subagent_mode: actual`). The lead re-ran the
 
 ## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
 
-Owner `bonmac`, public visibility; push the three package repos and ChuiRegistry once their mains are green after the 0.2.3 sync. The coordinator repo stays local; pushing it was not asked. Item 13 (permission mode) had no recommendation, so it stays unchanged.
+Owner `bonmac`, public visibility; push the three package repos and ChuiRegistry once their mains are green after the 0.2.3 sync. The coordinator is pushed too, as public `bonmac/Chui` (user, 2026-10-19), **but only after redaction**: no names, paths or details of the private reference projects anywhere in the tree or the git history of any Chui repo. The full research moves to a gitignored `private/` folder, and the real read-only roots go in a gitignored `.agents/factory.local.toml`. factory-023 makes the factory itself name-free. Item 13 (permission mode) had no recommendation, so it stays unchanged.
 
 The list as it was asked:
 
@@ -102,6 +102,16 @@ The list as it was asked:
     - This turns the ratchet green, so `main` can be fast-forwarded. Version note: the factory's own rule suggests 0.3.0 for stricter guards; the lead kept 0.2.2.
 12. **Lane cap for L1:** keep 4, or raise it (`max_open`, a T3 change). L1 runs implementer, test and review lanes in three repos at once.
 13. **Permission mode** for the rest of the run.
+
+## Push sequence (after factory-023 and checkpoint-apply)
+
+1. **Redaction lane (coordinator):**
+   - generic labels in `prompts/common.md` §3/§5, `00-lead.md`, CLAUDE.md, the bodies, ADR-0001 and `research/environment.md`;
+   - `research/reference-projects.md` moves to `private/`;
+   - the real roots move into `.agents/factory.local.toml`;
+   - history rewritten with `git filter-repo` (via `uvx`), done in a fresh clone; the lead reviews it before pushing.
+2. **Sync 0.2.3** into the coordinator and the three packages, refresh the packages' `docs/agent` copies from the redacted sources, and rewrite the package histories, which still hold the old `ECOSYSTEM.md`.
+3. **Gate:** `git log -p --all | grep -i -E 'reference-projects|reference-project-c|reference-project-b'` must be empty in every repo. Then create `bonmac/Chui`, `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl` and `ChuiRegistry` (all public) and push.
 
 ## Next action
 
