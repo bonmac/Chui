@@ -41,3 +41,9 @@ coverage/
 /lcov.info
 /coverage/
 /tmp/
+
+# Machine-local settings and what gen.jl renders from them (private paths are never committed)
+/.agents/factory.local.toml
+/.claude/hooks/read-only-roots.txt
+# Private notes kept out of the public repo (unredacted reference material)
+/private/

@@ -12,7 +12,7 @@ Turn `<root>` into the Chui coordinator repo described in `prompts/00-lead.md` (
 - **Lead instructions:** `CLAUDE.md` as the source; `AGENTS.md` generated from it.
 - **Coordinator roster:** 10 roles in `.agents/agent-registry.toml`, with repo-owned bodies `coord_*.md`.
 - **Protected paths:** `risk.toml` makes the user's briefs (`prompts/`) and `contracts/` T3, and `adr/`, `factory/`, `releases.md` and `compat-matrix.md` T2.
-- **Reference repos:** `.agents/factory.toml` lists the three reference repos as bash_guard read-only roots (the 2026-10-19 incident).
+- **Reference repos:** the three reference repos are bash_guard read-only roots (the 2026-10-19 incident). Since factory 0.2.3 their paths live in the gitignored `.agents/factory.local.toml`; the tracked `.agents/factory.toml` sets `require_read_only_roots = true`, so bash_guard fails closed without them.
 - **Skeletons:** `requests/README.md`, `releases.md`, `compat-matrix.md`, `integration/README.md` and `benchmarks/README.md` follow the formats in ADR-0010.
 
 Out of scope: any package code; remotes, pushes and registries (all wait for the ★ checkpoint).

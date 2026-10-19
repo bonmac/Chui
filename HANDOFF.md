@@ -35,7 +35,7 @@ Updated: 2026-10-19 · Phase: **★ L0 answered (2026-10-19): "accept all recomm
 | factory-023 | general-purpose | `factory/` → 0.2.3 (closes the guard-rereview bypasses; no sync) | running | — |
 
 Closed this phase:
-- **ref-research:** done. Incident: one of its sub-lanes ran `uv run` in reference-project-b, which re-synced the gitignored `.venv`; the git tree there stayed clean.
+- **ref-research:** done. Incident: one of its sub-lanes ran `uv run` in a reference repo, which re-synced the gitignored `.venv`; the git tree there stayed clean.
 - **eco-architect:** done.
 - **adr-critic:** done; 2 blockers and 14 should-fix items.
 - **eco-reviser:** done; all findings resolved.
@@ -68,7 +68,7 @@ All entries below are actual runs (`subagent_mode: actual`). The lead re-ran the
 - **Packages:**
   - `Pkg.test()` on `julia +lts` → ChuiCore 4/4, ChuiTypes 3/3, ChuiFrames 3/3 (lead re-run);
   - `check_docs.jl` → OK in all three (lead re-run).
-- **bash_guard:** blocks `cd ~/reference-project-b && uv run pytest` (rc=2); write_guard blocks `contracts/chui-core.md` (rc=2).
+- **bash_guard:** blocks `cd <a reference repo> && uv run pytest` (rc=2); write_guard blocks `contracts/chui-core.md` (rc=2).
 
 ## Checks NOT run, and why
 
@@ -111,7 +111,7 @@ The list as it was asked:
    - the real roots move into .agents/factory.local.toml;
    - history rewritten with `git filter-repo` (via `uvx`), done in a fresh clone; the lead reviews it before pushing.
 2. **Sync 0.2.3** into the coordinator and the three packages, refresh the packages' `docs/agent` copies from the redacted sources, and rewrite the package histories, which still hold the old `ECOSYSTEM.md`.
-3. **Gate:** `git log -p --all | grep -i -E 'reference-projects|reference-project-c|reference-project-b'` must be empty in every repo. Then create `bonmac/Chui`, `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl` and `ChuiRegistry` (all public) and push.
+3. **Gate:** `git log -p --all | grep -i -E -f private/redaction-patterns.txt` (gitignored) must be empty in every repo. Then create `bonmac/Chui`, `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl` and `ChuiRegistry` (all public) and push.
 
 ## Next action
 

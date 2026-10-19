@@ -1,5 +1,5 @@
-# Risk tiers and protected paths: the ONE list. COORDINATOR copy (seeded from factory 0.1.0,
-# then tailored; repo-owned).
+# Risk tiers and protected paths: the ONE list. Repo-owned after the first sync.
+# Seeded from factory/profiles/coordinator/ (profile `coordinator`).
 # Read by:
 #   scripts/gen.jl  -> .claude/hooks/protected-paths.txt (write_guard.sh blocks T3 writes)
 #                   -> .github/pull_request_template.md  (tier checkboxes)
@@ -13,7 +13,8 @@ default_tier = "T1"
 #   ci (CI itself), ref (PR links a spec or plan under docs/superpowers/),
 #   spec (PR links a spec), tests (src/ or ext/ changed => test/ changed),
 #   changelog (CHANGELOG.md changed), review (branch protection; dod.jl only reports it),
-#   adr (an ADR under docs/adr/ added or changed, or the PR cites a coordinator ADR-NNNN).
+#   adr (an ADR added or changed in the repo's ADR directory, or the PR cites a coordinator
+#        ADR-NNNN; the directory is the profile's `adr_dir`, recorded in .factory-version).
 [tiers.T0]
 summary = "Trivial: typo, comment, formatting, docs wording. No spec or plan."
 requires = ["ci"]
@@ -48,6 +49,20 @@ globs = [
   ".claude/hooks/*",
   ".agents/agent-registry.toml",
   ".agents/factory.toml",
+  ".agents/factory.local*",            # machine-local roots (gitignored)
+  # agent rules and the check register: a lane must not delete a body rule or a blind spot
+  ".agents/bodies/*",
+  ".agents/checks.toml",
+  ".claude/agents/*",
+  ".codex/agents/*",
+  # the gate scripts (and the helpers they all include): a lane must not weaken its own gate
+  "scripts/dod.jl",
+  "scripts/ratchet.jl",
+  "scripts/gen.jl",
+  "scripts/check_docs.jl",
+  "scripts/contract_usage.jl",
+  "scripts/ci.jl",
+  "scripts/_common.jl",
   "risk.toml",
   "ratchets.toml",
   ".factory-version",

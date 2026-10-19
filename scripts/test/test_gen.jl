@@ -64,7 +64,7 @@ quiet_check(d) = capture(() -> Gen.check(d))
         checks = Gen.load_checks(ROOT)
         by = Set(c["prevented_by"] for c in checks)
         for f in readdir(HOOKS)
-            endswith(f, ".sh") && f != "_lib.sh" || continue
+            endswith(f, ".sh") && !startswith(f, "_") || continue   # _*.sh: sourced libraries
             @test ".claude/hooks/$f" in by
         end
         for s in ("gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl")
@@ -90,6 +90,20 @@ quiet_check(d) = capture(() -> Gen.check(d))
         end
         write(cfg, "version = 1\n[bash_guard]\nreadonly_roots = []\n")  # a typo must not disable the guard
         @test_throws Gen.GenError Gen.outputs(d)
+        # 0.2.3: the gitignored factory.local.toml adds roots (merged, deduplicated); only that key
+        loc = joinpath(d, ".agents/factory.local.toml")
+        write(cfg, "version = 1\n[bash_guard]\nread_only_roots = [\"/abs/b\"]\nrequire_read_only_roots = true\n")
+        write(loc, "[bash_guard]\nread_only_roots = [\"~/private/ref\", \"/abs/b\"]\n")
+        out = Gen.outputs(d)
+        @test occursin("\n/abs/b\n~/private/ref\n", out[".claude/hooks/read-only-roots.txt"])
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=1", out[".claude/hooks/limits.env"])
+        for bad in ("[bash_guard]\nread_only_roots = [\"rel\"]\n", "[bash_guard]\nrequire_read_only_roots = false\n",
+                    "[check_docs]\nexclude = []\n")
+            write(loc, bad)
+            @test_throws Gen.GenError Gen.outputs(d)
+        end
+        rm(loc)
+        @test occursin("READ_ONLY_ROOTS_REQUIRED=0", Gen.outputs(gen_sandbox())[".claude/hooks/limits.env"])
         rm(cfg)                                                        # no config: an empty list
         @test count(l -> !startswith(l, "#"), split(Gen.outputs(d)[".claude/hooks/read-only-roots.txt"], '\n'; keepempty = false)) == 0
     end
@@ -98,7 +112,7 @@ quiet_check(d) = capture(() -> Gen.check(d))
         settings = joinpath(ROOT, ".claude/settings.json")
         @test success(pipeline(`jq -e .hooks $settings`; stdout = devnull))
         wired = Set(m.captures[1] for m in eachmatch(r"\.claude/hooks/([a-z_]+\.sh)", read(settings, String)))
-        hooks = Set(f for f in readdir(HOOKS) if endswith(f, ".sh") && f != "_lib.sh")
+        hooks = Set(f for f in readdir(HOOKS) if endswith(f, ".sh") && !startswith(f, "_"))
         @test wired == hooks
     end
 

@@ -15,8 +15,38 @@ include(joinpath(@__DIR__, "_common.jl"))
 const PKG_TEST = "using Pkg; Pkg.test(; coverage = get(ENV, \"CI_COVERAGE\", \"false\") == \"true\", test_args = ARGS)"
 const RUNIC_ADD = "using Pkg; Base.find_package(\"Runic\") === nothing && Pkg.add(\"Runic\")"
 const RUNIC_RUN = "using Runic; exit(Runic.main(ARGS))"
-const DOCS_DEV = "using Pkg; Pkg.develop(PackageSpec(path = pwd())); Pkg.instantiate()"
-const CONTRACT_MAIN = "using Pkg, TOML; for (n, u) in TOML.parsefile(\"test/contracts/upstreams.toml\")[\"upstreams\"]; Pkg.add(url = u, rev = \"main\"); end; Pkg.test(; test_args = [\"contract\"])"
+
+# Jobs with their own environment (docs/, test/jet/, test/contracts/) run from a TEMPORARY COPY
+# of its Project.toml: `ARGS = [env dir, scratch dir, mode]`. Pkg.develop of the checkout
+# (mode `develop`) or of upstream main (mode `main`) then writes only the copy. In place, Julia
+# >= 1.11 wrote `[sources] Pkg = {path = "/abs/..."}` into the tracked file, added the package
+# to [deps] and dropped its comments: the committed-develop-path hazard (common.md §2).
+# Relative `[sources]` paths are made absolute for the copy; Manifests are resolved afresh.
+const SCRATCH_ENV = """
+    using Pkg, TOML
+    src, dst, mode = ARGS[1], ARGS[2], get(ARGS, 3, "")
+    proj = TOML.parsefile(joinpath(src, "Project.toml"))
+    for s in values(get(proj, "sources", Dict()))
+        s isa Dict && haskey(s, "path") && (s["path"] = abspath(src, s["path"]))
+    end
+    mkpath(dst)
+    open(io -> TOML.print(io, proj), joinpath(dst, "Project.toml"), "w")
+    Pkg.activate(dst)
+    mode == "develop" && Pkg.develop(PackageSpec(path = pwd()))
+    if mode == "main"
+        for u in values(TOML.parsefile("test/contracts/upstreams.toml")["upstreams"])
+            Pkg.add(url = u, rev = "main")
+        end
+    end
+    Pkg.instantiate()
+    """
+const SCRATCH = String[] # scratch environments of the running job, removed when it ends
+scratch_env() = (p = tempname(); push!(SCRATCH, p); p)
+"`julia` commands that resolve a scratch copy of env `dir` (in `mode`), then run `script` in it."
+function in_scratch(dir, script, mode = "")
+    env = scratch_env()
+    return [["julia", "-e", SCRATCH_ENV, "--", dir, env, mode], ["julia", "--project=$env", script]]
+end
 
 # A command is an argv whose first element "julia" is replaced by the running julia binary.
 const Argv = Vector{String}
@@ -36,28 +66,23 @@ const JOBS = Dict{String, Job}(
         (root, extra) -> [["julia", "-e", SETUP]]),
     "test" => Job("Unit tests via Pkg.test; extra args select tags (`all` = every tag).",
         (root, extra) -> [["julia", "--project=.", "-e", PKG_TEST, "--", extra...]]),
-    "jet" => Job("JET in its own env test/jet/ (JET 0.12 needs Julia >= 1.12; run on stable only).",
+    "jet" => Job("JET in a scratch copy of test/jet/ (JET 0.12 needs Julia >= 1.12; run on stable only).",
         (root, extra) -> isfile(joinpath(root, "test/jet/runjet.jl")) ?
-            [["julia", "--project=test/jet", "-e", DOCS_DEV], ["julia", "--project=test/jet", "test/jet/runjet.jl"]] :
-            "no test/jet/runjet.jl"),
+            in_scratch("test/jet", "test/jet/runjet.jl", "develop") : "no test/jet/runjet.jl"),
     "quality" => Job("Aqua and ExplicitImports test items (tag :quality). JET is the separate `jet` job.",
         (root, extra) -> [["julia", "--project=.", "-e", PKG_TEST, "--", "quality"]]),
     "format" => Job("Runic check (ADR-0007): fails if any file is not formatted.",
         (root, extra) -> [["julia", "--project=@runic", "-e", RUNIC_ADD],
                           ["julia", "--project=@runic", "-e", RUNIC_RUN, "--", "--check", "--diff", "."]]),
-    "docs" => Job("Build Documenter docs (doctests run inside the test suite too).",
+    "docs" => Job("Build Documenter docs from a scratch copy of docs/ (doctests run in the test suite too).",
         (root, extra) -> isfile(joinpath(root, "docs/make.jl")) ?
-            [["julia", "--project=docs", "-e", DOCS_DEV], ["julia", "--project=docs", "docs/make.jl"]] :
-            "no docs/make.jl"),
-    "contracts" => Job("Contract tests (tag :contract) against the latest upstream release, or `-- main`.",
+            in_scratch("docs", "docs/make.jl", "develop") : "no docs/make.jl"),
+    "contracts" => Job("Contract tests (tag :contract) in their own env test/contracts/ (a scratch copy): the latest upstream release, or `-- main`.",
         function (root, extra)
             isempty(upstreams(root)) && return "no upstreams in test/contracts/upstreams.toml"
-            if "main" in extra
-                (get(ENV, "CI", "") == "true" || "--in-place" in extra) ||
-                    return "the upstream-main run rewrites Project.toml; run it in CI or a lane with `-- main --in-place`"
-                return [["julia", "--project=.", "-e", CONTRACT_MAIN]]
-            end
-            return [["julia", "--project=.", "-e", PKG_TEST, "--", "contract"]]
+            isfile(joinpath(root, "test/contracts/Project.toml")) ||
+                return "no test/contracts/Project.toml (seeded by factory 0.2.2; see its CHANGELOG)"
+            return in_scratch("test/contracts", "test/contracts/runtests.jl", "main" in extra ? "main" : "")
         end),
     "bench" => Job("Benchmark HEAD vs the merge base; fails beyond ratchets.toml bench.time_tolerance.",
         (root, extra) -> isfile(joinpath(root, "benchmark/benchmarks.jl")) ?
@@ -78,23 +103,29 @@ function tocmd(argv::Argv, root)
     exe = first(argv) == "julia" ? [Base.julia_cmd().exec; "--startup-file=no"] : [first(argv)]
     return Cmd(Cmd([exe; argv[2:end]]); dir = root)
 end
-show_argv(argv) = join((occursin(r"[\s\"'$;&|]", a) ? repr(a) : a for a in argv), ' ')
+show_argv(argv) = join((a == SCRATCH_ENV ? "<SCRATCH_ENV in scripts/ci.jl>" :
+                         occursin(r"[\s\"'$;&|]", a) ? repr(a) : a for a in argv), ' ')
 
 function run_job(name, root, extra; dry = false, io = stdout)
     haskey(JOBS, name) || (println(stderr, "ci.jl: unknown job `$name` (try --list)"); return 2)
-    cmds = JOBS[name].commands(root, extra)
-    if cmds isa String
-        println(io, "ci.jl $name: skipped: $cmds")
+    try
+        cmds = JOBS[name].commands(root, extra)
+        if cmds isa String
+            println(io, "ci.jl $name: skipped: $cmds")
+            return 0
+        end
+        for argv in cmds
+            println(io, "ci.jl $name\$ ", show_argv(argv))
+            dry && continue
+            ok = success(pipeline(tocmd(argv, root); stdout, stderr))
+            ok || (println(io, "ci.jl $name: FAILED"); return 1)
+        end
+        dry || println(io, "ci.jl $name: OK")
         return 0
+    finally
+        foreach(p -> rm(p; force = true, recursive = true), SCRATCH)
+        empty!(SCRATCH)
     end
-    for argv in cmds
-        println(io, "ci.jl $name\$ ", show_argv(argv))
-        dry && continue
-        ok = success(pipeline(tocmd(argv, root); stdout, stderr))
-        ok || (println(io, "ci.jl $name: FAILED"); return 1)
-    end
-    dry || println(io, "ci.jl $name: OK")
-    return 0
 end
 
 function main(args)

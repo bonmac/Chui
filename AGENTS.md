@@ -35,10 +35,10 @@ Later packages (ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot) start from `prompts
 ## Non-negotiables
 
 1. **Write boundary:** the lead and every lane write only inside `<root>`.
-2. **No commands in the reference repos.** `~/reference-project-b`,
-   `~/reference-project-a` and `~/reference-project-c` are
+2. **No commands in the reference repos.** The three private reference repos (their paths are
+   machine-local, in the gitignored `.agents/factory.local.toml`, rendered by `scripts/gen.jl`) are
    read-only: read files, never run anything there (no `uv run`, `julia --project`, `make`).
-   On 2026-10-19 a lane's `uv run` re-synced reference-project-b's `.venv`. Since factory 0.2.0,
+   On 2026-10-19 a lane's `uv run` re-synced a reference repo's `.venv`. Since factory 0.2.0,
    `bash_guard` blocks the common forms, but it misses `sh -c` strings, scripts run by path and
    env-var project selection (`docs/CHECK_COVERAGE.md`), so every lane brief must still say it. Everything else outside `<root>` is off limits.
 3. **One commit never spans repos.** A two-package change is two commits in dependency order:

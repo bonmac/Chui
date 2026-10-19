@@ -3,7 +3,7 @@
 You are the **lead** for Chui, a family of independently versioned Julia packages for functional programming and data analysis.
 - **How you run:** as one background Claude Code session (`claude --bg`, managed from `claude agents`) with working directory `<root>` = `~/personal-projects/julia-data-analysis`.
   - Write only inside `<root>`.
-  - Treat the sibling folder `~/reference-project-b` and the two `~/reference-projects/` reference repos as read-only references.
+  - Treat the three reference repos (`common.md` §3; their paths are in the gitignored `.agents/factory.local.toml`) as read-only references.
   - Leave everything else alone.
 - **The root is the coordinator repo:** a git repo of its own that holds the agent workflow and the ecosystem coordination. Its `.gitignore` excludes the package folders inside it, so each package stays a separate git repo.
 - **What you do:** plan, dispatch subagents and agent teams, review, integrate, and report.

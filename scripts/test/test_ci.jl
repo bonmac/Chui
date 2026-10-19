@@ -101,4 +101,65 @@ checkout_profile(root) = get(CI.factory_record(root), "profile",
         rc, out = capture(() -> CI.run_job("test", d, ["unit"]))
         @test rc == 0 || (print(out); false)
     end
+
+    @testset "docs, jet and contracts leave tracked files byte-identical (0.2.2)" begin
+        # 0.2.1 ran Pkg.develop in docs/ and test/jet/ in place: Julia >= 1.11 wrote an absolute
+        # [sources] path into the tracked Project.toml, added the package to [deps], dropped comments.
+        uuid = "7d2c1f0e-3b4a-4e5f-8a9b-0c1d2e3f4a5b"
+        tomlv = "TOML = \"fa267f1f-6049-4f14-aa54-33bafae1ed76\""
+        d = tmp_repo(Dict(
+            "Project.toml" => "name = \"FactoryEnvProbe\"\nuuid = \"$uuid\"\nversion = \"0.1.0\"\n",
+            "src/FactoryEnvProbe.jl" => "module FactoryEnvProbe\nf() = 1\nend\n",
+            ".gitignore" => "/Manifest*.toml\n/docs/Manifest*.toml\n/test/jet/Manifest*.toml\n/test/contracts/Manifest*.toml\n",
+            # a relative [sources] path (Julia >= 1.11) must still resolve from the scratch copy
+            "docs/Project.toml" => "# docs env: this comment must survive\n[deps]\nFactoryEnvProbe = \"$uuid\"\n$tomlv\n\n[sources]\nFactoryEnvProbe = {path = \"..\"}\n\n[compat]\nTOML = \"1\"\n",
+            "docs/make.jl" => "using TOML, FactoryEnvProbe\nFactoryEnvProbe.f() == 1 || error(\"probe\")\n",
+            "test/jet/Project.toml" => "# jet env: this comment must survive\n[deps]\n$tomlv\n\n[compat]\nTOML = \"1\"\n",
+            "test/jet/runjet.jl" => "using TOML\nconst N = Symbol(TOML.parsefile(joinpath(@__DIR__, \"..\", \"..\", \"Project.toml\"))[\"name\"])\n@eval using \$N\n",
+            "test/contracts/Project.toml" => "# contracts env\n[deps]\nTest = \"8dfed614-e22c-5e08-85e1-65c5234f0b40\"\n\n[compat]\nTest = \"1\"\n",
+            "test/contracts/upstreams.toml" => "[upstreams]\nUp = \"https://example.invalid/Up.jl\"\n",
+            "test/contracts/runtests.jl" => "using Test\n@test Base.active_project() != abspath(\"test/contracts/Project.toml\")\n",
+        ))
+        files = filter(f -> isfile(joinpath(d, f)), CI.tracked_files(d))
+        before = Dict(f => read(joinpath(d, f)) for f in files)
+        td = mktempdir()                                                # tempname() reads TMPDIR per call
+        withenv("JULIA_PKG_OFFLINE" => "true", "JULIA_PKG_PRECOMPILE_AUTO" => "0", "TMPDIR" => td) do
+            for job in ("docs", "jet", "contracts")
+                rc, out = capture(() -> CI.run_job(job, d, String[]))
+                @test (rc == 0 && occursin("ci.jl $job: OK", out)) || (print(out); false)
+            end
+            @test all(f -> read(joinpath(d, f)) == before[f], files)
+            @test isempty(read(`git -C $d status --porcelain`, String))
+            @test isempty(CI.SCRATCH)
+            @test !any(e -> isfile(joinpath(td, e, "Project.toml")), readdir(td))   # scratch envs deleted
+            write(joinpath(d, "test/contracts/runtests.jl"), "using Test\n@test 1 == 2\n")
+            @test capture(() -> CI.run_job("contracts", d, String[]))[1] == 1  # a failing contract test fails the job
+        end
+        rc, out = capture(() -> CI.run_job("contracts", d, ["main"]; dry = true))     # no --in-place gate now
+        @test rc == 0 && occursin("test/contracts", out) && occursin(" main", out) && !occursin("--project=.", out)
+        rm(joinpath(d, "test/contracts/Project.toml"))
+        rc, out = capture(() -> CI.run_job("contracts", d, String[]))
+        @test rc == 0 && occursin("skipped: no test/contracts/Project.toml", out)
+    end
+
+    if IN_FACTORY
+        @testset "seeded environments: compat on everything, Manifests ignored (0.2.2)" begin
+            ign = readlines(joinpath(ROOT, ".gitignore"))
+            envs = String[]
+            for (r, _, fs) in walkdir(ROOT), f in fs
+                f == "Project.toml" && push!(envs, relpath(r, ROOT))
+            end
+            @test issubset(["test/jet", "test/contracts"], envs)
+            for e in envs                                                  # ADR-0004 rule 3
+                p = TOML.parsefile(joinpath(ROOT, e, "Project.toml"))
+                c = get(p, "compat", Dict())
+                @test haskey(c, "julia") || (println("$e: no julia compat"); false)
+                for dep in keys(get(p, "deps", Dict()))
+                    @test haskey(c, dep) || (println("$e: no compat for $dep"); false)
+                end
+                @test "/$e/Manifest*.toml" in ign || (println(".gitignore misses /$e/Manifest*.toml"); false)
+            end
+            @test "/docs/Manifest*.toml" in ign
+        end
+    end
 end

@@ -26,14 +26,12 @@ Recorded 2026-10-19 by the lead session. Every line below comes from a command o
 | uv | 0.12.23; `uv run --python 3.13` → CPython 3.13.13 works |
 | Rscript | R 4.4.2; `dplyr`, `tidyr`, `data.table`, `readr` installed |
 | git | 2.56.0, user Boniface Makone |
-| gh | logged in as `bonmac` (scopes: gist, read:org, repo, workflow). Checked only; nothing created. |
+| gh | logged in as `bonmac`. Checked only; nothing created. |
 | Hardware | Apple M3 Pro, 12 CPU threads, 18 GiB RAM, macOS 26.6.2 |
 
 ## Reference repos (read-only)
 
-- `~/reference-project-b` — present.
-- `~/reference-project-a` — present (a second copy exists at `~/reference-project-a-copy`; the brief names the `projects/` one).
-- `~/reference-project-c` — present.
+- The three reference repos (paths in the gitignored `.agents/factory.local.toml`) — all present. One has a second copy elsewhere on the machine; it is listed as a read-only root too.
 
 ## Consequences
 
