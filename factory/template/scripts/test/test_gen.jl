@@ -9,8 +9,10 @@ same in every checkout.
 """
 function gen_sandbox(root = ROOT)
     d = mktempdir()
-    for rel in (".agents", ".claude/agents", ".codex/agents", ".claude/hooks", "CLAUDE.md", "AGENTS.md",
-                "risk.toml", ".github/pull_request_template.md", "docs/CHECK_COVERAGE.md")
+    for rel in (
+            ".agents", ".claude/agents", ".codex/agents", ".claude/hooks", "CLAUDE.md", "AGENTS.md",
+            "risk.toml", ".github/pull_request_template.md", "docs/CHECK_COVERAGE.md",
+        )
         src = joinpath(root, rel)
         ispath(src) || continue
         mkpath(dirname(joinpath(d, rel)))
@@ -83,8 +85,10 @@ end
             endswith(f, ".sh") && !startswith(f, "_") || continue   # _*.sh: sourced libraries
             @test ".claude/hooks/$f" in by
         end
-        for s in ("gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl",
-                  "check_claims.jl", "evidence.jl", "changelog.jl")
+        for s in (
+                "gen.jl", "dod.jl", "ratchet.jl", "check_docs.jl", "ci.jl", "lane.jl", "sync_factory.jl",
+                "check_claims.jl", "evidence.jl", "changelog.jl",
+            )
             @test "scripts/$s" in by
         end
         for c in checks
@@ -104,8 +108,10 @@ end
         # a fresh clone has no roots file (gitignored): --check skips it rather than reporting it missing
         mv(roots, roots * ".bak")
         ok, out = quiet_check(d)                                       # (a coordinator's limits.env drifts too:
-        @test all(l -> l == "drifted  .claude/hooks/limits.env" || startswith(l, "gen.jl --check"),   # it requires roots)
-                  split(out, '\n'; keepempty = false))
+        @test all(
+            l -> l == "drifted  .claude/hooks/limits.env" || startswith(l, "gen.jl --check"),   # it requires roots)
+            split(out, '\n'; keepempty = false)
+        )
         mv(roots * ".bak", roots)
         capture(() -> Gen.write_all(d))
         txt = read(joinpath(d, ".claude/hooks/read-only-roots.txt"), String)
@@ -123,8 +129,10 @@ end
         out = Gen.outputs(d)
         @test occursin("\n/abs/b\n~/private/ref\n", out[".claude/hooks/read-only-roots.txt"])
         @test occursin("READ_ONLY_ROOTS_REQUIRED=1", out[".claude/hooks/limits.env"])
-        for bad in ("[bash_guard]\nread_only_roots = [\"rel\"]\n", "[bash_guard]\nrequire_read_only_roots = false\n",
-                    "[check_docs]\nexclude = []\n")
+        for bad in (
+                "[bash_guard]\nread_only_roots = [\"rel\"]\n", "[bash_guard]\nrequire_read_only_roots = false\n",
+                "[check_docs]\nexclude = []\n",
+            )
             write(loc, bad)
             @test_throws Gen.GenError Gen.outputs(d)
         end
