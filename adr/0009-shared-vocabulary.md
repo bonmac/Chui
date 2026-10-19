@@ -1,0 +1,119 @@
+# ADR-0009: Shared vocabulary across the Chui packages
+
+- **Status:** Proposed — ★ `c` export style; `⨟` ownership is confirmed by ChuiCore's ADR
+- **Date:** 2026-10-19
+- **Deciders:** the user, at the L0 ★ checkpoint
+- **Scope:** ecosystem
+
+## Context
+
+Users should learn one grammar for the whole family. The prototype (`DESIGN.md` §2–§3) uses `⨟`
+for left-to-right composition, `c.x` for deferred column references, Tables.jl and Arrow, and
+monoid aggregation. Verified facts:
+- **`⨟`** (U+2A1F, `\bbsemi`) has precedence 12 (like `∘` and `*`, above `|>` at 9) and is
+  left-associative. Base does not define it on 1.11.7 or 1.13.2, or in the source of 1.10, 1.12,
+  1.13 or master (E-01, E-02, E-23).
+  - **Precedence gotcha:** `c.x .> 3 ⨟ g` parses as `c.x .> (3 ⨟ g)`, and `x |> f ⨟ g` as
+    `x |> (f ⨟ g)` (E-23). Docs must parenthesise mixed expressions.
+- **CompositionsBase.jl** 0.1.2 exports `⨟` as an alias of `opcompose`, its ASCII name
+  (`g ⨟ f == f ∘ g`). It has no dependencies and **11 registered dependents**, including Accessors
+  and Transducers (E-03, E-28). A second, different `⨟` binding would make a bare `⨟` ambiguous
+  for anyone who loads both.
+- **`c` as an exported binding** (E-24): on 1.10/1.11, a top-level `c = 1` after `using ChuiFrames`
+  and a first use of `c` errors ("cannot assign a value to imported variable"). On 1.13.2 it
+  silently shadows `c`. With an explicit `using ChuiFrames: c`, reassignment errors on both.
+- `IO`, `Task`, `Ref` and `Some` are exported by Base or Core on every supported Julia (on 1.10, `IO`, `Task` and `Ref` only by Core; E-34).
+
+## Decision
+
+1. **`⨟`: one binding, owned by ChuiCore**, meaning `(f ⨟ g)(x) == g(f(x))`.
+   **Recommendation:** ChuiCore extends `CompositionsBase.:⨟`/`opcompose` (taking it as a
+   dependency) rather than defining a new binding, and re-exports only those two names from it.
+   ChuiCore's own ADR confirms. Downstream packages only **add methods** (e.g.
+   `Step ⨟ Step` → `Pipeline`). The law is behavioural, `(f ⨟ g)(x...) == g(f(x...))`; what
+   `f ⨟ g` returns is not promised (`chui-core.md` CC-001).
+2. **`c.x` grammar, owned by ChuiFrames, reused by every future package.** Rules from the
+   prototype: dotted calls are elementwise; plain calls are reductions; comparisons are not
+   overloaded (write `.>`); `c.x |> f` is the whole-column escape hatch. **★ How `c` is exported:**
+   (a, recommended) exported from ChuiFrames, documenting the reassignment cost above;
+   (b) opt-in `using ChuiFrames: c`; (c) a submodule (`using ChuiFrames.Grammar`). ChuiFrames'
+   grammar ADR may refine this through a contract change.
+3. **Tables.jl for interchange; Apache Arrow as the columnar format.** Every tabular type implements
+   the Tables.jl interface, and every table-accepting function accepts any Tables.jl source. Arrow
+   IPC is the on-disk and inter-process format.
+4. **One effect *runtime*, in ChuiTypes.** Other effect-like types (lazy IO values, futures, plain
+   `Task`/`Channel`) convert to and from it through adapters in ChuiTypes. ChuiFrames' async I/O
+   and future packages' side effects run on that runtime. ChuiCore only documents the conventions.
+5. **Algebra versus aggregation (owned by ChuiCore):**
+   - **Typeclasses:** `Semigroup` (associative `combine`) and `Monoid` (Semigroup + a neutral
+     element, proposed as `neutral(::Type{T})`; the name is PROVISIONAL in `chui-core.md`).
+     *Amended 2026-10-19 (critic S1):* the first draft called it `identity`, which Base exports
+     with another meaning, so rule 6 forbids it; `mempty` was considered and rejected as jargon.
+   - **Name clash to resolve:** the protocol's `partial(agg, acc, chunk)` and brief 10's
+     partial-application helpers cannot share the name inside ChuiCore. Recommended: the protocol
+     keeps `partial` and partial application gets another name (e.g. `papply`); alternative:
+     the protocol function becomes `absorb`/`step!`. A ★ item, PROVISIONAL in `chui-core.md`.
+   - **Aggregation protocol** `Aggregator`: `init(agg)` is a *factory* (a fresh accumulator per
+     partition), plus `partial(agg, acc, chunk)`, `combine(agg, a, b)` and `final(agg, acc)`.
+   - **Trait `iscommutative(agg)::Bool`** (default `false`). Executors must respect it: a
+     non-commutative aggregator is combined in partition order. Shuffles and hash repartitioning
+     reorder rows, so they must keep an order key or fall back to sequential combination.
+   - **Floating point:** float `combine` is only approximately associative (E-34, E-36), so laws on
+     float results use one per-aggregator tolerance scaled to the data (e.g. `√eps·sum(abs, v)`
+     for sums), defined once in `chui-core.md` CC-004; Base's default `isapprox` is too strict.
+     The laws are stated over fresh accumulators per use, because `partial`/`combine` may mutate.
+   - **Empty input:** where Base returns a value on an empty `Vector`, `final(agg, init(agg))`
+     returns the same value (`isequal`). Where Base throws, ChuiCore throws one documented type on
+     every Julia (`ArgumentError` or `BoundsError`, below), because Base's own type changes between
+     versions (`maximum(Float64[])` is a `MethodError` on 1.10 and an `ArgumentError` on 1.13;
+     E-34). `ReduceM` and `MapM` are exempt from matching Base. Partitions may be empty, so
+     aggregators without an identity accumulator (the semigroups **and Moments**, E-36) carry an
+     internal "no value yet" state that `combine` treats as identity.
+     *Amended 2026-10-19 (critic B2, B3, S17).*
+
+   | Built-in | Class | Commutative | Empty input → |
+   |---|---|---|---|
+   | Sum, Prod, Count, CountTrue, AnyM, AllM | Monoid (approximate for floats) | yes | 0, 1, 0, 0, false, true |
+   | Max, Min, Extrema | Semigroup (no identity) | yes | throws `ArgumentError` (on every Julia) |
+   | First, Last | Semigroup | **no** | throws `BoundsError` |
+   | Mean | Aggregator: monoid (sum, n) + `final` | yes | NaN |
+   | Moments (var, std) | Aggregator: Chan merge with a "no value yet" state + `final`; **approximate** associativity | yes | NaN |
+   | ReduceM(op) | declared by the user; default Semigroup, non-commutative | as declared | throws `ArgumentError` unless the user declares a neutral element; not compared with Base |
+   | MapM(f, inner) | as `inner` | as `inner` | as `inner` on empty input; not compared with Base |
+6. **Naming:** verbs are lowercase dplyr-style; types are CamelCase; the only exported single-letter
+   name is `c`. **No exported name may collide with a Base, Core or standard-library export** (e.g.
+   brief 20's `IO` and `Task` need other names in ChuiTypes' ADR). ChuiCore's banner reports any
+   remaining conflicts. A method a package adds to a Base function takes an argument of a type
+   that package owns (no piracy); a verb with no such argument gets its own name
+   (`chui-frames.md` CF-009).
+7. **Input to the `chui-frames` Source contract:** the prototype's `schema` and `partitions` reuse
+   names from Tables.jl (`Tables.schema`, `Tables.partitions`; not exported, but confusing). The
+   contract must either use distinct names or extend Tables' functions consistently. It must also
+   choose between a **bounded-only v0** and a **streaming variant**, because ChuiTypes streams are
+   unbounded.
+
+## Alternatives rejected
+
+| Alternative | Why rejected |
+|---|---|
+| `∘` only | Right-to-left reading fights pipelines. Both stay available. |
+| `|>` chains only | They produce no value that can be inspected, optimized or run lazily. |
+| `>>` as composition | Base's bit shift; overloading it for functions is confusing. |
+| A fresh ChuiCore `⨟` binding | Clashes with CompositionsBase's export (E-03, E-28). |
+| "Exactly one effect type" | Brief 20 asks for IO, a ZIO-style effect, futures and Task-like types; one runtime with conversions is the coherent version. |
+| Calling Max/Min/First/Last monoids | They have no identity element; treating them as monoids hides the empty-input case. |
+
+## Consequences
+
+- Taking rule 1's recommendation makes CompositionsBase ChuiCore's first dependency (a ChuiCore dependency ADR).
+- Contracts list `⨟`, `c`, the Tables.jl guarantee, the Aggregator protocol and the effect runtime.
+
+## Verification
+
+- E-01/E-02/E-23 (`⨟` on 1.11.7 and 1.13.2), E-03, E-28 (dependents), E-24 (`c`), E-34 (Base/Core exports, empty reductions on 1.10 and 1.13, float associativity), E-36 (tolerance counterexamples, Moments with an empty side), E-37 (parse shapes, `public` on 1.10, name availability), E-38 (DataFrames exports `combine`).
+- UNVERIFIED: which of CompositionsBase's 11 dependents re-export `⨟`.
+
+## Revisit when
+
+- ChuiCore's composition ADR decides on CompositionsBase.
+- Base ever defines `⨟` (re-check each new Julia minor).

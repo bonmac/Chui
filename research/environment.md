@@ -9,6 +9,7 @@ Recorded 2026-10-19 by the lead session. Every line below comes from a command o
 | Session mode | Background job (`claude --bg`), job dir `~/.claude/jobs/11d20fa9`, bypass-permissions mode. | session context |
 | Background edit guard | Edits in the shared checkout are rejected until the session isolates. The lead therefore edits the coordinator repo in the worktree `.claude/worktrees/lead-l0` (branch `worktree-lead-l0`) and merges to `main` locally at each checkpoint. | Write tool refusal text |
 | Agent teams | **Teammates work, but in-process, not in tmux panes.** An Agent call with a `name` spawns a teammate (mailbox, SendMessage). `ListAgents` labels them `pane`, but `tmux list-panes -a` shows no pane for them: the background lead has `$TMUX` unset, so there is no session to split. The user confirmed they see no panes. Watch them via `claude agents` / `claude attach junta`. For real tmux panes, run the lead interactively inside tmux. | `echo $TMUX` → empty; `tmux list-panes -a`; `ListAgents` |
+| Agent teams (interactive, re-checked) | **Relaunched interactively inside tmux session `junta`: teammates open as real tmux panes.** Spawning `ref-research` and `eco-architect` created panes `junta:1.2` and `junta:1.3`. | `tmux list-panes -a` |
 | Use | Named teammates for lanes that need continuation via SendMessage; unnamed background subagents for one-shot tasks. Close each when done (TaskStop). | — |
 | Worktree lanes | `EnterWorktree` failed before `git init` ("not in a git repository"); succeeded after. Per-package lanes use `git worktree add <repo>/.worktrees/<lane>` through `factory/scripts/lane`; verified per repo in step 5. | tool output |
 | Context7 | Available (`mcp__context7__*`). Prototype notes: Arrow.jl and Parquet2 are not indexed. | ToolSearch |
@@ -19,7 +20,7 @@ Recorded 2026-10-19 by the lead session. Every line below comes from a command o
 
 | Tool | Version |
 |---|---|
-| Julia | 1.11.7 (juliaup `release`; 1.13.2 update offered; **`lts` channel not installed**) |
+| Julia | `release` 1.13.2 (default), `lts` 1.10.12, and `1.11.7`, all via juliaup. Updated by the user on 2026-10-19; check with `julia +lts --version`. |
 | Julia registries | `General` only (no personal registry yet) |
 | Julia default threads | 1 — run with `-t auto` |
 | uv | 0.12.23; `uv run --python 3.13` → CPython 3.13.13 works |
@@ -36,5 +37,5 @@ Recorded 2026-10-19 by the lead session. Every line below comes from a command o
 
 ## Consequences
 
-- The CI "LTS" job cannot be reproduced locally until `juliaup add lts`; the minimum-Julia ADR decides.
-- Teammates run in-process (no tmux panes) under `--bg`; phase rosters list each teammate and subagent.
+- The CI LTS job can be reproduced locally with `julia +lts`.
+- Under `--bg`, teammates run in-process with no panes. When the lead runs interactively inside tmux, they open as panes. Phase rosters list every teammate and subagent either way.
