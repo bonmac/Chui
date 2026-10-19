@@ -1,5 +1,6 @@
 # Package repos are separate git repos nested in the coordinator
 /Chui*.jl/
+/ChuiRegistry/
 
 # Worktree lanes
 .worktrees/
