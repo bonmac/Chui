@@ -20,7 +20,7 @@ Updated: 2026-10-19 · Phase: **★ L0 answered (2026-10-19): "accept all recomm
 - **Julia:** `release` 1.13.2 (default), `lts` 1.10.12 and 1.11.7, all via juliaup.
 - **Session:** the lead runs interactively in tmux session `junta`; teammates open as panes.
 - **Where to run the L1 lead (coord-review S5):** from the main checkout `<root>`, not from this worktree. From the worktree, write_guard blocks writes into `<root>/Chui*.jl/`, which are outside the worktree root. From `<root>`, nested repos are checked against their own protected paths. Spawn package lanes with cwd = the package repo.
-- **Hooks:** live for teammates rooted in any vendored checkout. In the coordinator, `prompts/*` and `contracts/*` are T3, so write_guard blocks them unless the user sets `FACTORY_ALLOW_T3=1`. The lane cap is 6 (decision 12).
+- **Hooks:** live for teammates rooted in any vendored checkout. In the coordinator, `prompts/*` and `contracts/*` are T3, so write_guard blocks them unless the user sets `FACTORY_ALLOW_T3=1`. The lane cap is 6 (decision 12) <!-- claim: max_open=6 -->.
 - **User-authorized T3 bypasses on 2026-10-19 (complete list):**
   1. **coord-setup:** the coordinator bootstrap. Files written around the guard: `.agents/agent-registry.toml` and the `coord_*` bodies, `risk.toml`, and the skeletons. Other files it touched, such as `CLAUDE.md`, are not T3.
   2. **The 0.2.0 sync** into the coordinator, plus the lead's follow-up edit adding `.agents/factory.toml` to the T3 globs. The 0.2.1 sync, which writes only `.factory-version`, is counted under this one.

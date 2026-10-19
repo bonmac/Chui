@@ -28,7 +28,8 @@ segments() {
             while (i <= n && index(" \t", substr(s, i, 1))) i++
             for (w = ""; i <= n && !index(sp, substr(s, i, 1)); i++) if (!index("\"\\" SQ, substr(s, i, 1))) w = w substr(s, i, 1)
             if (w != "") hd = w; b = b " "; i-- }
-          else if (c == "$" && d == SQ) { q = "A"; b = b c; i++ }
+          else if (c == "$" && d == SQ) { q = "A"; i++ } # $'...' and $"..." are quotes (0.2.4: the $ is dropped)
+          else if (c == "$" && d == "\"") { }
           else if (c == "\"" || c == SQ) q = c
           else if (k && t[k] == "`" && c == "`") { k--; q = "\""; b = b ";" }
           else if (c == "`") { bt = !bt; b = b (bt ? "$;" : ";") } # $: an expansion
@@ -46,16 +47,7 @@ segments() {
     END { if (body != "") { body = ""; for (j = 1; j <= nb; j++) scan(hb[j]) } if (b != "") out() }'
 }
 
-outside() { # outside TOKEN: deny if TOKEN names a path outside the root and scratch dirs
-    case $1 in
-        '' | -* | '&'*) return 0 ;;
-        '$TMPDIR' | '$TMPDIR'/*) _t="${TMPDIR%/}${1#'$TMPDIR'}" ;; # never a relative path; unset -> /
-        '${TMPDIR}' | '${TMPDIR}'/*) _t="${TMPDIR%/}${1#'${TMPDIR}'}" ;;
-        *) _t=$1 ;;
-    esac
-    _a=$(abspath "${_t:-/}" "$cwd")
-    allowed "$_a" || deny "write outside the repo root blocked: $_a (root: $ROOT). Lanes write only inside their repo; use the scratchpad or \$TMPDIR for temp files."
-}
+# outside() is in _bash_guard_write.sh (0.2.4).
 
 # optw " -o --output " WORD...: outside() the argument of each listed option (-o F, -oF, --output=F).
 optw() {
@@ -116,13 +108,14 @@ rm_check() {
 
 RO_GIT=' status log show diff rev-parse ls-files ls-tree grep blame describe cat-file merge-base for-each-ref shortlog reflog '
 
-# git_dir ARGS...: the last -C DIR, --git-dir DIR or --work-tree DIR (or =DIR) among git's global
-# options (empty if none): the repository git acts on.
+# git_dir ARGS...: the -C DIRs (cumulative, as git applies them), or the last --git-dir/--work-tree
+# DIR (or =DIR), among git's global options (empty if none): the repository git acts on.
 git_dir() {
     _gd=""
     while [ $# -gt 0 ]; do
         case $1 in
-            -C | --git-dir | --work-tree) _gd=${2:-}; shift $(($# > 1 ? 2 : 1)) ;;
+            -C) case ${2:-} in /* | '~'*) _gd=${2:-} ;; *) _gd=${_gd:+$_gd/}${2:-} ;; esac; shift $(($# > 1 ? 2 : 1)) ;; # cumulative
+            --git-dir | --work-tree) _gd=${2:-}; shift $(($# > 1 ? 2 : 1)) ;;
             --git-dir=* | --work-tree=*) _gd=${1#*=}; shift ;;
             -c | --namespace) shift $(($# > 1 ? 2 : 1)) ;; -*) shift ;; *) break ;;
         esac

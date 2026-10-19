@@ -78,8 +78,8 @@ checkout_profile(root) = get(CI.factory_record(root), "profile",
     end
     rc, out = capture(() -> CI.run_job("guards", ROOT, String[]; dry = true))
     @test rc == 0 && occursin("scripts/gen.jl --check", out)
-    rc, out = capture(() -> CI.run_job("contracts", ROOT, String[]))
-    @test rc == 0 && occursin("skipped: no upstreams", out)
+    rc, out = capture(() -> CI.run_job("contracts", mktempdir(), String[]))   # not a package (hermetic: ROOT may be one)
+    @test rc == 0 && occursin("skipped (not applicable)", out)
     rc, out = capture(() -> CI.run_job("test", ROOT, ["laws"]; dry = true))
     @test occursin("-- laws", out)
     @test capture(() -> CI.run_job("nope", ROOT, String[]))[1] == 2
@@ -138,8 +138,57 @@ checkout_profile(root) = get(CI.factory_record(root), "profile",
         rc, out = capture(() -> CI.run_job("contracts", d, ["main"]; dry = true))     # no --in-place gate now
         @test rc == 0 && occursin("test/contracts", out) && occursin(" main", out) && !occursin("--project=.", out)
         rm(joinpath(d, "test/contracts/Project.toml"))
+        rc, out = capture(() -> CI.run_job("contracts", d, String[]))       # 0.2.3: "skipped", exit 0
+        @test rc == 1 && occursin("FAILED (missing): test/contracts/Project.toml", out)
+    end
+
+    @testset "a skip declares its kind; a missing seeded file is red (0.2.4)" begin
+        seeded = Dict("Project.toml" => "name = \"P\"\nuuid = \"4b3a7c1e-0d5e-4c55-9a0b-2b6f0f1e9a12\"\n",
+                      "test/jet/Project.toml" => "", "test/jet/runjet.jl" => "", "docs/Project.toml" => "", "docs/make.jl" => "",
+                      "test/contracts/Project.toml" => "", "test/contracts/runtests.jl" => "",
+                      "test/contracts/upstreams.toml" => "[upstreams]\nUp = \"https://example.invalid/Up.jl\"\n")
+        mk() = (d = mktempdir(); for (f, c) in seeded; mkpath(dirname(joinpath(d, f))); write(joinpath(d, f), c); end; d)
+        job_of(f) = startswith(f, "test/jet") ? "jet" : startswith(f, "docs") ? "docs" : "contracts"
+        d = mk()
+        for job in ("jet", "docs", "contracts")                              # all present: the job runs
+            rc, out = capture(() -> CI.run_job(job, d, String[]; dry = true))
+            @test rc == 0 && !occursin("skipped", out) && !occursin("NOT RUN", out)
+        end
+        for f in sort!(collect(keys(seeded))), _ in 1:1                      # delete each one: red, naming the file
+            f == "Project.toml" && continue
+            d = mk(); rm(joinpath(d, f))
+            rc, out = capture(() -> CI.run_job(job_of(f), d, String[]; dry = true))
+            @test (rc == 1 && occursin("FAILED (missing): $f", out)) || (println("$f: rc=$rc $out"); false)
+        end
+        d = mk(); write(joinpath(d, "test/contracts/upstreams.toml"), "[upstreams]\n")   # waiting: loud, exit 0
         rc, out = capture(() -> CI.run_job("contracts", d, String[]))
-        @test rc == 0 && occursin("skipped: no test/contracts/Project.toml", out)
+        @test rc == 0 && occursin("NOT RUN (waiting)", out) && occursin("not a pass", out)
+        rc, out = withenv("GITHUB_ACTIONS" => "true") do
+            capture(() -> CI.run_job("contracts", d, String[]))
+        end
+        @test rc == 0 && occursin("::warning title=ci.jl contracts did not run::", out)
+        write(joinpath(d, "test/contracts/upstreams.toml"), "[upstream]\nUp = \"https://example.invalid/Up.jl\"\n")   # the review: a typo
+        rc, out = capture(() -> CI.run_job("contracts", d, String[]))
+        @test rc == 1 && occursin("unknown tables [\"upstream\"]", out)
+        rc, out = capture(() -> CI.run_job("bench", d, String[]))           # no benchmark suite yet
+        @test rc == 0 && occursin("NOT RUN (waiting)", out)
+        mkpath(joinpath(d, "benchmark"))
+        rc, out = capture(() -> CI.run_job("bench", d, String[]))           # the suite's file went missing
+        @test rc == 1 && occursin("FAILED (missing)", out)
+        e = mktempdir()                                                      # not a package: not applicable
+        for job in ("jet", "docs", "contracts", "bench")
+            rc, out = capture(() -> CI.run_job(job, e, String[]))
+            @test rc == 0 && occursin("skipped (not applicable)", out)
+        end
+        write(joinpath(e, ".factory-version"), "profile = \"package\"\n")  # a synced package without Project.toml
+        @test capture(() -> CI.run_job("jet", e, String[]))[1] == 1
+        @test_throws ErrorException CI.Skip(:quiet, "x")
+        write(joinpath(e, ".factory-version"), "not = [toml")                 # the review: unknown profile is not "not applicable"
+        @test capture(() -> CI.run_job("jet", e, String[]))[1] == 1
+        rc, out = withenv("JULIA_PROJECT" => "/elsewhere") do                # env hygiene: a leaky variable is named
+            capture(() -> CI.run_job("jet", e, String[]))
+        end
+        @test occursin("ci.jl jet: warning: JULIA_PROJECT=/elsewhere", out)
     end
 
     if IN_FACTORY

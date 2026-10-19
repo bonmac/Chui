@@ -7,6 +7,8 @@ carry migration notes.
 
 ## Unreleased
 
+- Synced factory 0.2.4: T3 protection through Bash, typed CI skips, lane audit, changelog fragments, check_claims and evidence files; requests carry a Reproducer field.
+
 - Vendored the ecosystem factory template, profile `coordinator` (see `.factory-version`).
 - Coordinator `CLAUDE.md`, agent registry (10 coordinator roles), `risk.toml` protected paths.
 - Bootstrap spec `docs/superpowers/specs/2026-10-19-coordinator-bootstrap.md`; HANDOFF brought up to date; the reference-repo rule now says what bash_guard catches and what it misses.

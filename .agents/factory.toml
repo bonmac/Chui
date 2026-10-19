@@ -29,3 +29,10 @@ exclude = ["research/**", "reference/**", "prompts/**", "adr/0*", "factory/templ
 # template): they exist in the package repos, not here. Plus lead worktrees (gitignored).
 external = ["docs/agent/*", "test/*", "src/*", "ext/*", "benchmark/*", ".claude/worktrees/*"]
 ignore_fenced = true
+
+[check_claims]
+# scripts/check_claims.jl (0.2.4): Markdown files (globs) scanned for `<!-- claim: key=value -->`
+# markers, and the claim keys that must have at least one marker. The lane cap in HANDOFF.md once
+# said 4 while the registry said 6; a marker on that line makes the drift fail CI.
+files = ["HANDOFF.md", "CLAUDE.md", "README.md", "factory/README.md", "factory/CHANGELOG.md"]
+required = ["max_open"]

@@ -20,6 +20,7 @@ least once per phase, and open requests appear in every phase report.
 - **Urgency:** blocking | soon | later
 - **Contract IDs affected:** CC-012 (or "new"; or "PROVISIONAL")
 - **Adapter used meanwhile:** module/file in the downstream repo
+- **Reproducer:** a command that shows the need (RED before the upstream change, GREEN after); closing the request quotes both runs
 
 ## Problem
 What the downstream package needs to do, and why the current upstream API does not allow it.

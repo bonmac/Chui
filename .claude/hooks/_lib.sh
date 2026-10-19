@@ -14,6 +14,8 @@ PAYLOAD=$(cat)
 have_jq() { command -v jq >/dev/null 2>&1; }
 need_jq() { have_jq || deny "jq not found on PATH; this guard fails closed. Install jq."; }
 field() { printf '%s' "$PAYLOAD" | jq -r "($1) // empty" 2>/dev/null; }
+# payload_ok: the payload parses as a JSON object (0.2.4: a guard that cannot read it fails closed).
+payload_ok() { printf '%s' "$PAYLOAD" | jq -e 'type == "object"' >/dev/null 2>&1; }
 session() { _s=$(field .session_id); printf '%s' "${_s:--}"; }
 deny() { printf '[factory] %s%s\n' "$*" "$(root_hint)" >&2; exit 2; }
 
@@ -80,6 +82,8 @@ abspath() {
     case $1 in
         "~") _p=$HOME ;;
         "~/"*) _p="$HOME/${1#"~/"}" ;;
+        "~+") _p=${2:-$ROOT} ;; # the current directory
+        "~+/"*) _p="${2:-$ROOT}/${1#"~+/"}" ;;
         '$HOME' | '${HOME}') _p=$HOME ;;
         '$HOME/'*) _p="$HOME/${1#'$HOME/'}" ;;
         '${HOME}/'*) _p="$HOME/${1#'${HOME}/'}" ;;
