@@ -1,9 +1,9 @@
 # Chui contracts
 
-> **DRAFT: not binding.** Every contract here becomes binding when ADR-0002, ADR-0004, ADR-0007,
-> ADR-0009 and ADR-0010 are Accepted at the L0 ★ (ADR-0010 lets v0 list only items decided by
-> Accepted ADRs; today they are all Proposed). `check.jl` fails if a contract file lacks this
-> banner while any of those ADRs is not Accepted.
+> **Binding since 2026-10-19.** ADR-0002, ADR-0004, ADR-0007, ADR-0009 and ADR-0010 were
+> Accepted at the L0 checkpoint, so the DRAFT banners are gone and every stable entry here changes
+> only through the table in "How a contract changes". `check.jl` fails if a contract file carries
+> a DRAFT banner while those ADRs are all Accepted, or lacks one while any of them is not.
 
 A contract is the API a Chui package promises to the packages downstream of it. Each file here is
 owned by one package; downstream repos test exactly the entries they use. The format and the
@@ -14,9 +14,9 @@ workflow come from [ADR-0010](../adr/0010-cross-repo-workflow.md); versioning co
 
 | File | Prefix | Owner | Consumers | Contract version | Package version it describes |
 |---|---|---|---|---|---|
-| [`chui-core.md`](chui-core.md) | `CC-` | ChuiCore | ChuiTypes, ChuiFrames (and every future package) | v0 (DRAFT) | ChuiCore 0.0.1 (unreleased) |
-| [`chui-types.md`](chui-types.md) | `CT-` | ChuiTypes | ChuiFrames (and future packages) | v0 (DRAFT) | ChuiTypes 0.0.1 (unreleased) |
-| [`chui-frames.md`](chui-frames.md) | `CF-` | ChuiFrames | ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot (none exist yet) | v0 (DRAFT) | ChuiFrames 0.0.1 (unreleased) |
+| [`chui-core.md`](chui-core.md) | `CC-` | ChuiCore | ChuiTypes, ChuiFrames (and every future package) | v0 | ChuiCore 0.0.1 (unreleased) |
+| [`chui-types.md`](chui-types.md) | `CT-` | ChuiTypes | ChuiFrames (and future packages) | v0 | ChuiTypes 0.0.1 (unreleased) |
+| [`chui-frames.md`](chui-frames.md) | `CF-` | ChuiFrames | ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot (none exist yet) | v0 | ChuiFrames 0.0.1 (unreleased) |
 
 "Contract version v0" means the first edition, written at L0 before the packages' own phase-1
 ADRs. It lists only what the ecosystem ADRs already decide; everything else is under
@@ -24,11 +24,12 @@ ADRs. It lists only what the ecosystem ADRs already decide; everything else is u
 
 ## Drafts
 
-While the DRAFT banner stands, entries may change without a contract ADR, because no downstream
-relies on them. IDs are still **never reused**: an entry withdrawn during the draft stays in its
-file as a short stub with `status=retired` and a "Withdrawn before the contract became binding"
-line naming where its content went (CC-003, CC-008, CC-009, CT-001, CT-002 at the critic review
-of 2026-10-19). Once the banner is removed, only the change table below applies.
+The draft period ended at the L0 checkpoint (2026-10-19). While the DRAFT banner stood, entries
+could change without a contract ADR, because no downstream relied on them. IDs were still
+**never reused**: an entry withdrawn during the draft stays in its file as a short stub with
+`status=retired` and a "Withdrawn before the contract became binding" line naming where its
+content went (CC-003, CC-008, CC-009, CT-001, CT-002 at the critic review of 2026-10-19). The
+user decided at L0 that these stubs stay. From now on only the change table below applies.
 
 ## Entry format (ADR-0010)
 

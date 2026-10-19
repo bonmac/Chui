@@ -1,6 +1,6 @@
 # ADR-0007: Test framework, quality checks and formatter
 
-- **Status:** Proposed — ★ formatter choice (Runic vs `common.md` §1.7's JuliaFormatter) is the user's
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -56,9 +56,9 @@ ecosystem ADR". Latest registered versions (E-10, E-32) and repo activity (E-12)
    `CHUI_UPDATE_SNAPSHOTS=1`. Output that depends on the Julia version (printing types, lowered
    code) is compared **on stable only**, or kept as per-version goldens
    (`test/snapshots/v1.13/…`) when both versions matter.
-5. **Formatter: ★ the user decides.** Recommendation: **Runic.jl** (zero-config; `runic-action@v1`
-   in CI; no line-length rule, E-15). This overrides `common.md` §1.7 ("JuliaFormatter"), so that
-   rule stays unchanged until the user approves. Fallback: JuliaFormatter 2.x with the Blue style.
+5. **Formatter: Runic.jl**, decided by the user at the L0 checkpoint (2026-10-19). Zero-config;
+   `runic-action@v1` in CI; no line-length rule (E-15). This replaces `common.md` §1.7's
+   "JuliaFormatter", and §1.7 now names Runic and cites this ADR.
 6. **Doctests** run on stable only (ADR-0008).
 
 ## Alternatives rejected
@@ -68,11 +68,12 @@ ecosystem ADR". Latest registered versions (E-10, E-32) and repo activity (E-12)
 | `JET = "0.9, 0.12"` in `test/Project.toml` | It resolves on every version (0.9 on 1.10/1.11, 0.12 on ≥ 1.12), but it loads JET's heavy tree into every matrix job, gives findings that differ by JET line, and can hold back other test dependencies. |
 | Plain `Test` + `include` files | No per-item tags or editor runner; tiers would be hand-rolled env-var logic. |
 | ReTestItems everywhere | Better isolation and timeouts, but stricter file naming and no clear gain for the pure packages; kept as a per-package option. |
+| JuliaFormatter 2.x (Blue style) | `common.md` §1.7's original choice. Needs a style config per repo and a line-length policy; it was revived only in 2026 (E-16). Rejected at the L0 checkpoint in favour of zero-config Runic. |
 | Hand-rolled property testing | Shrinking and replay are the hard part; Supposition provides them. |
 
 ## Consequences
 
-- Factory CI template: the test matrix (ADR-0006); the formatter check; a stable-only JET step with
+- Factory CI template: the test matrix (ADR-0006); the Runic format check; a stable-only JET step with
   its own environment; stable-only doctest and snapshot steps; contract jobs (ADR-0004).
 - Supposition is a single-maintainer dependency with slow releases: a tracked risk.
 
@@ -88,4 +89,4 @@ ecosystem ADR". Latest registered versions (E-10, E-32) and repo activity (E-12)
 
 - Supposition has a breaking bug, or a successor appears.
 - LTS moves to ≥ 1.12 (JET can move back into the test env).
-- The user answers the formatter ★.
+- Runic changes its style incompatibly, or stops being maintained.

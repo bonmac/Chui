@@ -1,6 +1,6 @@
 # ADR-0009: Shared vocabulary across the Chui packages
 
-- **Status:** Proposed — ★ `c` export style; `⨟` ownership is confirmed by ChuiCore's ADR
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -34,10 +34,11 @@ monoid aggregation. Verified facts:
    `f ⨟ g` returns is not promised (`chui-core.md` CC-001).
 2. **`c.x` grammar, owned by ChuiFrames, reused by every future package.** Rules from the
    prototype: dotted calls are elementwise; plain calls are reductions; comparisons are not
-   overloaded (write `.>`); `c.x |> f` is the whole-column escape hatch. **★ How `c` is exported:**
-   (a, recommended) exported from ChuiFrames, documenting the reassignment cost above;
-   (b) opt-in `using ChuiFrames: c`; (c) a submodule (`using ChuiFrames.Grammar`). ChuiFrames'
-   grammar ADR may refine this through a contract change.
+   overloaded (write `.>`); `c.x |> f` is the whole-column escape hatch. **How `c` is exported:
+   a plain `export c` from ChuiFrames** (option a, decided by the user at the L0 checkpoint,
+   2026-10-19), with the reassignment cost above documented. Rejected: (b) opt-in
+   `using ChuiFrames: c` only; (c) a submodule (`using ChuiFrames.Grammar`). Changing the export
+   style later is a breaking contract change (ADR-0010).
 3. **Tables.jl for interchange; Apache Arrow as the columnar format.** Every tabular type implements
    the Tables.jl interface, and every table-accepting function accepts any Tables.jl source. Arrow
    IPC is the on-disk and inter-process format.
@@ -46,13 +47,16 @@ monoid aggregation. Verified facts:
    and future packages' side effects run on that runtime. ChuiCore only documents the conventions.
 5. **Algebra versus aggregation (owned by ChuiCore):**
    - **Typeclasses:** `Semigroup` (associative `combine`) and `Monoid` (Semigroup + a neutral
-     element, proposed as `neutral(::Type{T})`; the name is PROVISIONAL in `chui-core.md`).
+     element named **`neutral`**, as in `neutral(::Type{T})`; the name was decided by the user
+     at the L0 checkpoint, 2026-10-19; its exact signature is still ChuiCore's to settle).
      *Amended 2026-10-19 (critic S1):* the first draft called it `identity`, which Base exports
      with another meaning, so rule 6 forbids it; `mempty` was considered and rejected as jargon.
-   - **Name clash to resolve:** the protocol's `partial(agg, acc, chunk)` and brief 10's
-     partial-application helpers cannot share the name inside ChuiCore. Recommended: the protocol
-     keeps `partial` and partial application gets another name (e.g. `papply`); alternative:
-     the protocol function becomes `absorb`/`step!`. A ★ item, PROVISIONAL in `chui-core.md`.
+   - **Name clash, resolved at the L0 checkpoint (2026-10-19):** the protocol's
+     `partial(agg, acc, chunk)` and brief 10's partial-application helpers cannot share the name
+     inside ChuiCore. Decided (option a): the aggregation protocol **keeps `partial`**, and
+     partial application is named **`papply`**. Rejected: renaming the protocol function to
+     `absorb`/`step!`. `papply`'s signature stays PROVISIONAL in `chui-core.md`'s composition item
+     until ChuiCore's composition ADR.
    - **Aggregation protocol** `Aggregator`: `init(agg)` is a *factory* (a fresh accumulator per
      partition), plus `partial(agg, acc, chunk)`, `combine(agg, a, b)` and `final(agg, acc)`.
    - **Trait `iscommutative(agg)::Bool`** (default `false`). Executors must respect it: a
@@ -63,8 +67,9 @@ monoid aggregation. Verified facts:
      for sums), defined once in `chui-core.md` CC-004; Base's default `isapprox` is too strict.
      The laws are stated over fresh accumulators per use, because `partial`/`combine` may mutate.
    - **Empty input:** where Base returns a value on an empty `Vector`, `final(agg, init(agg))`
-     returns the same value (`isequal`). Where Base throws, ChuiCore throws one documented type on
-     every Julia (`ArgumentError` or `BoundsError`, below), because Base's own type changes between
+     returns the same value (`isequal`). Where Base throws, ChuiCore throws one fixed, documented
+     type on every Julia (`ArgumentError` or `BoundsError`, below; the B2 policy, confirmed by the
+     user at the L0 checkpoint), because Base's own type changes between
      versions (`maximum(Float64[])` is a `MethodError` on 1.10 and an `ArgumentError` on 1.13;
      E-34). `ReduceM` and `MapM` are exempt from matching Base. Partitions may be empty, so
      aggregators without an identity accumulator (the semigroups **and Moments**, E-36) carry an
@@ -101,12 +106,21 @@ monoid aggregation. Verified facts:
 | `>>` as composition | Base's bit shift; overloading it for functions is confusing. |
 | A fresh ChuiCore `⨟` binding | Clashes with CompositionsBase's export (E-03, E-28). |
 | "Exactly one effect type" | Brief 20 asks for IO, a ZIO-style effect, futures and Task-like types; one runtime with conversions is the coherent version. |
+| Opt-in `using ChuiFrames: c`, or a `ChuiFrames.Grammar` submodule | Avoids the reassignment cost (E-24) but makes the core grammar a second import; the user chose a plain export at L0. |
+| Protocol function renamed `absorb`/`step!` (freeing `partial` for partial application) | `partial` is the established name in the aggregation design; the user chose `papply` for partial application at L0. |
+| Empty-input errors that follow Base's type on each Julia version | Base's type changes between versions (E-34), so callers could not catch one type; the user chose fixed types (B2) at L0. |
 | Calling Max/Min/First/Last monoids | They have no identity element; treating them as monoids hides the empty-input case. |
 
 ## Consequences
 
 - Taking rule 1's recommendation makes CompositionsBase ChuiCore's first dependency (a ChuiCore dependency ADR).
 - Contracts list `⨟`, `c`, the Tables.jl guarantee, the Aggregator protocol and the effect runtime.
+- `c` is a plain export, so `chui-frames.md` promises it as stable; users who reassign `c` at
+  top level get an error on 1.10/1.11 and silent shadowing on 1.13 (E-24), which the ChuiFrames
+  docs must say.
+- ChuiCore exports `partial` (protocol), `papply` (partial application) and `neutral` (monoid
+  element). None is exported by Base or Core on 1.10.12 or 1.13.2 (E-37); standard-library
+  exports are checked by ChuiCore's banner (rule 6).
 
 ## Verification
 

@@ -23,6 +23,13 @@ edit(f, from, to) = cdir -> begin
     write(path, replace(s, from => to; count = 1))
 end
 
+# Set ADR-0009 (one of check.jl's BINDING_ADRS) back to Proposed in the copied adr/ directory.
+function unaccept_adr0009!(cdir)
+    adir = joinpath(cdir, "..", "adr")
+    f = only(filter(n -> startswith(n, "0009-"), readdir(adir)))
+    edit(f, r"^- \*\*Status:\*\* .*$"m, "- **Status:** Proposed")(adir)
+end
+
 cases = [
     ("unmodified contracts pass", identity, 0, "0 error(s)"),
     ("a wrong `# ->` value fails", edit("chui-types.md", "reserved)   # -> true", "reserved)   # -> false"),
@@ -35,8 +42,10 @@ cases = [
      0, ""),   # still has other expectations in that block: must pass
     ("a Base-only block with no expectation at all fails",
      edit("chui-types.md", "reserved)   # -> true", "reserved)"), 1, "has no `# -> <value>` expectation"),
-    ("a missing DRAFT banner fails while the ADRs are Proposed",
-     edit("chui-frames.md", "**DRAFT: not binding.**", "**Binding.**"), 1, "has no DRAFT banner"),
+    ("a missing DRAFT banner fails while an ADR is Proposed", unaccept_adr0009!, 1, "has no DRAFT banner"),
+    ("a leftover DRAFT banner fails once the ADRs are Accepted",
+     edit("chui-frames.md", "> **Binding since 2026-10-19**", "> **DRAFT: not binding.**"),
+     1, "still has the DRAFT banner"),
     ("an unqualified names: entry fails", edit("chui-core.md", "names: `ChuiCore.iscommutative`", "names: `iscommutative`"),
      1, "is not qualified with ChuiCore"),
 ]

@@ -1,6 +1,6 @@
 # ADR-0006: Minimum Julia version
 
-- **Status:** Proposed — ★ the floor (1.10 vs 1.12) is the user's call
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem (a downstream package may raise its own floor, never lower it below its upstreams)
@@ -22,7 +22,8 @@ and nightly.
 
 ## Decision
 
-1. **`julia = "1.10"`** in every package's `[compat]` (i.e. `[1.10, 2.0)`).
+1. **`julia = "1.10"`** in every package's `[compat]` (i.e. `[1.10, 2.0)`). Decided by the user at
+   the L0 checkpoint (2026-10-19), over the 1.12 runner-up below.
 2. **CI matrix:** `lts` (blocking), `1` = stable (blocking), `pre`/nightly (non-blocking). JET, the
    docs build, doctests and snapshot tests run on stable only (ADR-0007, ADR-0008).
 3. **Runtime code** must work on 1.10:

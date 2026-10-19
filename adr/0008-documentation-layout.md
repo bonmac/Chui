@@ -1,6 +1,6 @@
 # ADR-0008: Documentation layout
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem

@@ -1,6 +1,6 @@
 # ADR-0005: Registry strategy
 
-- **Status:** Proposed — ★ gate: the user must approve creating and pushing the repos
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -28,12 +28,14 @@ packages are ready for General. Only `General` is installed locally (E-05). Veri
 
 1. **Personal registry `ChuiRegistry`**, its own GitHub repo, created with
    `LocalRegistry.create_registry("ChuiRegistry", "<git URL>"; description = "Chui ecosystem", push = false)`,
-   then reviewed and pushed by hand. The recommended visibility is **public**, so that CI and
-   TagBot need no tokens; a private registry needs a key in every repo's CI (E-22).
-2. **★ Gate "create and push the package and registry repos".** Nothing under rule 4 happens
-   until the user approves, at a checkpoint, the GitHub owner, the visibility, and creating and
-   pushing `ChuiRegistry` and each `<Name>.jl` repo.
-3. **Local-only fallback until the gate opens:**
+   then reviewed and pushed by hand, at `github.com/bonmac/ChuiRegistry`. Visibility is **public**
+   (decided at the L0 checkpoint), so that CI and TagBot need no tokens; a private registry needs
+   a key in every repo's CI (E-22).
+2. **Gate "create and push the package and registry repos": opened at the L0 checkpoint
+   (2026-10-19).** The user approved GitHub owner **`bonmac`**, **public** visibility, and creating
+   and pushing `ChuiRegistry` and each `<Name>.jl` repo (`ChuiCore.jl`, `ChuiTypes.jl`,
+   `ChuiFrames.jl`). The lead performs those outward actions; until they are done, rule 3 applies.
+3. **Local-only fallback until the repos exist on GitHub:**
    - create the registry against a local bare repo
      (`create_registry("ChuiRegistry", "file:///<root>/.registry/ChuiRegistry.git"; push = false)`),
      with `<root>/.registry/` git-ignored;
@@ -48,10 +50,14 @@ packages are ready for General. Only `General` is installed locally (E-05). Veri
    1. the release commit bumps `version` (ADR-0004 rule 4);
    2. **push `main`, then wait for CI to be green on that commit**;
    3. from a clean clone, `register(; registry = "ChuiRegistry")`, which pushes by default;
-   4. TagBot (`registry: <owner>/ChuiRegistry`) tags the commit and creates the GitHub release;
+   4. TagBot (`registry: bonmac/ChuiRegistry`) tags the commit and creates the GitHub release;
    5. record the release in `releases.md` and `compat-matrix.md`.
 5. **CI** adds the registry with julia-buildpkg's `localregistry: <ChuiRegistry URL>`. The registry
    repo runs `RegistryCI.test` with `registry_deps = ["General"]` on every push.
+   **CompatHelper and TagBot use `ChuiRegistry` as an extra registry** (decided at the L0
+   checkpoint): CompatHelper is given General plus `ChuiRegistry`, so it widens bounds on Chui
+   upstreams too, and TagBot gets `registry: bonmac/ChuiRegistry` (E-22). The exact CompatHelper
+   keyword is UNVERIFIED until the registry exists (factory `CompatHelper.yml` comment).
 6. **LocalRegistry lives in a shared environment** (e.g. `@registry`), never in a package.
 7. **Moving to General** happens per package, in dependency order (ChuiCore first), and only when:
    the user decides; the license is OSI-approved (ADR-0011); the name re-check passes (ADR-0003);
@@ -65,12 +71,15 @@ packages are ready for General. Only `General` is installed locally (E-05). Veri
 | Register in General from day one | Unstable APIs, a 3-day wait for each new package; General is for released software. |
 | `Pkg.develop` or URL deps committed in `Project.toml` | Forbidden by `common.md` §2: not reproducible, no compat resolution. |
 | `[sources]` with git URLs | Pins a commit rather than a released version (availability version UNVERIFIED). |
+| Private repos and a private registry | Needs a deploy key or token in every repo's CI and in TagBot (E-22); the user chose public. |
 | JuliaHub private registry | Needs an account and paid features (pricing UNVERIFIED). |
 | Registering before CI is green on the pushed commit | It could register a version that does not pass its own tests. |
 
 ## Consequences
 
-- Until the ★ gate opens, cross-package CI is impossible: GitHub runners cannot reach a `file://` registry.
+- Until the approved repos are created and pushed, cross-package CI is impossible: GitHub runners
+  cannot reach a `file://` registry.
+- Public repos and a public registry: CI and TagBot need no registry tokens.
 - Every downstream CI workflow and `integration/` environment must add the registry first.
 - Registrations happen from a clean clone, never from a lane worktree.
 

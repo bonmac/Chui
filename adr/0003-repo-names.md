@@ -1,6 +1,6 @@
 # ADR-0003: Repository and package names
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user (who chose the names), at the L0 ★ checkpoint
 - **Scope:** ecosystem

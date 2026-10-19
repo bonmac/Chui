@@ -32,7 +32,7 @@ version = 1
 # Cap on open subagent lanes per session, enforced by .claude/hooks/dispatch_limit.sh,
 # and on open worktree lanes per repo, enforced by scripts/lane.jl.
 # FACTORY_MAX_OPEN_LANES in the session env overrides the hook's cap (user decision).
-max_open = 4
+max_open = 6
 # Append-only lane ledger, written by the hooks, read by dispatch_limit and precompact.
 ledger = ".lanes/ledger.jsonl"
 

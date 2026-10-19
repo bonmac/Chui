@@ -11,3 +11,4 @@ carry migration notes.
 - Coordinator `CLAUDE.md`, agent registry (10 coordinator roles), `risk.toml` protected paths.
 - Bootstrap spec `docs/superpowers/specs/2026-10-19-coordinator-bootstrap.md`; HANDOFF brought up to date; the reference-repo rule now says what bash_guard catches and what it misses.
 - Skeletons: `requests/README.md`, `releases.md`, `compat-matrix.md`, `integration/README.md`, `benchmarks/README.md`.
+- Applied the L0 checkpoint decisions: ADRs 0001–0011 Accepted, contract DRAFT banners removed (new CF-010: `c` is a plain export), Runic in `common.md` §1.7, `0.0.x` snapshots in brief 20, `[lanes] max_open = 6`.

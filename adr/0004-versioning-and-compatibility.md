@@ -1,6 +1,6 @@
 # ADR-0004: Versioning and compatibility policy
 
-- **Status:** Proposed — one ★ item for the user (brief 20's `v0.1.0-DEV`)
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -27,9 +27,9 @@ dependent's `[compat]` (E-31).
    - **≥ 1.0:** standard SemVer: major = breaking, minor = features, patch = fixes. Downstream
      compat names the major, e.g. `ChuiCore = "1"`, or `"1.4"` when it needs a 1.4 feature.
 2. **Pre-0.1 snapshots go to the personal registry as `0.0.x`;** the first stable version is
-   `0.1.0`. ★ Brief `20-chui-types.md` still says "the tagged pre-release (`v0.1.0-DEV`)".
-   Replacing that with `0.0.x` is the user's decision. This ADR recommends it, because pre-release
-   versions fail AutoMerge and their Pkg/LocalRegistry handling is UNVERIFIED.
+   `0.1.0`. **Decided at the L0 checkpoint (2026-10-19):** `0.0.x` snapshots replace brief
+   `20-chui-types.md`'s "tagged pre-release (`v0.1.0-DEV`)", and the brief now says so. Reason:
+   pre-release versions fail AutoMerge and their Pkg/LocalRegistry handling is UNVERIFIED.
 3. **`[compat]` on everything:** `julia` (ADR-0006), every `[deps]`, every `[weakdeps]`, and the
    test, docs and JET environments. Bounds are caret ranges with a finite upper bound (no `">=x"`,
    no bare `"0"`).
@@ -57,7 +57,7 @@ dependent's `[compat]` (E-31).
 | Alternative | Why rejected |
 |---|---|
 | Lock-step versions for all packages | Contradicts independent releases and forces no-op releases. |
-| `v0.1.0-DEV` pre-release tags | Rejected by AutoMerge for new packages (E-20); Pkg resolution of pre-releases UNVERIFIED. |
+| `v0.1.0-DEV` pre-release tags (brief 20's original wording; rejected at the L0 checkpoint) | Rejected by AutoMerge for new packages (E-20); Pkg resolution of pre-releases UNVERIFIED. |
 | Bump `main`'s version right after each release (`-DEV` style) | Breaks the upstream-`main` contract job by construction (E-31). |
 | CI rewrites downstream compat before the `main` job | More machinery, and it hides the very compat question the job should raise. |
 | Unbounded or `"*"` compat | Fails AutoMerge (E-20) and lets breaking upstream releases in silently. |

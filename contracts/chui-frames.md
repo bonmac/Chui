@@ -1,8 +1,7 @@
 # Contract: chui-frames (v0)
 
-> **DRAFT: not binding.** This contract becomes binding when ADR-0002, ADR-0004, ADR-0007,
-> ADR-0009 and ADR-0010 are Accepted at the L0 ★. Until then no downstream relies on it and its
-> entries may change without a contract ADR (see [README.md](README.md), "Drafts").
+> **Binding since 2026-10-19** (ADR-0002/0004/0007/0009/0010 Accepted at the L0 checkpoint).
+> Stable entries change only through a contract ADR (see [README.md](README.md)).
 
 - **Owner:** ChuiFrames. **Consumers:** ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot (none exist
   yet; ADR-0002 §1).
@@ -17,7 +16,7 @@
   and are PROVISIONAL until ChuiFrames' parity matrix and grammar ADR accept them. The *rules*
   below are stable. Contract tests use the names of the ChuiFrames release under test and are
   re-written when an accepted ADR renames them (README, "Tests that need PROVISIONAL names").
-  How `c` is made available is a ★ question (ADR-0009 §2); examples assume `c` is in scope.
+  `c` is a plain export of ChuiFrames (CF-010), so `using ChuiFrames` brings it into scope.
 
 ## Definitions
 
@@ -314,14 +313,32 @@ export; and, for each method ChuiFrames adds to a Base or standard-library funct
 signature has an argument of a ChuiFrames-owned type (via `methods(f, ChuiFrames)` and the
 method signatures).
 
+### CF-010 `c` is a plain export of ChuiFrames
+`since=0.0.1 status=stable`
+
+**Statement.** ChuiFrames exports `c` with a plain `export c` (ADR-0009 §2 option (a), decided by
+the user at the L0 checkpoint, 2026-10-19), so `using ChuiFrames` brings `c` into scope with no
+extra import; `using ChuiFrames: c` also works. There is no `ChuiFrames.Grammar` submodule for
+`c`. The reassignment cost (CF-002, E-24) is documented, not avoided. Moving `c` to opt-in or
+to a submodule would be a breaking contract change (ADR-0010). Rule-only: the name itself is
+covered by CF-002's `names:` line.
+
+**Example.**
+```julia
+using ChuiFrames
+Base.isexported(ChuiFrames, :c)    # true
+e = c.x .+ 1                       # no `using ChuiFrames: c` needed
+```
+
+test: `CF-010 c is exported` — after `using ChuiFrames` in a fresh module, `isdefined(@__MODULE__, :c)`
+and `Base.isexported(ChuiFrames, :c)` are `true`, and `c === ChuiFrames.c`.
+
 ---
 
 ## PROVISIONAL
 
 No IDs and no contract tests. Each item gets an ID when ChuiFrames' ADR accepts it (ADR-0010).
 
-- **How `c` is made available** (★, ADR-0009 §2): (a) exported from ChuiFrames (recommended),
-  (b) opt-in `using ChuiFrames: c`, (c) a submodule `using ChuiFrames.Grammar`.
 - **Indexing forms of `c`:** `c[:name]`, `c["name with spaces"]`, and computed column sets.
 - **The verb set and names** (dplyr/tidyr parity matrix), `desc`, `across`, joins, `nest`/`unnest`,
   and the distinct names CF-009 requires for Base-named verbs without a ChuiFrames argument.

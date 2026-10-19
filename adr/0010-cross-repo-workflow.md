@@ -1,6 +1,6 @@
 # ADR-0010: Cross-repo workflow
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem (the coordinator repo and every package repo)
@@ -35,7 +35,10 @@ checking that released versions work together. The version-0 contracts (L0 step 
   ADRs are Accepted, every contract file carries a **DRAFT banner** ("binding when ADR-0002/0004/
   0007/0009/0010 are Accepted at the L0 ★"), and `contracts/check.jl` enforces it. During the
   draft, entries may change without a contract ADR; a withdrawn entry stays as a `retired` stub
-  and its ID is not reused. *Amended 2026-10-19 (critic B1).*
+  and its ID is not reused. *Amended 2026-10-19 (critic B1).* **The draft period ended at the L0
+  checkpoint (2026-10-19):** those ADRs are Accepted, the banners are removed, contract changes
+  now need a contract ADR, and the DRAFT-period withdrawals stay as `retired` stubs (the user's
+  decision).
 - **Entries that promise named API** carry a `names:` line of qualified names
   (`ChuiCore.partial`), used by `contract-check` to map a downstream's uses to IDs.
 - **Everything else** goes in a `## PROVISIONAL` section **without stable IDs**. An item gets an ID

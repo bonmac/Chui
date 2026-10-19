@@ -2,7 +2,8 @@
 # Usage: julia --startup-file=no check.jl <contracts-dir>
 # Checks: entry headers and `since=… status=…` lines; unique, sequential IDs; stable entries have
 # Statement/Example/test:; `names:` lines are qualified with the owning package; the DRAFT banner
-# while the ADRs it depends on are not Accepted; every julia block parses; every "(Base only)"
+# is present while the ADRs it depends on are not all Accepted, and absent once they are; every
+# julia block parses; every "(Base only)"
 # block runs and matches its `# -> <value>` expectations.
 const HDR = r"^### (C[CTF]-\d{3}) (.+)$"
 const META = r"^`since=(\S+) status=(stable|deprecated|retired)`$"
@@ -92,8 +93,11 @@ for f in ["README.md", "chui-core.md", "chui-types.md", "chui-frames.md"]
     path = joinpath(dir, f)
     lines = readlines(path)
     println(f, " (", length(lines), " lines)")
-    accepted || any(l -> occursin(BANNER, l), lines) ||
+    hasbanner = any(l -> occursin(BANNER, l), lines)
+    accepted || hasbanner ||
         err("$f has no DRAFT banner ($BANNER) but ADR-$(join(BINDING_ADRS, "/")) are not all Accepted")
+    accepted && hasbanner &&
+        err("$f still has the DRAFT banner ($BANNER) but ADR-$(join(BINDING_ADRS, "/")) are all Accepted")
     fenced, blocks = scan(lines)
     if haskey(PREFIX, f)
         pre = PREFIX[f]; ids = String[]; nstable = 0

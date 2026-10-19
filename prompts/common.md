@@ -32,7 +32,7 @@ The lead session and every subagent or teammate it dispatches read this file bef
    - PrecompileTools workloads, with measured time-to-first-x (TTFX, the delay before the first result after loading);
    - JET.jl type-stability checks, Aqua.jl, and ExplicitImports.jl;
    - Documenter.jl docs with doctests;
-   - JuliaFormatter, using the style recorded in the ecosystem ADR.
+   - Runic.jl as the formatter (zero-config; ADR-0007, decided at the L0 checkpoint).
 
 ## 2. Independence: each repo stands alone
 
