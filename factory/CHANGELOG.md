@@ -43,9 +43,10 @@ No guard is stricter; nothing to migrate.
   (1345/1346 on 0.2.4, the gen.jl test above), the coordinator's own suite in a fresh clone of a
   scratch coordinator synced to 0.2.5 (which found the hook tests), and a static search of the
   tests for the gitignored files (`factory.local.toml`, the roots file, Manifests).
-- Template tests: 1353/1353 on Julia 1.13.2 and 1.10.12 in a dev checkout (1346 in 0.2.4). A
-  package bootstrapped from 0.2.5 into an empty repo, committed and cloned afresh (no local
-  files), passes `scripts/ci.jl guards`, including a doc that names the roots file.
+- Template tests: 1356/1356 on Julia 1.13.2 and 1.10.12 (1346 in 0.2.4). In fresh clones with
+  no local files, `scripts/ci.jl guards` passes for a scratch coordinator and a scratch copy of a
+  pushed package, each synced to 0.2.5 (both failed on 0.2.4), and for a package bootstrapped
+  from 0.2.5 into an empty repo with a doc that names the roots file.
 
 ## 0.2.4 (2026-10-19)
 
