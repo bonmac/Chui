@@ -1,10 +1,10 @@
-# Package brief: Junta.jl (functional-programming core)
+# Package brief: ChuiCore.jl (functional-programming core)
 
-The lead session hands this brief to the agents working on **Junta.jl**. It is the most upstream package in the ecosystem: everything else depends on it, and it depends on no other Junta package. Lanes for this package edit and commit only in `<root>/Junta.jl`.
+The lead session hands this brief to the agents working on **ChuiCore.jl**. It is the most upstream package in the ecosystem: everything else depends on it, and it depends on no other Chui package. Lanes for this package edit and commit only in `<root>/ChuiCore.jl`.
 
 **Read first:**
 - `docs/agent/ECOSYSTEM.md`: the shared rules. Follow them exactly.
-- `<root>/contracts/junta-core.md`: your promise to downstream packages. You own its implementation; a change to it needs a meta ADR.
+- `<root>/contracts/chui-core.md`: your promise to downstream packages. You own its implementation; a change to it needs a meta ADR.
 - `HANDOFF.md`.
 
 ## Scope
@@ -16,14 +16,14 @@ The lead session hands this brief to the agents working on **Junta.jl**. It is t
   - Foldable, Traversable;
   - Contravariant, Bifunctor, Profunctor;
   - Category/Arrow.
-- **Monoids** live here, and JuntaDF's aggregation engine reuses them. Each has a partial / associative combine / final split, plus a `Mean`-style "aggregate with a final step" pattern; see the prototype's monoid design in `<root>/reference/prototype/DESIGN.md` §3.6.
-- **Recursion schemes:** `Fix`, cata, ana, hylo, para, apo, histo, futu, and their monadic variants. JuntaDF's optimizer will use these for plan rewrites.
+- **Monoids** live here, and ChuiFrames's aggregation engine reuses them. Each has a partial / associative combine / final split, plus a `Mean`-style "aggregate with a final step" pattern; see the prototype's monoid design in `<root>/reference/prototype/DESIGN.md` §3.6.
+- **Recursion schemes:** `Fix`, cata, ana, hylo, para, apo, histo, futu, and their monadic variants. ChuiFrames's optimizer will use these for plan rewrites.
 - **Data types à la carte:** coproducts of functors, injection and projection, free monads, and an interpreter pattern (a free monad separates describing a program from running it).
 - **Laziness:** thunks, memoized lazy values, lazy structure combinators.
-- **Purity and effects conventions:** document what "pure" means in Julia, and how effects are tracked (marked) or kept apart (isolated). JuntaADT supplies the effect types themselves.
+- **Purity and effects conventions:** document what "pure" means in Julia, and how effects are tracked (marked) or kept apart (isolated). ChuiTypes supplies the effect types themselves.
 - **Algebraic data types and pattern matching:** evaluate building your own versus Moshi.jl, SumTypes.jl and MLStyle.jl. Benchmark type stability, allocations and compile latency for each, then decide in an ADR.
 - **Optics:** lenses and prisms. Evaluate Accessors.jl and reuse it if it's good enough.
-- **Transducers:** decide in an ADR whether the shared transducer substrate lives here (own implementation, or adopting Transducers.jl), since both JuntaADT streams and JuntaDF's execution use one. The prototype's minimal version is in `<root>/reference/prototype/Tidy.jl`.
+- **Transducers:** decide in an ADR whether the shared transducer substrate lives here (own implementation, or adopting Transducers.jl), since both ChuiTypes streams and ChuiFrames's execution use one. The prototype's minimal version is in `<root>/reference/prototype/Tidy.jl`.
 - **Inspiration:**
   - Haskell `base` and `recursion-schemes`;
   - Rúnar Bjarnason (*Functional Programming in Scala*, free monads, "Constraints Liberate, Liberties Constrain");
@@ -35,7 +35,7 @@ The lead session hands this brief to the agents working on **Junta.jl**. It is t
 - **Name-conflict banner, like dplyr:**
   - In `__init__`, when `isinteractive()`, print the exported names that create real binding conflicts with Base or with already-loaded packages.
   - First establish by experiment how Julia resolves these: adding methods to `Base.f` is not a conflict.
-  - Ship the banner as a small reusable utility, so JuntaADT and JuntaDF can use the same mechanism, and include a way to silence it.
+  - Ship the banner as a small reusable utility, so ChuiTypes and ChuiFrames can use the same mechanism, and include a way to silence it.
 
 ## Phases (each ends with a report and a `HANDOFF.md` update)
 

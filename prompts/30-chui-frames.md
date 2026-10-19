@@ -1,10 +1,10 @@
-# Package brief: JuntaDF.jl (data frames)
+# Package brief: ChuiFrames.jl (data frames)
 
-The lead session hands this brief to the agents working on **JuntaDF.jl**.
-- **Upstream:** it depends on released versions of **Junta.jl** (monoids, composition, recursion schemes, transducers per the ADR) and **JuntaADT.jl** (effects for I/O and async work, streams as sources).
-- **Downstream:** the future JuntaStat, JuntaML, JuntaSF and JuntaPlot build on it.
+The lead session hands this brief to the agents working on **ChuiFrames.jl**.
+- **Upstream:** it depends on released versions of **ChuiCore.jl** (monoids, composition, recursion schemes, transducers per the ADR) and **ChuiTypes.jl** (effects for I/O and async work, streams as sources).
+- **Downstream:** the future ChuiStats, ChuiLearn, ChuiSpatial and ChuiPlot build on it.
 
-Lanes for this package edit and commit only in `<root>/JuntaDF.jl`.
+Lanes for this package edit and commit only in `<root>/ChuiFrames.jl`.
 
 **Read first:**
 - `docs/agent/ECOSYSTEM.md`.
@@ -12,7 +12,7 @@ Lanes for this package edit and commit only in `<root>/JuntaDF.jl`.
   - **Keep its ideas:** `c.x` deferred expressions, verbs as data with `⨟`, monoid aggregation, and the logical → optimized → physical plan with `explain`/`code_lowered`.
   - **Keep its tests:** the eight review-found bugs are regression tests.
   - Rewrite the code to production quality.
-- The contracts: `junta-core.md` and `junta-adt.md` (consumed; carry contract tests for them), and `junta-df.md` (promised downstream).
+- The contracts: `chui-core.md` and `chui-types.md` (consumed; carry contract tests for them), and `chui-frames.md` (promised downstream).
 - `HANDOFF.md`.
 
 ## Scope
@@ -22,8 +22,8 @@ Lanes for this package edit and commit only in `<root>/JuntaDF.jl`.
   - Produce a **parity matrix** per R package (function → status → notes → test) and treat it as the test checklist.
 - **Engine:**
   - **Arrow:** Apache Arrow memory and semantics: validity bitmaps for nulls, dictionary encoding, string views.
-  - **One engine, two modes:** lazy and eager share it. The optimizer runs rule-based rewrites (expressed with Junta's recursion schemes), then cost-based ones, as in Calcite.
-  - **Parallel and out-of-core:** multicore execution in chunks ("morsels"), asynchronous I/O through JuntaADT effects, and out-of-core spilling to disk.
+  - **One engine, two modes:** lazy and eager share it. The optimizer runs rule-based rewrites (expressed with ChuiCore's recursion schemes), then cost-based ones, as in Calcite.
+  - **Parallel and out-of-core:** multicore execution in chunks ("morsels"), asynchronous I/O through ChuiTypes effects, and out-of-core spilling to disk.
   - **Distributed:** a distributed mode; evaluate Dagger.jl, Distributed.jl and Arrow Flight.
   - **Joins:** hash joins, with broadcast versus shuffle.
   - **Fast group-by:** typed keys and radix partitioning. This was the prototype's bottleneck.
@@ -51,15 +51,15 @@ Lanes for this package edit and commit only in `<root>/JuntaDF.jl`.
     - Excel (XLSX.jl);
     - SAS/SPSS/Stata like haven (ReadStat.jl);
     - JSON, HTTP and S3 object stores.
-  - **Extensibility:** adding a new source takes one file and no core changes. This interface is published in the `junta-df.md` contract.
-- **Name conflicts:** use Junta's conflict-banner utility to list real conflicts on interactive load. dplyr's style is the model.
+  - **Extensibility:** adding a new source takes one file and no core changes. This interface is published in the `chui-frames.md` contract.
+- **Name conflicts:** use ChuiCore's conflict-banner utility to list real conflicts on interactive load. dplyr's style is the model.
 
 ## Independence
 
-- **Ahead of upstream:** start with the parts that don't depend on other Junta packages: Arrow storage, printing, the readr-style readers, the eager verbs, and the expression grammar.
-  - Adopt Junta and JuntaADT APIs only from tagged releases.
+- **Ahead of upstream:** start with the parts that don't depend on other Chui packages: Arrow storage, printing, the readr-style readers, the eager verbs, and the expression grammar.
+  - Adopt ChuiCore and ChuiTypes APIs only from tagged releases.
   - Until then, keep a small internal adapter module, so switching is one change.
-- **Missing upstream features:** write cross-repo requests in `<root>/requests/` for the lead to schedule, instead of working around them silently. A JuntaDF lane never edits upstream code.
+- **Missing upstream features:** write cross-repo requests in `<root>/requests/` for the lead to schedule, instead of working around them silently. A ChuiFrames lane never edits upstream code.
 
 ## Testing and benchmarks (on top of the ecosystem rules)
 - **Lazy vs eager:** property tests on randomly generated pipelines. This is the core correctness guarantee.

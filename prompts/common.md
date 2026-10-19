@@ -1,4 +1,4 @@
-# Junta ecosystem: shared rules for the lead and every agent
+# Chui ecosystem: shared rules for the lead and every agent
 
 The lead session and every subagent or teammate it dispatches read this file before starting work. The lead copies it into each repo as `docs/agent/ECOSYSTEM.md` and keeps the copies in sync; each repo's copy carries a version stamp at the top.
 
@@ -36,8 +36,8 @@ The lead session and every subagent or teammate it dispatches read this file bef
 
 ## 2. Independence: each repo stands alone
 
-- **Runs alone:** each repo must clone, install, test, benchmark and build its docs **by itself**, using only *released* versions of the other Junta packages. A fresh clone plus `]instantiate; ]test` must pass.
-- **Upstream versions:** depend on upstream Junta packages through `[compat]` ranges, never through `Pkg.develop` paths that are committed.
+- **Runs alone:** each repo must clone, install, test, benchmark and build its docs **by itself**, using only *released* versions of the other Chui packages. A fresh clone plus `]instantiate; ]test` must pass.
+- **Upstream versions:** depend on upstream Chui packages through `[compat]` ranges, never through `Pkg.develop` paths that are committed.
   - For local cross-repo work, use an untracked `dev/` environment.
   - Before the packages are in Julia's General registry, use the ecosystem's personal registry (set up by meta with LocalRegistry.jl; verify how it works).
 - **Upstream contract tests:** each downstream repo has contract tests (`test/contracts/`) covering exactly the upstream API it relies on, as listed in `<root>/contracts/`. CI runs them twice:
@@ -130,15 +130,15 @@ One Claude Code session, the **lead**, runs the whole effort in the background (
   - the ecosystem coordination: ADRs, contracts, requests, releases, the compatibility matrix, integration tests, benchmarks and research;
   - `reference/prototype/`.
 
-  Its `.gitignore` lists every package folder (`/Junta*.jl/`), so the packages nested inside it remain **separate git repos**.
+  Its `.gitignore` lists every package folder (`/Chui*.jl/`), so the packages nested inside it remain **separate git repos**.
 - **Boundary:**
   - The lead and every lane write only inside `<root>`.
   - `~/reference-project-b`, `~/reference-project-a` and `~/reference-project-c` are read-only references.
   - Everything else is off limits.
 
-- **Repos stay separate:** the root repo, `Junta.jl`, `JuntaADT.jl` and `JuntaDF.jl` are each their own git repo, with their own history, remote, CI, version and releases.
+- **Repos stay separate:** the root repo, `ChuiCore.jl`, `ChuiTypes.jl` and `ChuiFrames.jl` are each their own git repo, with their own history, remote, CI, version and releases.
   - **A commit never spans repos.** A change that touches two packages becomes two commits, in dependency order: upstream first, released, then downstream.
-- **Lanes:** each lane is assigned **one repo** and **one file scope** in it, and works in its own `git worktree` *of that repo*, e.g. `<root>/JuntaDF.jl/.worktrees/<lane>` (added to `.gitignore`).
+- **Lanes:** each lane is assigned **one repo** and **one file scope** in it, and works in its own `git worktree` *of that repo*, e.g. `<root>/ChuiFrames.jl/.worktrees/<lane>` (added to `.gitignore`).
   - Lanes in different repos run in parallel freely.
   - Lanes in the same repo need separate file scopes.
   - The lead, or a reviewer agent it dispatches, reviews every lane's diff and any merge or rebase before it lands on that repo's main.

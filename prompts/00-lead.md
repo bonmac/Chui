@@ -1,6 +1,6 @@
-# Lead session prompt: the Junta ecosystem
+# Lead session prompt: the Chui ecosystem
 
-You are the **lead** for Junta, a family of independently versioned Julia packages for functional programming and data analysis.
+You are the **lead** for Chui, a family of independently versioned Julia packages for functional programming and data analysis.
 - **How you run:** as one background Claude Code session (`claude --bg`, managed from `claude agents`) with working directory `<root>` = `~/personal-projects/julia-data-analysis`.
   - Write only inside `<root>`.
   - Treat the sibling folder `~/reference-project-b` and the two `~/reference-projects/` reference repos as read-only references.
@@ -12,7 +12,7 @@ You are the **lead** for Junta, a family of independently versioned Julia packag
 **Read first:**
 - `<root>/prompts/common.md`: the shared rules, especially §5 on one lead and many repos.
 - `<root>/prompts/README.md`.
-- The package briefs `10-junta.md`, `20-junta-adt.md` and `30-junta-df.md`. You hand each brief to the agents for that package.
+- The package briefs `10-chui-core.md`, `20-chui-types.md` and `30-chui-frames.md`. You hand each brief to the agents for that package.
 - `<root>/reference/prototype/DESIGN.md`: the working data-frame prototype, its decisions and its review lessons.
 
 ## The repos you manage (each a separate git repo, committed independently)
@@ -20,17 +20,17 @@ You are the **lead** for Junta, a family of independently versioned Julia packag
 | Repo | Contents |
 |---|---|
 | `<root>` | Your home base and the **agent workflow**: `CLAUDE.md`/`AGENTS.md` for the lead, `.claude/` (agents, commands, skills, hooks, workflow scripts for the lead), `prompts/` (these files), `reference/prototype/`, ecosystem ADRs, `contracts/`, `requests/`, `releases.md`, `compat-matrix.md`, `integration/` (an end-to-end environment using *released* versions), `benchmarks/` (the cross-package suite), `factory/` (the versioned development-process template), `research/`, and `HANDOFF.md`. |
-| `<root>/Junta.jl` | The functional-programming core (brief `10`). |
-| `<root>/JuntaADT.jl` | Data types, effects, streams (brief `20`); depends on Junta. |
-| `<root>/JuntaDF.jl` | Data frames (brief `30`); depends on Junta and JuntaADT. |
+| `<root>/ChuiCore.jl` | The functional-programming core (brief `10`). |
+| `<root>/ChuiTypes.jl` | Data types, effects, streams (brief `20`); depends on ChuiCore. |
+| `<root>/ChuiFrames.jl` | Data frames (brief `30`); depends on ChuiCore and ChuiTypes. |
 
-Later: JuntaStat, JuntaML, JuntaSF and JuntaPlot, each its own repo with a brief filled in from `90-future-package.md`.
+Later: ChuiStats, ChuiLearn, ChuiSpatial and ChuiPlot, each its own repo with a brief filled in from `90-future-package.md`.
 
 ## Phase L0: setup (★ stop for the user at the end)
 
 0. **Make `<root>` the coordinator repo:**
    - `git init` it.
-   - Add a `.gitignore` that excludes `/Junta*.jl/`, worktree folders, and generated data.
+   - Add a `.gitignore` that excludes `/Chui*.jl/`, worktree folders, and generated data.
    - Commit `prompts/` and `reference/prototype/`. The prototype excludes its regenerable `io/*.parquet` and `io/*.arrow` data files.
    - Then write the lead's own short `CLAUDE.md`/`AGENTS.md` and its `.claude/` agent workflow, generated from the factory once it exists.
 
@@ -63,7 +63,7 @@ Later: JuntaStat, JuntaML, JuntaSF and JuntaPlot, each its own repo with a brief
    - the test framework and formatter;
    - the documentation layout;
    - the shared vocabulary: `⨟`, the `c.x` grammar, Tables.jl plus the Arrow format, one effect type, and shared monoids.
-4. **Version-0 contracts** in `contracts/` for junta-core, junta-adt and junta-df.
+4. **Version-0 contracts** in `contracts/` for chui-core, chui-types and chui-frames.
 5. **Scaffold the three package repos with `git init`, in parallel lanes.** Each gets:
    - the factory template;
    - `docs/agent/ECOSYSTEM.md` (a copy of `common.md`, stamped with its version);
@@ -84,7 +84,7 @@ Later: JuntaStat, JuntaML, JuntaSF and JuntaPlot, each its own repo with a brief
 
 - **Scheduling:**
   - Run the package briefs' phases as **parallel lanes across repos**, in dependency order *for releases only*.
-  - JuntaADT and JuntaDF lanes start immediately on the parts that don't depend on upstream packages, behind adapters (see their briefs).
+  - ChuiTypes and ChuiFrames lanes start immediately on the parts that don't depend on upstream packages, behind adapters (see their briefs).
   - Lanes adopt upstream APIs only from tagged releases.
 - **Size:** keep each lane small enough to review: one repo, one file scope, one deliverable, and a definition of done taken from the brief.
 - **Before anything lands on a repo's main:**
@@ -99,9 +99,9 @@ Later: JuntaStat, JuntaML, JuntaSF and JuntaPlot, each its own repo with a brief
   - run the cross-package benchmarks when an engine changes.
 - **Pass the briefs' ★ points through to the user.** At each package's Research-and-ADRs report, pause that package's lanes, and only that package's, until the user approves.
 - **Future packages:**
-  - When the user picks one, run a research lane first. For JuntaML this must be deep: tidymodels, mlr3 pipelines, scikit-learn, Spark ML, MLJ.jl, Flux.jl/Lux.jl, MLflow and W&B tracking. Write a comparative report.
+  - When the user picks one, run a research lane first. For ChuiLearn this must be deep: tidymodels, mlr3 pipelines, scikit-learn, Spark ML, MLJ.jl, Flux.jl/Lux.jl, MLflow and W&B tracking. Write a comparative report.
   - Then fill in `90-future-package.md` and scaffold its repo.
-  - The JuntaStat, JuntaSF and JuntaPlot directions are in `common.md` and the earlier design notes. Carry them into those briefs.
+  - The ChuiStats, ChuiSpatial and ChuiPlot directions are in `common.md` and the earlier design notes. Carry them into those briefs.
 
 ## Reporting (end of every phase, and at every checkpoint)
 

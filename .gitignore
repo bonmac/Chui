@@ -1,9 +1,12 @@
 # Package repos are separate git repos nested in the coordinator
-/Junta*.jl/
+/Chui*.jl/
 
 # Worktree lanes
 .worktrees/
 /.claude/worktrees/
+
+# Local-only personal registry (ADR-0005 fallback)
+/.registry/
 
 # Generated data (regenerable)
 reference/prototype/io/*.parquet
@@ -21,3 +24,20 @@ dev/
 lcov.info
 coverage/
 .superpowers/
+
+# From the factory template (profile coordinator, 0.1.0)
+/Manifest*.toml
+/docs/build/
+/docs/Manifest*.toml
+/test/Manifest*.toml
+/benchmark/Manifest*.toml
+/.worktrees/
+/.lanes/
+/.superpowers/
+/.claude/settings.local.json
+*.jl.cov
+*.jl.*.cov
+*.jl.mem
+/lcov.info
+/coverage/
+/tmp/

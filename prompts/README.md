@@ -1,4 +1,4 @@
-# Junta: one background lead session, separate repos
+# Chui: one background lead session, separate repos
 
 A single Claude Code session, the **lead**, runs the whole effort as a background agent and orchestrates subagents and agent teams. Everything lives under **`<root>` = `~/personal-projects/julia-data-analysis`**: the agent workflow, the coordination, and the package repos. Each package is a **separate git repo**, committed, released and pushed to GitHub independently.
 
@@ -13,10 +13,10 @@ A single Claude Code session, the **lead**, runs the whole effort as a backgroun
 ├── factory/                 versioned development-process template, vendored into each package repo
 ├── adr/ contracts/ requests/ releases.md compat-matrix.md
 ├── integration/ benchmarks/ research/ HANDOFF.md
-├── .gitignore               ignores /Junta*.jl/, so the packages stay separate repos
-├── Junta.jl/                git repo: functional-programming core
-├── JuntaADT.jl/             git repo: data types, effects, streams   (depends on Junta)
-└── JuntaDF.jl/              git repo: data frames                    (depends on Junta and JuntaADT)
+├── .gitignore               ignores /Chui*.jl/, so the packages stay separate repos
+├── ChuiCore.jl/             git repo: functional-programming core
+├── ChuiTypes.jl/             git repo: data types, effects, streams   (depends on ChuiCore)
+└── ChuiFrames.jl/            git repo: data frames                    (depends on ChuiCore and ChuiTypes)
 ```
 
 ## Files in `prompts/`
@@ -25,8 +25,8 @@ A single Claude Code session, the **lead**, runs the whole effort as a backgroun
 |---|---|
 | `00-lead.md` | The lead session's prompt. This is what you launch. |
 | `common.md` | Shared rules for the lead and every agent; copied into each package repo as `docs/agent/ECOSYSTEM.md`. |
-| `10-junta.md`, `20-junta-adt.md`, `30-junta-df.md` | Package briefs the lead hands to that package's agents; copied into each repo as `docs/agent/BRIEF.md`. |
-| `90-future-package.md` | Brief template for JuntaStat, JuntaML, JuntaSF and JuntaPlot. |
+| `10-chui-core.md`, `20-chui-types.md`, `30-chui-frames.md` | Package briefs the lead hands to that package's agents; copied into each repo as `docs/agent/BRIEF.md`. |
+| `90-future-package.md` | Brief template for ChuiStats, ChuiLearn, ChuiSpatial and ChuiPlot. |
 
 ## Launch
 

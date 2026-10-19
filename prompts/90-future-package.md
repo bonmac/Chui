@@ -13,7 +13,7 @@ Lanes for this package edit and commit only in `<root>/<PackageName>.jl`.
 - `HANDOFF.md`.
 
 ## Scope
-<Filled in from the research report: the inspiration sources, parity targets, the shared grammar with the other Junta packages, integration points with JuntaDF (tidy data in, tidy data out), and pluggable adapters.>
+<Filled in from the research report: the inspiration sources, parity targets, the shared grammar with the other Chui packages, integration points with ChuiFrames (tidy data in, tidy data out), and pluggable adapters.>
 
 ## Independence
 <Which parts can be built before upstream features exist; the internal adapter module; cross-repo requests.>
