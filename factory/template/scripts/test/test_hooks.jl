@@ -23,13 +23,8 @@ function hooks_with_roots(roots; required = false, src = HOOKS)
     write(env, replace(read(env, String), r"READ_ONLY_ROOTS_REQUIRED=\d" => "READ_ONLY_ROOTS_REQUIRED=$(required ? 1 : 0)"))
     return h
 end
-"""
-The hooks the tests run by default (0.2.5): a copy of HOOKS with no read-only roots, not
-required. The real dir's roots file is gitignored (present in a dev checkout, absent in a fresh
-clone) and a coordinator requires it, so running HOOKS itself made bash_guard fail closed on
-every command in the coordinator's CI. Tests that need roots build their own (hooks_with_roots).
-"""
-const TEST_HOOKS = hooks_with_roots(String[])
+# 0.2.5: tests run a copy, not HOOKS (its roots file is gitignored and a coordinator requires it: fail closed in CI)
+const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test needing roots builds its own
 
 @testset "hooks" begin
     root = realpath(mktempdir())
