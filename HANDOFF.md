@@ -1,6 +1,6 @@
 # HANDOFF — Chui coordinator (lead)
 
-Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommendations accepted).** Redaction, factory 0.2.4 and package follow-ups are done; next is the approved push, then L1.
+Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommendations accepted).** All five repos are public under `bonmac` (first push 2026-10-19). The first CI runs found clean-clone bugs in the factory; factory 0.2.5 fixes them and is synced everywhere, waiting for the user's push. Next: L1.
 
 ## State
 
@@ -8,13 +8,17 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 - **History rewritten (2026-10-19)** with `git filter-repo` so no tracked file or commit names the private reference projects. Content was unchanged by the rewrite (same tree). Commit hashes from before the rewrite no longer exist publicly; provenance comments now cite `ff0100a`. The unredacted history is only on the local branch `pre-redaction-backup`: **never push it**; delete it once the user confirms the push.
 - **Machine-local, gitignored:** `.agents/factory.local.toml` (the real read-only roots, rendered by `scripts/gen.jl` into `.claude/hooks/read-only-roots.txt`) and `private/` (the full reference study, rewrite inputs, `redaction-patterns.txt`). `require_read_only_roots = true`, so bash_guard fails closed in a checkout without them.
 - **Renamed 2026-10-19 (user decision): Junta → Chui.** ChuiCore, ChuiTypes, ChuiFrames; later ChuiStats, ChuiLearn, ChuiSpatial, ChuiPlot. Every name was checked against General's names (E-21).
-- **Package repos:** each on `main`, factory 0.2.4 (package profile), history rewritten, no remote yet:
+- **Repos** (all public, `origin` = `https://github.com/bonmac/<name>`, only `main` pushed). Factory 0.2.5 everywhere; the first push carried 0.2.4:
 
-  | Repo | HEAD | Tests |
-  |---|---|---|
-  | `ChuiCore.jl` | `88291e5` | 4/4 (1.13.2) |
-  | `ChuiTypes.jl` | `7d10c7a` | 3/3 (1.13.2, 1.10.12); JET OK |
-  | `ChuiFrames.jl` | `f118874` | 3/3 (1.13.2, 1.10.12); JET OK |
+  | Repo | Pushed | Local `main` (0.2.5) | Package tests on GitHub CI (first push) |
+  |---|---|---|---|
+  | `Chui` (this repo) | `b9a3c3c` | coordinator commit with the 0.2.5 sync and this HANDOFF | — |
+  | `ChuiCore.jl` | `88291e5` | `06d2ae6` | pass: lts, 1, pre, macOS; Aqua/JET pass |
+  | `ChuiTypes.jl` | `7d10c7a` | `db74452` | pass: lts, 1, pre, macOS; Aqua/JET pass |
+  | `ChuiFrames.jl` | `f118874` | `d778f93` | pass: lts, 1, pre, macOS; Aqua/JET pass |
+  | `ChuiRegistry` | `b307327` | same | empty registry (LocalRegistry 0.5.7) |
+
+  First CI: Guards red in all four repos and Runic red in the packages, from factory bugs that only appear without the gitignored local files. Fixed in factory 0.2.5 (spec `docs/superpowers/specs/2026-10-20-factory-025-clean-clone.md`).
 
 - **Julia:** `release` 1.13.2 (default), `lts` 1.10.12 and 1.11.7, all via juliaup.
 - **Where to run the L1 lead:** from the main checkout `<root>`. Spawn package lanes with cwd = the package repo.
@@ -31,6 +35,8 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 None. Closed this session (all reported; none went idle without a report):
 - **pkg-core-024, pkg-types-024, pkg-frames-024:** 0.2.4 sync and history rewrite per package.
 - **fix-core** (`acaec8c`), **fix-types** (`7d10c7a`), **fix-frames** (`f118874`): seeded-file gaps (runtests `:contract` filter, JET compat, `.gitignore`, untracked roots file in ChuiFrames), provenance re-pinned to `ff0100a`, HANDOFFs refreshed. The lead re-ran the diffs and the redaction gate.
+- **factory-025** (`a89e10f`, fast-forwarded into `main`): factory 0.2.5; nudged once (it had missed the Runic item sent after dispatch), then reported in full. Worktree removed; branch `feat/factory-025` kept.
+- Lead: synced 0.2.5 into the coordinator and the three packages (dry runs showed no conflicts).
 - Lead: re-synced 0.2.4 into ChuiCore (`88291e5`) and the coordinator so `source_commit` no longer names a pre-rewrite commit.
 - Earlier L0 lanes (ref-research, eco-architect, adr-critic, eco-reviser, factory-builder, contracts-writer/critic/fixer, coord-setup, factory-maint, factory-patch, factory-022/023/024, guard-rereview, coord-redact, cc-lessons, coord-review, scaffold-*, checkpoint-apply): done; see git history.
 
@@ -38,6 +44,7 @@ None. Closed this session (all reported; none went idle without a report):
 
 All actual runs (`subagent_mode: actual`).
 
+- **Factory 0.2.5, fresh clones** (no `factory.local.toml` or roots file): `ci.jl guards: OK` in the coordinator (1149/1149) and all three packages (1199/1199 each); `ci.jl format: OK` in all three packages. Template tests 1356/1356 (lead re-run on 1.13.2; lane on 1.10.12 too). Reviewer: APPROVE WITH NITS on the full range.
 - **Redaction gate** (`git log -p main` and every object reachable from `main`, grepped with `private/redaction-patterns.txt`): 0 hits in the coordinator and all three packages. Positive control: 187 hits on `pre-redaction-backup`, which is not an ancestor of `main`.
 - **bash_guard** in the main checkout: `ls` → rc 0; a `uv run` inside a reference repo → rc 2.
 - **Packages:** `ci.jl guards` OK in all three (factory tests 1189/1189); tests as in the table above.
@@ -60,6 +67,7 @@ Open factory notes for the user: the CHANGELOG rule suggests 0.3.0 for stricter 
 
 ## Next action
 
-1. Create the five public repos under `bonmac` and push each `main` (coordinator: `main` only, never `pre-redaction-backup`). Create ChuiRegistry empty (LocalRegistry); packages are registered at their first release, not now.
-2. After the user confirms the push: delete `pre-redaction-backup`.
-3. L1: relaunch the lead from `<root>` and start each package's phase 1 (Research and ADRs) as parallel lanes.
+1. The user pushes the 0.2.5 commits (bash_guard blocks `git push` for the lead); then the lead checks that every GitHub workflow is green.
+2. `pre-redaction-backup` is deleted locally; one unredacted copy remains in the lead's session scratchpad (`chui-rewrite`), never pushed; delete when the user agrees.
+3. The coordinator has no format job; Runic would flag `contracts/*.jl` and `reference/prototype/**` (open, low).
+4. L1: relaunch the lead from `<root>` and start each package's phase 1 (Research and ADRs) as parallel lanes.
