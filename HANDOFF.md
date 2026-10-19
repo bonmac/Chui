@@ -1,6 +1,6 @@
 # HANDOFF — Chui coordinator (lead)
 
-Updated: 2026-10-19 · Phase: **L0 steps 0–5 done; ★ L0 checkpoint (waiting on the user). factory-022 (0.2.2) running.**
+Updated: 2026-10-19 · Phase: **★ L0 checkpoint: waiting on the user.** guard-rereview (read-only) is running.
 
 ## State
 
@@ -31,7 +31,7 @@ Updated: 2026-10-19 · Phase: **L0 steps 0–5 done; ★ L0 checkpoint (waiting 
 
 | Lane | Agent | File scope | Status | Report |
 |---|---|---|---|---|
-| factory-022 | general-purpose | `factory/` → 0.2.2 (no sync applied) | running | — |
+| guard-rereview | reviewer (read-only) | second review of factory 0.2.2 bash_guard | running | — |
 
 Closed this phase:
 - **ref-research:** done. Incident: one of its sub-lanes ran `uv run` in reference-project-b, which re-synced the gitignored `.venv`; the git tree there stayed clean.
@@ -46,7 +46,8 @@ Closed this phase:
 - **factory-maint:** done (0.2.0).
 - **factory-patch:** done (0.2.1); its reviewer covered contract_usage.
 - **scaffold-core, scaffold-types, scaffold-frames:** done.
-- **coord-review:** done; changes requested, fixed below.
+- **coord-review:** done; changes requested, fixed in `604115e` (dod.jl: DONE).
+- **factory-022:** done. Factory 0.2.2 committed `1aa6117` (807/807 tests; ratchet OK, verified by the lead). Not synced into any repo yet. Its reviewer requested changes, all fixed; the fixes are under second review (guard-rereview).
 
 None went idle without reporting. Several lanes' first idle was blocked by the teammate_idle hook while they waited on their own sub-agents; that's expected.
 
@@ -89,7 +90,10 @@ All entries below are actual runs (`subagent_mode: actual`). The lead re-ran the
 8. **License, benchmarks, coverage:** MIT, AirspeedVelocity, and a local coverage-floor file (ADR-0011).
 9. **Benchmark CI:** block at 10%, or warning-only at first (recommended).
 10. **Registry settings:** CompatHelper and TagBot settings follow from item 2.
-11. **Factory 0.2.2 sync:** a T3 change in the coordinator and all three packages, plus the manual seeded-file edits factory-022 will list.
+11. **Factory 0.2.2 sync (T3):**
+    - Coordinator: the sync writes 7 hook/version files; then replace risk.toml with `factory/profiles/coordinator/risk.toml` and run gen.
+    - Each package: the sync writes the hooks, CI.yml and `.factory-version`; then copy the template risk.toml, add one `.gitignore` line, add JET compat, add a runtests filter line, and run gen.
+    - This turns the ratchet green, so `main` can be fast-forwarded. Version note: the factory's own rule suggests 0.3.0 for stricter guards; the lead kept 0.2.2.
 12. **Lane cap for L1:** keep 4, or raise it (`max_open`, a T3 change). L1 runs implementer, test and review lanes in three repos at once.
 13. **Permission mode** for the rest of the run.
 
