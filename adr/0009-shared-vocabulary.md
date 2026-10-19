@@ -1,6 +1,9 @@
 # ADR-0009: Shared vocabulary across the Chui packages
 
-- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint); §1, §5 and Consequences amended
+  2026-10-20 (see "Amendment 2026-10-20"). Items 1, 3 and 4 are the user's, from the ChuiCore
+  phase-1 ★. Item 2's `neutral` change was approved by the lead and is **pending the user** (★ Q3
+  of ADR-0012).
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -51,6 +54,8 @@ monoid aggregation. Verified facts:
      at the L0 checkpoint, 2026-10-19; its exact signature is still ChuiCore's to settle).
      *Amended 2026-10-19 (critic S1):* the first draft called it `identity`, which Base exports
      with another meaning, so rule 6 forbids it; `mempty` was considered and rejected as jargon.
+     *Amended 2026-10-20:* the signature is settled as `neutral(m)` on an instance value, with
+     `neutral(::Type{T})` as closed sugar (Amendment, item 3).
    - **Name clash, resolved at the L0 checkpoint (2026-10-19):** the protocol's
      `partial(agg, acc, chunk)` and brief 10's partial-application helpers cannot share the name
      inside ChuiCore. Decided (option a): the aggregation protocol **keeps `partial`**, and
@@ -118,9 +123,11 @@ monoid aggregation. Verified facts:
 - `c` is a plain export, so `chui-frames.md` promises it as stable; users who reassign `c` at
   top level get an error on 1.10/1.11 and silent shadowing on 1.13 (E-24), which the ChuiFrames
   docs must say.
-- ChuiCore exports `partial` (protocol), `papply` (partial application) and `neutral` (monoid
-  element). None is exported by Base or Core on 1.10.12 or 1.13.2 (E-37); standard-library
-  exports are checked by ChuiCore's banner (rule 6).
+- *Superseded 2026-10-20 (Amendment, item 1):* ~~ChuiCore exports `partial` (protocol), `papply`
+  (partial application) and `neutral` (monoid element).~~ ChuiCore exports `papply`; `partial`
+  is public, not exported. `neutral` is proposed as public, not exported, pending ★ Q3
+  (Amendment, item 2). None of the three is exported by Base or Core on 1.10.12 or
+  1.13.2 (E-37); standard-library exports are checked by ChuiCore's banner (rule 6).
 
 ## Verification
 
@@ -131,3 +138,88 @@ monoid aggregation. Verified facts:
 
 - ChuiCore's composition ADR decides on CompositionsBase.
 - Base ever defines `⨟` (re-check each new Julia minor).
+
+## Amendment 2026-10-20: export tiers, `neutral`'s signature, the `⨟` binding
+
+Items 1, 3 and 4 were decided by the user at the ChuiCore phase-1 ★ (2026-10-20), accepting
+ChuiCore ADR-0001, 0005 and 0006. Item 2's `neutral` change is the lead's, approved on the
+evidence of ChuiCore's phase-2 clash probe, and **pending the user**. The decisions above stay as
+written; this section records what replaces or settles them.
+
+1. **Three export tiers replace the Consequences line "ChuiCore exports `partial`"** (ChuiCore
+   ADR-0005).
+   - **Exported:** a short vocabulary. **Only names that pass the clash-list test below may be
+     exported; passing it does not export a name** (`init` and `partial` pass and stay public).
+     Today the vocabulary is `⨟`, `opcompose`, `papply`, the law-kit stubs, and the
+     constructor-class operations and traits whose final names pass. `neutral` is not on it
+     (item 2).
+   - **Public, not exported** (`@compat public`; written `ChuiCore.x` or imported by name):
+     - the aggregation protocol `init`, `partial`, `combine`, `final`, `iscommutative`;
+     - the built-in aggregators;
+     - the transducer substrate, optics, recursion schemes, free monads and laziness;
+     - the hooks downstream code extends (`AlgebraClass`, `default_monoid`, `constructorclass`, …).
+   - **Internal:** everything else.
+   - **Exports must pass a named clash-list test.** A name may be exported only if no module on
+     the list exports it as a different binding. The list is Base, Core, `Base.Iterators`, the
+     standard libraries of CC-010, and these packages: DataFrames, Transducers, Accessors,
+     Setfield, Functors, TypeClasses, ConstructionBase and CompositionsBase (except its `⨟` and
+     `opcompose`). It is a `:quality` test in its own environment, run on stable, and the list
+     grows only by ADR. For ChuiCore this tightens rule 6, which still binds every package.
+   - Why not export `partial`: it would split the four-function protocol. `partial` would be
+     bare, while `combine` must stay qualified, because DataFrames exports `combine` (E-38).
+2. **Consistency with the L0 decisions.**
+   - `papply` keeps its name and is exported. `partial` keeps its name; L0 decided the name, and
+     only its export changes.
+   - `c` stays a plain ChuiFrames export: it is outside ChuiCore's tiers.
+   - **`neutral` keeps its name, but it becomes public, not exported** (approved by the lead,
+     pending the user's ★ Q3). The clash test wins over ChuiCore ADR-0005 rule 3's list.
+     - **The probe.** ChuiCore's phase-2 lane ran ADR-0005's clash test on Julia 1.13.2 against
+       DataFrames 1.3.6, Functors 0.4.12, TypeClasses 1.1.0, Transducers 0.4.85, Accessors
+       0.1.45 and Setfield 1.1.2. TypeClasses exports `pure`, `ap`, `neutral`, `combine`, `curry`
+       and `Identity`; DataFrames exports `combine`; Functors exports `fmap`.
+     - **Result.** `neutral`, `curry`, `pure`, `ap` and `fmap` are proposed as **public, not
+       exported**. The lead approved this on 2026-10-20; the user confirms at ★ Q3.
+     - **Evidence.** The lead's report of the probe, and `src/names.jl` lines 5–7 on ChuiCore's
+       `feat/phase2-traits` branch (commit 58bad5d). Not yet in ChuiCore's research log.
+     - **Change to L0.** This reverses the L0 Consequences line "ChuiCore exports … `neutral`".
+       The name itself, which is what L0 decided, is unchanged.
+     - **ChuiCore follow-up.** ChuiCore ADR-0005 §3 still lists `neutral` as exported, so it needs
+       its own amendment, written in ChuiCore.
+     - **Rejected:** a named exception for `neutral`, and dropping TypeClasses from the list.
+       Either would let a bare `neutral` become ambiguous for users who load TypeClasses, so
+       `using ChuiCore, TypeClasses` would still break it.
+3. **`neutral`'s signature is settled** (ChuiCore ADR-0001, dictionary passing). §5's
+   `neutral(::Type{T})` is no longer the primary form.
+   - **Primary form:** `neutral(m)` on an instance value `m` (`Sum()`, a downstream aggregator).
+     It exists only where the carrier has a true identity, and it returns a fresh value on every
+     call.
+   - **Refinement:** `neutral(m, ::Type{T})` is optional.
+   - **Sugar:** `neutral(::Type{T}) = neutral(default_monoid(T), T)` is **closed sugar**.
+     Downstream packages declare `default_monoid(::Type{T})`, and never a `neutral(::Type{T})`
+     method. Numbers have no default.
+   - `combine(m, a, b)` takes the instance first. ChuiCore defines no 2-argument `combine`.
+4. **§1's recommendation is confirmed** (ChuiCore ADR-0006). ChuiCore depends on CompositionsBase
+   (`"0.1.2"`) and re-exports exactly `⨟` and `opcompose`. The "Revisit when" trigger "ChuiCore's
+   composition ADR decides on CompositionsBase" has fired and is closed by this item.
+   - "Downstream packages only add methods" now carries an arity rule (ADR-0012): Chui-added
+     methods take two arguments. The exceptions are a downstream's closing varargs method and
+     CompositionsBase's variadic fallback.
+5. **Contract text** for items 1, 3 and 4 is proposed in ADR-0012, for the user to apply to
+   `contracts/chui-core.md` (T3).
+
+**Alternatives rejected** (beyond ChuiCore ADR-0005's own table):
+
+| Alternative | Why rejected |
+|---|---|
+| Keep the Consequences line (export `partial`) | It splits the protocol across tiers, as item 1 says. The user accepted the tiers. |
+| Export the whole protocol, `combine` included | A bare `combine` becomes ambiguous for every DataFrames user (E-38). |
+| Keep `neutral(::Type{T})` as the primary form | Allows one monoid per type (ChuiCore ADR-0001 F2) and needs a second mechanism beside CC-004's instance-first `combine`. |
+
+**Verification.** ChuiCore ADR-0001 (F2, F5, F9), ADR-0005 (Context: the clash measurements, and
+TypeClasses' exports read from the installed source), ADR-0006 (`docs/research/compositionsbase.md`);
+E-37, E-38; ChuiCore's phase-2 clash probe (item 2). UNVERIFIED: that probe on 1.10, and at
+other versions of the listed packages.
+
+**Revisit when.** The user revisits the `neutral` export at the next checkpoint. Also when ChuiCore's conflict banner or
+`integration/` reports a clash with an exported name, or the user takes ChuiCore ADR-0005's
+`Prelude` alternative.
