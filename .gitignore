@@ -1,0 +1,23 @@
+# Package repos are separate git repos nested in the coordinator
+/Junta*.jl/
+
+# Worktree lanes
+.worktrees/
+/.claude/worktrees/
+
+# Generated data (regenerable)
+reference/prototype/io/*.parquet
+reference/prototype/io/*.arrow
+*.parquet
+*.arrow
+/benchmarks/results/raw/
+/integration/Manifest.toml
+
+# Local / junk
+dev/
+.DS_Store
+*.cov
+*.mem
+lcov.info
+coverage/
+.superpowers/
