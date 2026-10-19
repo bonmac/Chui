@@ -103,7 +103,8 @@ end
         @test !ok && occursin("drifted  .claude/hooks/read-only-roots.txt", out)   # drifted until regenerated
         # a fresh clone has no roots file (gitignored): --check skips it rather than reporting it missing
         mv(roots, roots * ".bak")
-        @test first(quiet_check(d))
+        ok, out = quiet_check(d)                                       # (a coordinator's limits.env drifts too:
+        @test !occursin("read-only-roots", out)                        #  its factory.toml requires roots)
         mv(roots * ".bak", roots)
         capture(() -> Gen.write_all(d))
         txt = read(joinpath(d, ".claude/hooks/read-only-roots.txt"), String)

@@ -1,5 +1,5 @@
 "Run hook `name` with `payload` on stdin; returns (exit code, stdout, stderr)."
-function hook(name, payload, root; env = Dict{String, String}(), hooks = HOOKS)
+function hook(name, payload, root; env = Dict{String, String}(), hooks = TEST_HOOKS)
     out, err = IOBuffer(), IOBuffer()
     cmd = addenv(`sh $(joinpath(hooks, name))`, "CLAUDE_PROJECT_DIR" => root, env...)
     p = run(pipeline(ignorestatus(cmd); stdin = IOBuffer(payload), stdout = out, stderr = err))
@@ -23,6 +23,13 @@ function hooks_with_roots(roots; required = false, src = HOOKS)
     write(env, replace(read(env, String), r"READ_ONLY_ROOTS_REQUIRED=\d" => "READ_ONLY_ROOTS_REQUIRED=$(required ? 1 : 0)"))
     return h
 end
+"""
+The hooks the tests run by default (0.2.5): a copy of HOOKS with no read-only roots, not
+required. The real dir's roots file is gitignored (present in a dev checkout, absent in a fresh
+clone) and a coordinator requires it, so running HOOKS itself made bash_guard fail closed on
+every command in the coordinator's CI. Tests that need roots build their own (hooks_with_roots).
+"""
+const TEST_HOOKS = hooks_with_roots(String[])
 
 @testset "hooks" begin
     root = realpath(mktempdir())
@@ -195,7 +202,7 @@ end
 
     @testset "guards fail CLOSED when a sourced library is missing (0.2.2)" begin
         for lib in ("_lib.sh", "_bash_guard_lib.sh", "_read_only_roots.sh", "_bash_guard_cmd.sh", "_bash_guard_write.sh")
-            h = joinpath(mktempdir(), "hooks"); cp(HOOKS, h); rm(joinpath(h, lib))
+            h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, lib))
             rc, _, err = hook("bash_guard.sh", bash("ls"), root; hooks = h)
             @test rc == 2 && occursin("missing", err)
             lib == "_lib.sh" || continue

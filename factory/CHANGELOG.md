@@ -27,9 +27,18 @@ No guard is stricter; nothing to migrate.
   file existed: in a fresh clone `--check` skips the absent local output and reported OK
   (CI of a package: `test_gen.jl:91`, `Evaluated: !(first((true, "gen.jl --check: OK (30 files)\n")))`).
   The sandbox now drops both and renders the roots file from the committed config alone; the
-  test also checks that an absent roots file is skipped, not reported missing. A full template
-  run in a fresh clone of the coordinator found no other test that depends on gitignored files
-  (1345/1346 on 0.2.4, the one failure being this test).
+  test also checks that an absent roots file is skipped, not reported missing.
+- **hook tests are hermetic** (`scripts/test/test_hooks.jl`, `test_bash_guard.jl`). They ran the
+  real `.claude/hooks` dir. A coordinator sets `require_read_only_roots = true`, so in its fresh
+  clone (no roots file) bash_guard failed closed on every command: 222 failures in the
+  coordinator's own test run, hidden in CI because check_docs failed first (60 in `hooks` alone
+  on the 0.2.4 tree). The fail-closed message contains "missing", so the missing-library tests
+  passed there for the wrong reason. The tests now run `TEST_HOOKS` by default, a copy with no
+  roots, not required; tests that need roots or `REQUIRED=1` already build their own.
+- How the class was searched: the full template suite in a fresh clone of the coordinator
+  (1345/1346 on 0.2.4, the gen.jl test above), the coordinator's own suite in a fresh clone of a
+  scratch coordinator synced to 0.2.5 (which found the hook tests), and a static search of the
+  tests for the gitignored files (`factory.local.toml`, the roots file, Manifests).
 - Template tests: 1353/1353 on Julia 1.13.2 and 1.10.12 in a dev checkout (1346 in 0.2.4). A
   package bootstrapped from 0.2.5 into an empty repo, committed and cloned afresh (no local
   files), passes `scripts/ci.jl guards`, including a doc that names the roots file.

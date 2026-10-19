@@ -6,7 +6,7 @@
     @testset "bash_guard: guard-rereview bypasses (0.2.3)" begin
         # ⏎ is a newline and “ a double quote; raw strings keep $ and \ literal. All but three gave rc 0 on 0.2.2.
         nl(c) = replace(c, "⏎" => "\n", "“" => "\"")
-        gb(c; hooks = HOOKS) = hook("bash_guard.sh", bash(nl(c); cwd = root), root; hooks)[1]
+        gb(c; hooks = TEST_HOOKS) = hook("bash_guard.sh", bash(nl(c); cwd = root), root; hooks)[1]
         cases = [
             # M1: TMPDIR reassigned without `=`; a literal $TMPDIR/... is never a relative path
             raw"unset TMPDIR; rm -rf $TMPDIR/opt", raw"unset TMPDIR && rm -rf “$TMPDIR“/Users",
@@ -217,7 +217,7 @@
         r2 = realpath(mktempdir())
         @test hook("write_guard.sh", write_payload("$r2/risk.toml"), r2; hooks = h)[1] == 2
         @test hook("write_guard.sh", write_payload("/tmp/scratch.md"), r2; hooks = h)[1] == 0   # outside the root: no list needed
-        h2 = joinpath(mktempdir(), "hooks"); cp(HOOKS, h2); rm(joinpath(h2, "_bash_guard_write.sh"))
+        h2 = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h2); rm(joinpath(h2, "_bash_guard_write.sh"))
         rc, _, err = hook("write_guard.sh", write_payload("$r2/a.jl"), r2; hooks = h2)
         @test rc == 2 && occursin("missing", err)
     end
