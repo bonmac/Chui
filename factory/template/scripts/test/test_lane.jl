@@ -142,6 +142,9 @@ end
     sh(`git -C $c config user.email t@example.com`); sh(`git -C $c config user.name test`); sh(`git -C $c config commit.gpgsign false`)
     commit!(c, Dict("up.md" => "u\n"), "upstream"); sh(`git -C $c push -q origin main`); sh(`git -C $d fetch -q origin`)
     @test base_ref(d, "main") == "origin/main"
+    # review round 2 (N1): with origin/HEAD set and origin ahead, 6fa430d rewrote HEAD~1 to origin/HEAD~1
+    sh(`git -C $d remote set-head origin main`)
+    @test base_ref(d, "HEAD~1") == "HEAD~1" && merge_base(d, "HEAD~1") == readchomp(`git -C $d rev-parse "HEAD~1"`)
     sh(`git -C $d branch -q -m main old`)                                       # no local main: origin
     @test base_ref(d, "main") == "origin/main" && merge_base(d, "main") !== nothing
 end
