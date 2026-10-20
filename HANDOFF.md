@@ -36,17 +36,20 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| core-p2 | ChuiCore.jl | `.worktrees/phase2-traits` / `feat/phase2-traits` | `src/**`, `ext/**`, `test/**`, `Project.toml`, `docs/**`, `benchmark/**`, `HANDOFF.md`, changelog fragment | running: phase 2 traits and law kits (sub-lanes p2-algebra, p2-classes) |
-| types-p2 | ChuiTypes.jl | `.worktrees/phase2-datatypes` / `feat/phase2-datatypes` | same shape | running: phase 2 core data types |
-| frames-p2 | ChuiFrames.jl | `.worktrees/phase2-eager` / `feat/phase2-eager` | same shape | running: phase 2 eager frame (IPC reader spike first) |
-| frames-reqs | coordinator | `.worktrees/frames-reqs` / `feat/frames-reqs` | `adr/**`, `requests/**`, changelog fragment | running: requests (a)–(e), chui-frames.md contract ADR, ADR-0009 §2 wording |
+| core-p4 | ChuiCore.jl | `.worktrees/phase4-perf` / `feat/phase4-perf` | `src/**`, `ext/**`, `test/**`, `Project.toml`, `docs/**`, `benchmark/**`, `HANDOFF.md`, changelog fragment, `JuliaTestItems.toml` | running: phase 4 performance |
+| types-p3 | ChuiTypes.jl | `.worktrees/phase3-effects` / `feat/phase3-effects` | same shape, plus `.gitignore` | running: phase 3 Reader/Writer/State + effect runtime (in review) |
+| frames-p2b | ChuiFrames.jl | `.worktrees/phase2b-tidyr` / `feat/phase2b-tidyr` | same shape | running: rest of phase 2 (ADR-0021 timestamps, tidyr, ranking tail); a ★ on Parquet2 internals coming |
 
-Phase 1 is done in all three packages: every ★ answered (all recommendations accepted) and merged locally: ChuiCore `8082735`/`3054d7c`, ChuiTypes `455c085`, ChuiFrames `c5db1cb`. Coordinator: eco-amend merged (`a414f1b`), ADRs 0012/0013 Accepted (`6847d2b`). **Waiting on the user:** copying the reviewed `chui-core.md` and `chui-types.md` into `contracts/` (T3). Not yet pushed: the merges above.
+**Merged locally (2026-10-20), all reviewer-approved, tests re-run by the lead on 1.13.2 and 1.10.12:**
+- ChuiCore: phase 1 (`8082735`), phase 2 traits and law kits (`20f5c14`), phase 3 schemes/transducers/optics/laziness/banner (`b4f1ca3`; requests R3, R5, R6, R7, R9 satisfied on main, unreleased). 3044 tests.
+- ChuiTypes: phase 1 (`455c085`), phase 2 core data types (`dc1882c`; `LazyList` exception to ADR-0001 §4, user-approved). 474 / 461 tests.
+- ChuiFrames: phase 1 (`c5db1cb`), phase 2 first milestone (squashed `10e8b9a`, recorded merged `1a2f1eb`): own Arrow IPC reader (spike gate passed), core verbs, CSV/Arrow/Parquet, printing. 3142 / 3112 tests.
+- Coordinator: ADRs 0012–0014 Accepted; ADR-0007 §2 and ADR-0009 amended; requests R1–R10 filed (R8 answered: ChuiFrames owns `missing`-aware aggregators).
+- Factory 0.2.6 (`944f407`; reviewer APPROVE WITH NITS; the user approved the sync including the sub-lane write loosening): synced into the coordinator (`183a2ad`) and the packages (ChuiCore `b601f05`, ChuiTypes `af12b4a`, ChuiFrames `7e39416`).
 
-**Factory 0.2.6 follow-ups:**
-- `scripts/lane new` should carry the machine-local `.agents/factory.local.toml` into new worktrees (a coordinator lane without it fails closed).
-- **bash_guard gap (2026-10-20):** the lead's `scripts/lane new … && cp .agents/factory.local.toml .worktrees/frames-reqs/.agents/` was NOT blocked, while `cd <root> && cp` of the same file was. A T3 write slipped through; the user chose to keep the (identical) copy and log the gap.
-- The test template should show `@check record=false db=false` and gitignore `test/SuppositionDB`.
+**Waiting on the user:** the T3 copy of `chui-core.md`, `chui-types.md` and `chui-frames.md` into `contracts/`, and the push (`user-steps.sh` in the lead's scratchpad). After the copy: commit the contracts, refresh the packages' vendored `test/contracts/` copies, push again.
+
+**Next decision for the user:** register a ChuiCore 0.0.1 snapshot in ChuiRegistry (request R4), so ChuiTypes and ChuiFrames can depend on the real ChuiCore and run their contract tests.
 
 Closed this session (all reported; none went idle without a report):
 - **pkg-core-024, pkg-types-024, pkg-frames-024:** 0.2.4 sync and history rewrite per package.
