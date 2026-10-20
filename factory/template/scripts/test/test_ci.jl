@@ -148,6 +148,25 @@ checkout_profile(root) = get(
         child, grand = (parse(Int, read(joinpath(d, "test", f), String)) for f in ("child.pid", "grandchild.pid"))
         @test !alive(child) && !alive(grand)                                       # the planted test really started, and is gone
         @test !success(`pgrep -f $d`)                                              # no process of this run is left
+        # review B2: Ctrl-C during a bounded run. The command's group is detached, so SIGINT reaches only
+        # ci.jl, which must take the group down (c0edfbe: ci.jl died and the hung test ran on)
+        rm(joinpath(d, "test/child.pid")); rm(joinpath(d, "test/grandchild.pid"))
+        drv = joinpath(mktempdir(), "drv.jl")
+        write(drv, "include($(repr(joinpath(SCRIPTS, "ci.jl"))))\nexit(CI.run_job(\"test\", $(repr(d)), String[]; timeout = 300, grace = 2))\n")
+        log = joinpath(dirname(drv), "drv.log")
+        p = run(pipeline(Cmd(`$JULIA $drv`; ignorestatus = true); stdout = log, stderr = log); wait = false)
+        t = time() + 120
+        while !isfile(joinpath(d, "test/grandchild.pid")) && time() < t && process_running(p)
+            sleep(0.5)
+        end
+        @test isfile(joinpath(d, "test/grandchild.pid")) || (print(read(log, String)); false)
+        sleep(1)
+        kill(p, Base.SIGINT)                                                       # what a terminal Ctrl-C delivers to ci.jl
+        wait(p)
+        @test p.exitcode == CI.INTERRUPT_EXIT && occursin("INTERRUPTED", read(log, String)) || (print(read(log, String)); false)
+        child, grand = (parse(Int, read(joinpath(d, "test", f), String)) for f in ("child.pid", "grandchild.pid"))
+        @test !alive(child) && !alive(grand)
+        @test !success(`pgrep -f $d`)
         # a command that finishes in time is unaffected
         write(joinpath(d, "test/runtests.jl"), "using Test\n@test true\n")
         @test capture(() -> CI.run_job("test", d, String[]; timeout = 300))[1] == 0

@@ -219,6 +219,7 @@ module CI
     # DETACHED (libuv setsid: its own session and process group, pgid = its pid), and on timeout the
     # whole group gets SIGTERM, then SIGKILL after KILL_GRACE seconds. Exit TIMEOUT_EXIT.
     const TIMEOUT_EXIT = 124      # as coreutils `timeout`
+    const INTERRUPT_EXIT = 130    # 128 + SIGINT: Ctrl-C during a bounded run (review B2)
     const KILL_GRACE = 10.0
     killpg(pgid, sig) = ccall(:kill, Cint, (Cint, Cint), -pgid, sig)
     group_alive(pgid) = killpg(pgid, 0) == 0
@@ -234,28 +235,44 @@ module CI
 
     "Run `cmd` (stdout/stderr inherited) until `deadline` (time()); `:ok`, `:failed` or `:timeout`."
     function run_until(cmd::Cmd, deadline; io = stdout, grace = KILL_GRACE)
+        # SIGINT must arrive as an InterruptException, not end the process before the group is killed
+        Base.exit_on_sigint(false)
         p = run(pipeline(Cmd(cmd; detach = true, ignorestatus = true); stdout, stderr); wait = false)
         pgid = getpid(p)
-        while process_running(p) && time() < deadline
-            sleep(0.1)
+        try
+            while process_running(p) && time() < deadline
+                sleep(0.1)
+            end
+        catch
+            # review B2: Ctrl-C reaches ci.jl's process group only, never the detached one, so an
+            # interrupt (main sets exit_on_sigint(false) under a limit) must take the group down here
+            kill_group(p, pgid, grace)
+            rethrow()
         end
         if !process_running(p)
-            # the leader is done; anything it left behind in its group goes with it
+            # the leader is done; anything it left behind in its group goes with it. Its pid cannot be
+            # reused while that group still has members, so a live group here is still ours (review N5)
             Sys.iswindows() || (group_alive(pgid) && killpg(pgid, 9))
             return success(p) ? :ok : :failed
         end
+        kill_group(p, pgid, grace)
+        return :timeout
+    end
+
+    "SIGTERM the group, wait up to `grace` s, SIGKILL what is left, reap the leader."
+    function kill_group(p, pgid, grace)
         if Sys.iswindows()
             kill(p, Base.SIGKILL)
         else
             killpg(pgid, 15)
             t = time() + grace
             while group_alive(pgid) && time() < t
-                sleep(0.1)
+                Libc.systemsleep(0.1)   # not `sleep`: no task switch, so a second Ctrl-C cannot cut this short
             end
             group_alive(pgid) && killpg(pgid, 9)
         end
         wait(p)
-        return :timeout
+        return nothing
     end
 
     function run_job(name, root, extra; dry = false, io = stdout, timeout = nothing, grace = KILL_GRACE)
@@ -272,7 +289,13 @@ module CI
                     ok = success(pipeline(tocmd(argv, root); stdout, stderr))
                     ok || (println(io, "ci.jl $name: FAILED"); return 1)
                 else
-                    r = run_until(tocmd(argv, root), deadline; io, grace)
+                    r = try
+                        run_until(tocmd(argv, root), deadline; io, grace)
+                    catch e
+                        e isa InterruptException || rethrow()
+                        println(io, "ci.jl $name: INTERRUPTED: killed the command's whole process group. This is not a pass.")
+                        return INTERRUPT_EXIT
+                    end
                     r === :timeout && (
                         println(io, "ci.jl $name: TIMED OUT after $(timeout) s: killed the command's whole process group (SIGTERM, then SIGKILL after $(grace) s). This is not a pass."); return TIMEOUT_EXIT
                     )

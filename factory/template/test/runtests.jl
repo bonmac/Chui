@@ -25,6 +25,7 @@ using TestItemRunner
 # lts and pre). Unset (a plain `]test`), the Julia version decides: stable iff VERSION >= STABLE_MIN.
 # Before 0.2.7 unset meant stable, so `]test` on the LTS ran the doctests and failed.
 # STABLE_MIN: the oldest Julia whose printed output the doctests and snapshots were written against.
+# Name a RELEASED version: prereleases sort below it (v"1.13.0-rc1" < v"1.13"), so they count as not stable.
 const STABLE_MIN = v"1.13"
 # Exactly "true", "false", or unset/empty; anything else is an ArgumentError (as ChuiCore.jl e80dce9).
 function is_stable(env = ENV, v = VERSION)

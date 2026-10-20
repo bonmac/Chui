@@ -24,8 +24,12 @@ line) reads as before.
     child julia ran on. A hung property test ran ~6 h at 97% CPU.
   - How: with a limit, each command starts in its own process group. On expiry the group gets
     SIGTERM, then SIGKILL after 10 s, and ci.jl exits 124 (`TIMED OUT … This is not a pass.`).
-  - Tested with a planted hanging test and a grandchild: both pids are dead and `pgrep` finds
-    nothing.
+  - Ctrl-C during a bounded run kills the group too and exits 130 (review B2). The first version
+    left the hung test running, because the detached group never sees the terminal's SIGINT.
+    Other signals that end ci.jl (SIGTERM, SIGALRM, SIGKILL) still orphan the group; the
+    register lists them.
+  - Tested with a planted hanging test and a grandchild, both timed out and interrupted: both pids
+    are dead and `pgrep` finds nothing.
 - **The seeded `test/runtests.jl` decides "stable" by Julia version** (`test/runtests.jl`, seeded).
   - `CI_STABLE` of exactly `"true"`/`"false"` still overrides, both ways. Any other set value
     throws an `ArgumentError`, as in ChuiCore.jl e80dce9.

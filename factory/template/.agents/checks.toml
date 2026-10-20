@@ -113,7 +113,7 @@ rule = "A bounded run (`ci.jl <job> --timeout S` or CI_TIMEOUT) leaves no proces
 prevented_by = "scripts/ci.jl"
 runs_in = ["local", "ci (where a workflow passes --timeout or sets CI_TIMEOUT)"]
 test = "scripts/test/test_ci.jl"
-blind_spots = ["a process that leaves the group (calls setsid itself, or is daemonized) escapes", "ci.jl killed from OUTSIDE (SIGKILL, `perl -e alarm`, `timeout`) leaves the detached group running: nothing is left to kill it, so bound runs with --timeout, not an outer alarm", "Windows: only the leader process is killed", "without --timeout or CI_TIMEOUT nothing is bounded, as before 0.2.7", "the limit is for the whole job, checked every 0.1 s, plus up to 10 s of SIGTERM grace"]
+blind_spots = ["a process that leaves the group (calls setsid itself, or is daemonized) escapes", "Ctrl-C (SIGINT to ci.jl) kills the group and exits 130 (review B2); any OTHER signal that ends ci.jl (SIGTERM from `timeout` or a CI cancel, SIGALRM from `perl -e alarm`, SIGKILL, SIGHUP) leaves the detached group running: nothing is left to kill it, so bound runs with --timeout, not an outer alarm", "Windows: only the leader process is killed", "without --timeout or CI_TIMEOUT nothing is bounded, as before 0.2.7", "the limit is for the whole job, checked every 0.1 s, plus up to 10 s of SIGTERM grace", "when the command finishes in time, whatever it left running in its group is SIGKILLed too, on success as well"]
 
 [[checks]]
 id = "lane_tool"

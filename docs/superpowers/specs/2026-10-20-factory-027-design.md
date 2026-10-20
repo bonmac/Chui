@@ -133,9 +133,19 @@ grandchild `sleep 600`, and loops forever. The test checks:
 
 **Blind spots (in the register).**
 - A process that leaves the group escapes: it calls `setsid` itself or is daemonized.
-- If ci.jl itself is killed from outside (SIGKILL, or the old `perl -e alarm`), the detached group
-  is NOT killed, because nothing is left to kill it. That is why the docs say to use `--timeout`
-  instead of an outer alarm.
+- Ctrl-C is handled (review B2). Because the group is detached, a terminal's SIGINT reaches only
+  ci.jl, and in 7941806 ci.jl died and the hung test ran on. Now:
+  - `run_until` sets `Base.exit_on_sigint(false)`, so the interrupt arrives as an exception;
+  - on any exception, it kills the group (SIGTERM, a grace, then SIGKILL) and rethrows;
+  - `run_job` exits 130 with "INTERRUPTED".
+
+  Evidence: the reviewer's reproducer leaves the child running at c0edfbe and kills it with the
+  fix. A test sends SIGINT to a bounded ci.jl run and checks rc 130, both pids dead, and an
+  empty `pgrep`.
+- Any other signal that ends ci.jl leaves the detached group running, because nothing is left to
+  kill it: SIGTERM (from `timeout` or a CI cancel), SIGALRM (`perl -e alarm`), SIGKILL or SIGHUP.
+  Julia cannot run cleanup on those. That is why the docs say to use `--timeout` instead of an
+  outer alarm.
 - On Windows only the leader process is killed.
 
 Documented in the template `CLAUDE.md` Commands section and in the `lane-lifecycle` skill. The

@@ -75,7 +75,8 @@ julia scripts/ci.jl test --timeout 1800   # bound a run (or CI_TIMEOUT=1800): ki
 
 Bound a long run with `--timeout SECONDS` (or `CI_TIMEOUT`), never `perl -e 'alarm …'` or `timeout`:
 those kill only the outer process, and Pkg.test's child julia keeps running. On expiry ci.jl kills
-the command's whole process group and exits 124 (TIMED OUT, not a pass).
+the command's whole process group and exits 124 (TIMED OUT, not a pass); Ctrl-C does the same
+(exit 130). Stop a bounded run with Ctrl-C, never `kill <ci.jl pid>`: that orphans the group.
 
 ## Testing
 
