@@ -25,9 +25,12 @@ end
         @test !is_stable(none, v"1.10.12") && !is_stable(none, v"1.12.6")      # default: the LTS and older are not
         @test is_stable(Dict("CI_STABLE" => "true"), v"1.10.12")               # override, both ways
         @test !is_stable(Dict("CI_STABLE" => "false"), v"1.14.0")
-        @test is_stable(Dict("CI_STABLE" => " True "), v"1.10") && !is_stable(Dict("CI_STABLE" => "FALSE"), v"2")
-        @test !is_stable(Dict("CI_STABLE" => ""), v"1.10")                     # empty = unset (a blank GitHub expression)
-        @test_throws ErrorException is_stable(Dict("CI_STABLE" => "1"), v"1.13")
+        @test !is_stable(Dict("CI_STABLE" => ""), v"1.10") && is_stable(Dict("CI_STABLE" => ""), v"1.13")   # empty = unset
+        # strict, as ChuiCore.jl e80dce9: anything but exactly "true"/"false" is an ArgumentError
+        for bad in ("1", "0", "yes", "TRUE", "False", " true", "true ")
+            @test_throws ArgumentError is_stable(Dict("CI_STABLE" => bad), v"1.13")
+        end
+        @test occursin("got \"yes\"", sprint(showerror, try is_stable(Dict("CI_STABLE" => "yes")) catch e; e end))
         @test occursin("ADR-0008 §3", blk)                                     # the constant cites its source
     end
     if IN_FACTORY   # CI.yml still decides per job: true on stable ('1'), false on lts and pre

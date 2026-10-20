@@ -26,12 +26,11 @@ using TestItemRunner
 # Before 0.2.7 unset meant stable, so `]test` on the LTS ran the doctests and failed.
 # STABLE_MIN: the oldest Julia whose printed output the doctests and snapshots were written against.
 const STABLE_MIN = v"1.13"
+# Exactly "true", "false", or unset/empty; anything else is an ArgumentError (as ChuiCore.jl e80dce9).
 function is_stable(env = ENV, v = VERSION)
-    s = lowercase(strip(get(env, "CI_STABLE", "")))
-    s == "true" && return true
-    s == "false" && return false
-    isempty(s) || error("CI_STABLE must be true or false, got `$(env["CI_STABLE"])`")
-    return v >= STABLE_MIN
+    s = get(env, "CI_STABLE", "")
+    return s == "true" ? true : s == "false" ? false : isempty(s) ? v >= STABLE_MIN :
+        throw(ArgumentError("CI_STABLE must be \"true\", \"false\" or unset, got $(repr(s))"))
 end
 # --- end stable-only tags ---
 # JET is not here: see test/jet/.

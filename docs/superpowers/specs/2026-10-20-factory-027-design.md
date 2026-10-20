@@ -150,8 +150,10 @@ its 0.0.1 release prep.
 **Change.**
 - One constant, `STABLE_MIN = v"1.13"`, the oldest Julia the doctests and snapshots are written
   against. It cites ADR-0008 §3.
-- `is_stable(env, version)`: `CI_STABLE=true`/`false` decides, both ways, case-insensitively.
-  Empty or unset means `VERSION >= STABLE_MIN`. Any other value is an error.
+- `is_stable(env, version)`: `CI_STABLE` of exactly `"true"` or `"false"` decides, both ways.
+  Empty or unset means `VERSION >= STABLE_MIN`. Any other value (`1`, `TRUE`, `" true"`) throws an
+  `ArgumentError`. This is the same rule as ChuiCore.jl e80dce9, so the template and ChuiCore
+  agree (lead's request).
 - CI.yml is unchanged: it still sets `CI_STABLE` per job (true on `'1'`, false on lts and pre).
   The block sits between markers, and `scripts/test/test_runtests_template.jl` evaluates it on its
   own. The test covers both defaults (1.10/1.12 not stable; 1.13/1.14 stable), both overrides, an

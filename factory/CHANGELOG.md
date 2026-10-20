@@ -27,7 +27,8 @@ line) reads as before.
   - Tested with a planted hanging test and a grandchild: both pids are dead and `pgrep` finds
     nothing.
 - **The seeded `test/runtests.jl` decides "stable" by Julia version** (`test/runtests.jl`, seeded).
-  - `CI_STABLE=true`/`false` still overrides, both ways.
+  - `CI_STABLE` of exactly `"true"`/`"false"` still overrides, both ways. Any other set value
+    throws an `ArgumentError`, as in ChuiCore.jl e80dce9.
   - Unset, the run is stable iff `VERSION >= STABLE_MIN` (`v"1.13"`, ADR-0008 §3), so a plain
     `]test` on the LTS skips the stable-only items. Before, unset meant stable, so that `]test`
     ran them and failed (ChuiCore 0.0.1 prep).
