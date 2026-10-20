@@ -4,7 +4,7 @@
   2026-10-20 (see "Amendment 2026-10-20"). Items 1, 3 and 4 are the user's, from the ChuiCore
   phase-1 ★. Item 2's `neutral` change was approved by the lead and confirmed by the user at the
   contract ★ (2026-10-20). §2's wording amended 2026-10-20 (see "Amendment 2026-10-20: §2's
-  wording"), proposed by the lead; the user confirms it at ADR-0014 ★ Q5.
+  wording"), proposed by the lead; confirmed by the user at the ChuiFrames contract ★ (2026-10-20).
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -39,7 +39,7 @@ monoid aggregation. Verified facts:
 2. **`c.x` grammar, owned by ChuiFrames, reused by every future package.** Rules from the
    prototype: dotted calls are elementwise; plain calls are reductions; comparisons are not
    overloaded (write `.>`); `c.x |> f` is the whole-column escape hatch.
-   *Amended 2026-10-20, pending the user's confirmation (Amendment "§2's wording" below):* "plain
+   *Amended 2026-10-20, confirmed by the user (Amendment "§2's wording" below):* "plain
    calls are reductions" reads "plain calls of the grammar's whole-column functions are
    **whole-column** calls". **How `c` is exported:
    a plain `export c` from ChuiFrames** (option a, decided by the user at the L0 checkpoint,
@@ -231,7 +231,7 @@ other versions of the listed packages.
 
 ## Amendment 2026-10-20: §2's wording
 
-**What changes** (proposed; in force once the user confirms it, ADR-0014 ★ Q5). §2's rule
+**What changes** (in force: confirmed by the user 2026-10-20, ADR-0014 ★ Q5). §2's rule
 "plain calls are reductions" reads "plain calls of the grammar's whole-column functions are
 **whole-column** calls": such a call on a column expression receives the whole column (or the
 group's slice), and returns either one value or one value per row. Other plain calls are not
@@ -253,8 +253,8 @@ promised (`chui-frames.md` CF-006) and may silently return constants (CF-005's k
   per-row whole-column calls are PROVISIONAL there until phase-2 parity fixes their names
   (ADR-0014).
 
-**Who decides.** Proposed by the lead with ADR-0014; the user confirms it at the next contract ★
-(ADR-0014 Q5).
+**Who decides.** Proposed by the lead with ADR-0014; confirmed by the user at the ChuiFrames
+contract ★ (2026-10-20, ADR-0014 Q5).
 It changes no contract entry.
 
 **Verification.** ChuiFrames ADR-0002 rule 9 and GR-14 (`docs/research/grammar.md`), read on

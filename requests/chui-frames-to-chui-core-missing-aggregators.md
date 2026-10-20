@@ -1,7 +1,7 @@
 # Who owns `missing`-aware aggregators (`skipmissing` variants)? (R8)
 
 - **From → to:** chui-frames → chui-core
-- **Status:** open            <!-- a question; partly answered by ecosystem ADR-0002 §2; see History -->
+- **Status:** rejected        <!-- answered: option A, ChuiFrames owns them (user, 2026-10-20) -->
 - **Urgency:** soon (ChuiFrames phase 2 implements `sum(skipmissing(c.x))`, ChuiFrames ADR-0002 rule 10)
 - **Contract IDs affected:** PROVISIONAL ("`missing`-aware aggregators" in `chui-core.md`); CC-004, CC-006, CC-007 if ChuiCore owns them
 - **Adapter used meanwhile:** a local wrapper aggregator in ChuiFrames' internal upstream adapter (ChuiFrames ADR-0014 §1, §4; the module is not yet on ChuiFrames main c5db1cb)
@@ -39,3 +39,7 @@ The question, with two answers ChuiFrames can work with:
   `missing`-aware aggregates *on top* of it [CC-004] and does not redefine it", and
   `chui-core.md`'s PROVISIONAL bullet repeats that "whether any live in ChuiCore is open".
   ChuiCore's accepted ADRs 0001–0008 do not mention `missing` or `skipmissing`.
+- 2026-10-20 rejected (answered): the user chose **option A** at the ChuiFrames contract ★.
+  ChuiFrames owns its `missing`-aware aggregators, built on CC-004 in its own code; they are not
+  a stand-in, so ChuiFrames ADR-0014 §5's release gate does not apply. ChuiCore changes nothing;
+  the PROVISIONAL bullet in `chui-core.md` is removed at the next contract edit.

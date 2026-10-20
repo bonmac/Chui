@@ -1,6 +1,8 @@
 # ADR-0014: `chui-frames.md` follows ChuiFrames' accepted phase-1 ADRs: the Source/Sink interface and reserved verb keywords become entries, and three stable entries get compatible clarifications
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-20, user at the ChuiFrames contract ★): CF-011–CF-017 stable now;
+  CF-001/005/008 edited in place; the ordered-level direction recorded for ChuiFrames phase 6;
+  ADR-0009 §2's wording confirmed. The user applies the T3 edit to `contracts/chui-frames.md`.
 - **Date:** 2026-10-20
 - **Deciders:** the user (contract files are T3, `risk.toml`)
 - **Scope:** ecosystem (contract ADR for `contracts/chui-frames.md`, ADR-0010)
