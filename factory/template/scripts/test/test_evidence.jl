@@ -57,8 +57,10 @@ end
     @test rc == 0 && Evidence.header(joinpath(d, ".lanes/evidence/ok-$sha7.txt"))["termsignal"] == "0"
     # check_claims takes no test totals from a killed run, even when it printed a summary table first
     jl = [Base.julia_cmd().exec; "--startup-file=no"]
-    # flush first: a self-kill can beat the buffered summary to the pipe (flaky on 1.10 under load, ec48de8)
-    rc, _ = ev("tests", "--", jl..., "-e", "using Test; @testset \"t\" begin @test true end; flush(stdout); flush(stderr); ccall(:kill, Cint, (Cint, Cint), getpid(), 15)")
+    # julia exits normally, THEN the shell kills itself: a Julia that signals itself can take the signal
+    # inside its atexit hooks and spin forever at 100% CPU (review B3, 1.13.2), or lose its buffered
+    # summary (ec48de8). Here no signal ever reaches Julia, and the run still ends by SIGTERM.
+    rc, _ = ev("tests", "--", "sh", "-c", "\"\$0\" \"\$@\"; kill -TERM \$\$", jl..., "-e", "using Test; @testset \"t\" begin @test true end")
     @test rc == 143
     path = joinpath(d, ".lanes/evidence/tests-$sha7.txt")
     @test Evidence.test_totals(Evidence.output(path))["pass"] == 1                  # the table is there ...

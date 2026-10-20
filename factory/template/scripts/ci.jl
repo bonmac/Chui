@@ -235,7 +235,9 @@ module CI
 
     "Run `cmd` (stdout/stderr inherited) until `deadline` (time()); `:ok`, `:failed` or `:timeout`."
     function run_until(cmd::Cmd, deadline; io = stdout, grace = KILL_GRACE)
-        # SIGINT must arrive as an InterruptException, not end the process before the group is killed
+        # SIGINT must arrive as an InterruptException, not end the process before the group is killed.
+        # Not restored afterwards (Julia has no getter for it): an in-process caller, such as the factory
+        # tests, keeps Ctrl-C as an exception, which is the REPL's default anyway (review round-4 nit).
         Base.exit_on_sigint(false)
         p = run(pipeline(Cmd(cmd; detach = true, ignorestatus = true); stdout, stderr); wait = false)
         pgid = getpid(p)
