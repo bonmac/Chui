@@ -5,6 +5,72 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.7 (2026-10-20)
+
+Six problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6
+template before it was fixed (spec: `docs/superpowers/specs/2026-10-20-factory-027-design.md`).
+Some results are stricter:
+- a signalled run is no longer exit 0 in its evidence;
+- the benchmark job now runs a suite where it used to do nothing;
+- a plain `]test` below `STABLE_MIN` now skips `:doctest`/`:snapshot`.
+
+The lead chose 0.2.7, as for 0.2.6. Only the seeded `test/runtests.jl` needs a hand edit in each
+package (a sync never overwrites a seeded file). An evidence file from 0.2.6 (no `termsignal`
+line) reads as before.
+
+- **`ci.jl --timeout SECONDS` (or `CI_TIMEOUT`) bounds a run and kills the whole tree**
+  (`ci.jl`; template `CLAUDE.md`, `lane-lifecycle` skill).
+  - Why: `perl -e 'alarm N; exec @ARGV' julia scripts/ci.jl test` killed only ci.jl, and Pkg.test's
+    child julia ran on. A hung property test ran ~6 h at 97% CPU.
+  - How: with a limit, each command starts in its own process group. On expiry the group gets
+    SIGTERM, then SIGKILL after 10 s, and ci.jl exits 124 (`TIMED OUT … This is not a pass.`).
+  - Ctrl-C during a bounded run kills the group too and exits 130 (review B2). The first version
+    left the hung test running, because the detached group never sees the terminal's SIGINT.
+    Other signals that end ci.jl (SIGTERM, SIGALRM, SIGKILL) still orphan the group; the
+    register lists them.
+  - Tested with a planted hanging test and a grandchild, both timed out and interrupted: both pids
+    are dead and `pgrep` finds nothing.
+- **The seeded `test/runtests.jl` decides "stable" by Julia version** (`test/runtests.jl`, seeded).
+  - `CI_STABLE` of exactly `"true"`/`"false"` still overrides, both ways. Any other set value
+    throws an `ArgumentError`, as in ChuiCore.jl e80dce9.
+  - Unset, the run is stable iff `VERSION >= STABLE_MIN` (`v"1.13"`, ADR-0008 §3), so a plain
+    `]test` on the LTS skips the stable-only items. Before, unset meant stable, so that `]test`
+    ran them and failed (ChuiCore 0.0.1 prep).
+  - CI.yml still sets `CI_STABLE` per job.
+  - Tested by `scripts/test/test_runtests_template.jl`: both defaults, both overrides, and a bad
+    value.
+
+- **The Benchmark workflow runs `scripts/ci.jl bench`, not AirspeedVelocity** (`Benchmark.yml`,
+  approved by the user). AirspeedVelocity 0.6.6 cannot be installed next to CSV.jl 1.x: the JSON3
+  1.14.3 it pulls in caps Parsers at <= 2.8.8, and CSV 1.x needs Parsers 3 ("Unsatisfiable
+  requirements detected for package Parsers"), so the job did nothing for such packages. The job
+  checks out the full history (`fetch-depth: 0`), runs `ci.jl setup`, then
+  `julia scripts/ci.jl bench -- --base "origin/$BASE"`, with `BASE: ${{ github.base_ref || 'main' }}`
+  passed through `env:` (never in the shell line; review S2, decided by the lead). It stays
+  warning-only (`continue-on-error: true`, `timeout-minutes: 60`; ADR-0011). Checked end to end
+  on a scratch package on CSV 1.1.0 and Parsers 3.0.0 (`bench.jl: OK`), and with actionlint 1.7.12.
+- **`bench.time_tolerance` only means something on a quiet runner** (`ratchets.toml`, `bench.jl`,
+  the ratchet row of `.agents/checks.toml`): a loaded machine gave false regressions of 1.12–1.20×
+  on identical trees.
+- **check_docs skips Documenter cross-references** (`check_docs.jl`). It reported a bare Documenter link (link text, then `(@ref)`) in
+  `docs/src/*.md` as a stale relative path `@ref`. The exact target `@ref` is skipped;
+  `[x](@ref Target)` was never read as a link (the link pattern stops at whitespace) and is now
+  tested. `@refs.md`, `./@ref` and `@ref/x.md` are still checked as paths.
+- **evidence.jl records the termination signal** (`evidence.jl`, `check_claims.jl`). Julia gives
+  `exitcode` 0 for a process killed by a signal, so 0.2.6 wrote `exit: 0` and returned 0 for it.
+  The evidence file now has `termsignal: N` (0 when none); a signalled run exits 128 + N (SIGTERM:
+  143), and its summary line says `KILLED by signal N: not a pass`. check_claims takes no test
+  totals from a killed run, even when it printed a `Test Summary:` table first.
+- **Merge bases need no tracking ref** (`_common.jl` `base_ref`, `lane.jl` audit, `ratchet.jl`).
+  An explicit `origin/<b>` that does not resolve here (no remote, a pruned tracking ref) now falls
+  back to a local `<b>`. In 0.2.6, `dod.jl --base origin/main` failed with "no merge base",
+  `lane audit --base origin/main` failed with "is not a commit here", and ratchet.jl skipped its
+  one-way check with a misleading "no ratchets.toml at the merge base". With no merge base at all,
+  ratchet.jl now says `NOT RUN: no merge base with ...`. Each of these scripts, and bench.jl, prints
+  a note when the fallback happens (`base_note`). `lane audit` fails when the local `<b>` standing
+  in for `origin/<b>` already contains the lane's tip: after a local merge it would audit nothing
+  (review B1: the first 0.2.7 commit passed that case, which 0.2.6 failed).
+
 ## 0.2.6 (2026-10-20)
 
 Lanes that work in their own worktrees. Seven problems lanes hit on 2026-10-20, each reproduced in a

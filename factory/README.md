@@ -105,7 +105,7 @@ Either way the change lands through a reviewed PR labelled T3.
 | `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |
 | `test/jet/Project.toml`, `test/jet/runjet.jl` | JET's own environment (`ci.jl jet`, stable only) | seeded (package) |
 | `scripts/test/` | tests for every script and hook | managed |
-| `.github/workflows/*.yml` | CI, Docs, Contracts, Benchmark (AirspeedVelocity, warning-only), Guards, CompatHelper, TagBot | managed |
+| `.github/workflows/*.yml` | CI, Docs, Contracts, Benchmark (`ci.jl bench` vs the merge base with `origin/<base>`, warning-only; 0.2.7 dropped AirspeedVelocity), Guards, CompatHelper, TagBot | managed |
 | `docs/adr/0000-template.md` | copy of the coordinator's `adr/0000-template.md` (lands in the profile's `adr_dir`) | managed |
 | `../profiles/<profile>/` | overlay files for a profile (outside `template/`): `coordinator`, `package` | per profile |
 
