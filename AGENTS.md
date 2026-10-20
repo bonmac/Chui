@@ -95,6 +95,8 @@ julia scripts/gen.jl --check            # generated files (agents, AGENTS.md, ho
 julia scripts/test/runtests.jl          # tests for the scripts and hooks
 julia scripts/check_docs.jl             # stale doc references
 julia scripts/dod.jl --base main        # definition of done for the current branch
+julia scripts/ci.jl guards --timeout 900  # bound a job (or CI_TIMEOUT=900): kills its whole process group, exit 124
+                                        # never an outer `perl -e alarm`/`timeout` around ci.jl: they orphan the group
 julia factory/template/scripts/sync_factory.jl --from factory --to . --profile coordinator  # dry run
 ```
 
