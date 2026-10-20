@@ -7,6 +7,8 @@
 # beyond ratchets.toml bench.time_tolerance, which only means something on a quiet runner: a
 # loaded machine gave false regressions of 1.12-1.20x on identical trees. To make it blocking once
 # baselines settle (a T3 change, in the repo's CHANGELOG): drop `continue-on-error`.
+# On workflow_dispatch github.base_ref is empty, so the base is origin/main: in a repo whose
+# default branch is not `main`, bench.jl finds no merge base (exit 2), hidden by continue-on-error.
 name: Benchmark
 on:
   pull_request:

@@ -38,7 +38,10 @@ needs migrating; an evidence file from 0.2.6 (no `termsignal` line) reads as bef
   back to a local `<b>`. In 0.2.6, `dod.jl --base origin/main` failed with "no merge base",
   `lane audit --base origin/main` failed with "is not a commit here", and ratchet.jl skipped its
   one-way check with a misleading "no ratchets.toml at the merge base". With no merge base at all,
-  ratchet.jl now says `NOT RUN: no merge base with ...`.
+  ratchet.jl now says `NOT RUN: no merge base with ...`. Each of these scripts, and bench.jl, prints
+  a note when the fallback happens (`base_note`). `lane audit` fails when the local `<b>` standing
+  in for `origin/<b>` already contains the lane's tip: after a local merge it would audit nothing
+  (review B1: the first 0.2.7 commit passed that case, which 0.2.6 failed).
 
 ## 0.2.6 (2026-10-20)
 

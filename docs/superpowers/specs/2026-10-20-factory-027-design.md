@@ -2,7 +2,9 @@
 
 - **Date:** 2026-10-20
 - **Lane:** factory-027 (coordinator, `factory/**`)
-- **Tier:** T3 (CI workflow, process scripts). The user approved the Benchmark workflow change.
+- **Tier:** T3 in every repo that syncs it, because there these are CI workflow and process
+  scripts. In the coordinator, `dod.jl` computes T2 for this diff: `factory/template/` paths are
+  not protected there. The user approved the Benchmark workflow change.
 
 Each problem was reproduced in a scratch repo built from the 0.2.6 template before it was fixed.
 The reproductions are in the lane report.
@@ -20,7 +22,25 @@ then `julia scripts/ci.jl bench -- --base origin/${{ github.base_ref || 'main' }
 factory's own `scripts/bench.jl`: BenchmarkTools on HEAD and on the merge base, in a temporary
 copy of `benchmark/Project.toml`. It needs no tool installed next to the package. The job stays
 warning-only (`continue-on-error: true`, `timeout-minutes: 60`), as ADR-0011 requires.
-`julia-actions/cache` is added as in CI.yml.
+`julia-actions/cache` is added, as in CI.yml.
+
+**Open for the user (review S2).** The approved line interpolates `${{ github.base_ref }}` straight
+into the `run:` shell. A git branch name may contain `$(...)`, backticks or `;`, so a base branch
+with such a name would be expanded by the shell. The risk is low: only someone with write access to
+the base repo can create such a branch, and the job token is `contents: read`. GitHub's hardening
+guidance is to pass the value through `env:` instead:
+
+```yaml
+env:
+  BASE: ${{ github.base_ref || 'main' }}
+run: julia scripts/ci.jl bench -- --base "origin/$BASE"
+```
+
+0.2.7 keeps the approved literal. Switching to the `env:` form is the user's call.
+
+On `workflow_dispatch`, `github.base_ref` is empty and the base is `origin/main`. In a repo whose
+default branch is not `main`, bench.jl then exits 2, and `continue-on-error` hides it. The workflow
+header says so.
 
 **Noise.** `bench.time_tolerance` only means something on a quiet runner: on a loaded machine,
 identical trees measured 1.12–1.20× slower. This is documented in `ratchets.toml`, in `bench.jl`
@@ -76,8 +96,22 @@ remote, a pruned or deleted tracking ref), `merge_base` returned nothing:
 A plain `main` already worked with no remote (the 0.2.6 tests cover that).
 
 **Change.** `base_ref("origin/<b>")` falls back to a local `<b>` only when `origin/<b>` does not
-resolve and `refs/heads/<b>` exists. A resolving `origin/<b>` is still taken as given. `lane audit`
-checks the resolved base. ratchet.jl reports "NOT RUN: no merge base with ..." when there is none.
+resolve and `refs/heads/<b>` exists. A resolving `origin/<b>` is still taken as given.
+- An expression follows the same rule: `origin/main~1` becomes `main~1`.
+- `base_note` prints a one-line notice wherever the fallback happens: `lane audit`, `dod.jl`,
+  `ratchet.jl` and `bench.jl` (review S1).
+- ratchet.jl reports "NOT RUN: no merge base with ..." when there is none.
+
+**Review B1 (fixed).** `lane audit --base origin/<b>` is how a merged lane is audited against the
+remote. In 6e579f3, when that ref did not resolve, the local `<b>` stood in for it. After a local
+merge that branch already contains the lane, so the audit saw 0 files and passed. 0.2.6 had failed
+the same case with "is not a commit here". Now:
+- the 0.2.6 containment guard tests the resolved bases;
+- when the fallback happened and the local `<b>` contains the lane's tip, the audit fails and says
+  to fetch the remote or pass the commit before the merge.
+
+dod.jl and ratchet.jl only print the notice. Run on the base branch after a local merge, they still
+compare it with itself, as the register already says for that case.
 Tests: no remote; a remote whose `origin/main` was deleted; `origin/nope`; and the degenerate
 `origin/`, which never becomes `""`, meaning HEAD.
 

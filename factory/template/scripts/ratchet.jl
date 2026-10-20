@@ -71,6 +71,8 @@ module Ratchet
         bad = String[]
         base = get(opts, "--base", "main")
         mb = merge_base(root, base)
+        note = base_note(root, base)   # 0.2.7: say when a local branch stands in for `origin/<b>`
+        note === nothing || println("ratchet.jl: ", note)
         oldtxt = mb === nothing ? nothing : git(root, "show", "$mb:ratchets.toml")
         if mb === nothing   # 0.2.7: said "no ratchets.toml at the merge base" when there was no merge base at all
             println("ratchet.jl: NOT RUN: no merge base with `$base` here (does it resolve?); direction check skipped")

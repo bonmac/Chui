@@ -55,6 +55,8 @@ module Bench
         root = abspath(get(opts, "--root", normpath(joinpath(@__DIR__, ".."))))
         tol = get(get(TOML.parsefile(joinpath(root, "ratchets.toml")), "bench", Dict()), "time_tolerance", 0.1)
         mb = merge_base(root, get(opts, "--base", "main"))
+        note = base_note(root, get(opts, "--base", "main"))   # 0.2.7: a local branch standing in for `origin/<b>`
+        note === nothing || println("bench.jl: ", note)
         mb === nothing && (println(stderr, "bench.jl: no merge base"); return 2)
         basetree = joinpath(mktempdir(), "base")
         git(root, "worktree", "add", "--detach", basetree, mb; strict = true)

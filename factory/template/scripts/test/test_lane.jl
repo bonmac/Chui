@@ -165,6 +165,17 @@ end
     @test merge_base(wt, "origin/main") == main0                                 # in a lane worktree too
     rc, out = lane("audit", "t", "--base", "origin/main")
     @test rc == 0 && occursin("docs/t.md", out) || (print(out); false)           # 0.2.6: "is not a commit here"
+    @test occursin("note: `origin/main` does not resolve here", out)            # review S1: the fallback is visible
+    @test Lane.base_note(d, "main") === nothing && Lane.base_note(d, "origin/nope") === nothing
+    @test base_ref(d, "origin/main~0") == "main~0"                               # review N1: an expression follows the rule
+    # review B1: merged into the local main, `--base origin/main` (no remote) must not audit nothing and pass
+    commit!(wt, Dict("src/out_of_scope.jl" => "x\n"), "outside owns")
+    sh(`git -C $d merge -q --ff-only feat/t`)
+    rc, out = lane("audit", "t", "--base", "origin/main")
+    @test rc == 1 && occursin("already contains the lane's tip", out) || (print(out); false)   # 6e579f3: rc 0, 0 changed
+    @test lane("audit", "t", "--base", main0)[1] == 1                            # an explicit base before the merge: caught
+    @test occursin("outside owns: src/out_of_scope.jl", lane("audit", "t", "--base", main0)[2])
+    sh(`git -C $d reset -q --hard $main0`)                                      # undo the merge for what follows
     # a remote whose tracking ref was pruned: origin/main existed, then no longer resolves
     o = joinpath(mktempdir(), "origin.git")
     sh(`git clone -q --bare $d $o`); sh(`git -C $d remote add origin $o`); sh(`git -C $d fetch -q origin`)
