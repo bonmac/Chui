@@ -149,6 +149,31 @@ end
     @test base_ref(d, "main") == "origin/main" && merge_base(d, "main") !== nothing
 end
 
+@testset "merge_base without a tracking ref: origin/<b> falls back to a local <b> (0.2.7)" begin
+    # factory-027 item 4: a lane saw "origin/main no longer resolves"; 0.2.6 kept the missing ref and
+    # `dod.jl --base origin/main` failed with "no merge base", ratchet.jl skipped its direction check
+    base_ref, merge_base = Lane.base_ref, Lane.merge_base
+    d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", "README.md" => "x\n"))
+    main0 = readchomp(`git -C $d rev-parse main`)
+    @test base_ref(d, "origin/main") == "main" && merge_base(d, "origin/main") == main0   # no remote at all
+    @test base_ref(d, "origin/nope") == "origin/nope" && merge_base(d, "origin/nope") === nothing   # no local nope either
+    @test base_ref(d, "origin/") == "origin/"                                    # degenerate: never "" (HEAD)
+    lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
+    @test lane("new", "t", "--owns", "docs/*")[1] == 0
+    wt = joinpath(d, ".worktrees/t")
+    commit!(wt, Dict("docs/t.md" => "t\n"), "t")
+    @test merge_base(wt, "origin/main") == main0                                 # in a lane worktree too
+    rc, out = lane("audit", "t", "--base", "origin/main")
+    @test rc == 0 && occursin("docs/t.md", out) || (print(out); false)           # 0.2.6: "is not a commit here"
+    # a remote whose tracking ref was pruned: origin/main existed, then no longer resolves
+    o = joinpath(mktempdir(), "origin.git")
+    sh(`git clone -q --bare $d $o`); sh(`git -C $d remote add origin $o`); sh(`git -C $d fetch -q origin`)
+    @test base_ref(d, "origin/main") == "origin/main"                            # resolves: taken as given
+    sh(`git -C $d update-ref -d refs/remotes/origin/main`)
+    @test base_ref(d, "origin/main") == "main" && merge_base(wt, "origin/main") == main0
+    @test base_ref(d, "main") == "main"                                          # the plain name: unchanged
+end
+
 @testset "lane new: the machine-local file reaches the lane (0.2.6)" begin
     # factory-026 item 1: .agents/factory.local.toml is gitignored, so a new worktree lacked it and a repo with
     # require_read_only_roots = true failed closed on every Bash call there

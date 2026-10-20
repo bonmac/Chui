@@ -173,7 +173,8 @@ module Lane
         end
         # the review: a lane-base rewritten to the lane's own branch (or to a missing ref) audits nothing
         l.base == l.branch && return (println(io, "lane audit $name: [FAIL] its base is its own branch ($(l.base)): branch.$(l.branch).lane-base was rewritten\nlane audit: FAILED (1)"); 1)
-        git(wt, "rev-parse", "--verify", "--quiet", "$(l.base)^{commit}") === nothing &&
+        # base_ref: `origin/<b>` that does not resolve here falls back to a local `<b>` (0.2.7)
+        git(wt, "rev-parse", "--verify", "--quiet", "$(base_ref(wt, l.base))^{commit}") === nothing &&
             return (println(io, "lane audit $name: [FAIL] its base `$(l.base)` is not a commit here\nlane audit: FAILED (1)"); 1)
         mb = merge_base(wt, l.base)
         mb === nothing && return (println(stderr, "lane: no merge base between $(l.base) and $(l.branch)"); 2)

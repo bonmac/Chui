@@ -81,7 +81,7 @@ rule = "Coverage floor only rises, size budgets and benchmark tolerance only fal
 prevented_by = "scripts/ratchet.jl"
 runs_in = ["ci Guards", "ci CI (coverage, with --lcov)", "local scripts/ci.jl guards"]
 test = "scripts/test/test_ratchet.jl"
-blind_spots = ["compares with the merge base only, not every parent of a merge", "files not matched by any size glob", "coverage of code that is never loaded"]
+blind_spots = ["compares with the merge base only, not every parent of a merge", "files not matched by any size glob", "coverage of code that is never loaded", "with no merge base (the base resolves neither as given nor, for `origin/<b>`, as a local `<b>`; 0.2.7) the direction check is NOT RUN and says so; sizes and coverage still run", "it checks only that bench.time_tolerance falls, not what `scripts/bench.jl` measures: the tolerance only means something on a quiet runner (a loaded machine gave false regressions of 1.12-1.20x on identical trees, 0.2.7), and the Benchmark workflow is warning-only (ADR-0011)"]
 
 [[checks]]
 id = "check_docs"
@@ -89,7 +89,7 @@ rule = "Markdown links and backticked repo paths point at files that exist"
 prevented_by = "scripts/check_docs.jl"
 runs_in = ["ci Guards", "local scripts/ci.jl guards"]
 test = "scripts/test/test_check_docs.jl"
-blind_spots = ["paths outside the known prefixes", "anchors (#section)", "command flags named in docs", "the CONVENTIONS list in check_docs.jl is trusted even where a repo never creates those paths", "files excluded and references allowed by .agents/factory.toml [check_docs] (and fenced blocks when ignore_fenced = true)", "in a checkout holding the factory, a path in factory/*.md that exists only in factory/template/ passes even if it was meant as a repo path", "a reference to an untracked path that a tracked .gitignore ignores passes whether or not it exists (it is machine-local: present in a dev checkout, absent in a fresh clone), so a typo that still matches an ignore pattern is not caught: a glob (`*.parquet`), or an unanchored directory (`dev/` matches a dev folder at any depth); outside a git checkout nothing counts as ignored"]
+blind_spots = ["paths outside the known prefixes", "anchors (#section)", "command flags named in docs", "the CONVENTIONS list in check_docs.jl is trusted even where a repo never creates those paths", "files excluded and references allowed by .agents/factory.toml [check_docs] (and fenced blocks when ignore_fenced = true)", "in a checkout holding the factory, a path in factory/*.md that exists only in factory/template/ passes even if it was meant as a repo path", "a reference to an untracked path that a tracked .gitignore ignores passes whether or not it exists (it is machine-local: present in a dev checkout, absent in a fresh clone), so a typo that still matches an ignore pattern is not caught: a glob (`*.parquet`), or an unanchored directory (`dev/` matches a dev folder at any depth); outside a git checkout nothing counts as ignored", "a link target that is exactly `@ref` (Documenter: `[x](@ref)`; `[x](@ref Target)` is never read as a link, 0.2.7) is not checked, so a Documenter cross-reference to a missing docstring or heading is left to the Documenter build"]
 
 [[checks]]
 id = "contract_usage"
@@ -133,7 +133,7 @@ blind_spots = ["numbers without a marker (only `required` keys must have one)", 
 
 [[checks]]
 id = "evidence"
-rule = "Test counts and other reported numbers come from a file that records the commit, a dirty flag, the command, its exit code, the time and the full output"
+rule = "Test counts and other reported numbers come from a file that records the commit, a dirty flag, the command, its exit code and termination signal (a signalled run exits 128 + the signal and is not a pass), the time and the full output"
 prevented_by = "scripts/evidence.jl"
 runs_in = ["local"]
 test = "scripts/test/test_evidence.jl"

@@ -5,6 +5,41 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.7 (2026-10-20)
+
+Four problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6
+template before it was fixed (spec: `docs/superpowers/specs/2026-10-20-factory-027-design.md`).
+Two results are stricter: a signalled run is no longer exit 0 in its evidence, and the benchmark
+job now runs a suite where it used to do nothing. The lead chose 0.2.7, as for 0.2.6. Nothing
+needs migrating; an evidence file from 0.2.6 (no `termsignal` line) reads as before.
+
+- **The Benchmark workflow runs `scripts/ci.jl bench`, not AirspeedVelocity** (`Benchmark.yml`,
+  approved by the user). AirspeedVelocity 0.6.6 cannot be installed next to CSV.jl 1.x: the JSON3
+  1.14.3 it pulls in caps Parsers at <= 2.8.8, and CSV 1.x needs Parsers 3 ("Unsatisfiable
+  requirements detected for package Parsers"), so the job did nothing for such packages. The job
+  checks out the full history (`fetch-depth: 0`), runs `ci.jl setup`, then
+  `julia scripts/ci.jl bench -- --base origin/${{ github.base_ref || 'main' }}`. It stays
+  warning-only (`continue-on-error: true`, `timeout-minutes: 60`; ADR-0011). Checked end to end
+  on a scratch package on CSV 1.1.0 and Parsers 3.0.0 (`bench.jl: OK`), and with actionlint 1.7.12.
+- **`bench.time_tolerance` only means something on a quiet runner** (`ratchets.toml`, `bench.jl`,
+  the ratchet row of `.agents/checks.toml`): a loaded machine gave false regressions of 1.12–1.20×
+  on identical trees.
+- **check_docs skips Documenter cross-references** (`check_docs.jl`). It reported a bare Documenter link (link text, then `(@ref)`) in
+  `docs/src/*.md` as a stale relative path `@ref`. The exact target `@ref` is skipped;
+  `[x](@ref Target)` was never read as a link (the link pattern stops at whitespace) and is now
+  tested. `@refs.md`, `./@ref` and `@ref/x.md` are still checked as paths.
+- **evidence.jl records the termination signal** (`evidence.jl`, `check_claims.jl`). Julia gives
+  `exitcode` 0 for a process killed by a signal, so 0.2.6 wrote `exit: 0` and returned 0 for it.
+  The evidence file now has `termsignal: N` (0 when none); a signalled run exits 128 + N (SIGTERM:
+  143), and its summary line says `KILLED by signal N: not a pass`. check_claims takes no test
+  totals from a killed run, even when it printed a `Test Summary:` table first.
+- **Merge bases need no tracking ref** (`_common.jl` `base_ref`, `lane.jl` audit, `ratchet.jl`).
+  An explicit `origin/<b>` that does not resolve here (no remote, a pruned tracking ref) now falls
+  back to a local `<b>`. In 0.2.6, `dod.jl --base origin/main` failed with "no merge base",
+  `lane audit --base origin/main` failed with "is not a commit here", and ratchet.jl skipped its
+  one-way check with a misleading "no ratchets.toml at the merge base". With no merge base at all,
+  ratchet.jl now says `NOT RUN: no merge base with ...`.
+
 ## 0.2.6 (2026-10-20)
 
 Lanes that work in their own worktrees. Seven problems lanes hit on 2026-10-20, each reproduced in a
