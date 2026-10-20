@@ -1,6 +1,6 @@
 # HANDOFF — Chui coordinator (lead)
 
-Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommendations accepted).** All five repos are public under `bonmac` (first push 2026-10-19). The first CI runs found clean-clone bugs in the factory; factory 0.2.5 fixes them and is synced everywhere, waiting for the user's push. Next: L1.
+Updated: 2026-10-20 (afternoon) · Phase: **L1.** ChuiCore 0.0.1 is merged and waiting for the user's release script (push, tag, register). ChuiTypes phase 4 and ChuiFrames phase 3 are merged. Factory 0.2.7 is merged and synced into the coordinator; the package syncs are running. Nothing since `1051a0d` (coordinator) is pushed. The current state is in "Open lanes" below; the sections further down are history.
 
 ## State
 
@@ -36,11 +36,20 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| types-p4 | ChuiTypes.jl | `.worktrees/phase4-streams` / `feat/phase4-streams` | src, ext, test, Project.toml, docs, benchmark, HANDOFF, fragment | running: phase 4 futures and streams (R10) |
-| frames-p3 | ChuiFrames.jl | `.worktrees/phase3-lazy` / `feat/phase3-lazy` | same shape | running: phase-2c ★ follow-ups, then phase 3 lazy engine |
-| factory-027 | coordinator | `.worktrees/factory-027` / `feat/factory-027` | `factory/**` | running: bench workflow via ci.jl bench, check_docs `@ref`, evidence.jl signals |
+| sync-027-types | ChuiTypes.jl | `.worktrees/sync-027` | sync paths, test/runtests.jl, CLAUDE.md, fragment | running: 0.2.7 sync + runtests STABLE_MIN edit |
+| sync-027-frames2 | ChuiFrames.jl | `.worktrees/sync-027` / `chore/sync-027` | same | running: committed 9355509, tests and reviewer pending (replaced sync-027-frames, which was blocked by write_guard's root) |
+| requests-p4p3 | coordinator | `.worktrees/requests-p4p3` (branch docs/requests-p4p3) | `requests/**`, fragment | drafting in the lead's scratchpad (blocked from writing: spawned with root ChuiTypes.jl); a coordinator-rooted agent will commit them |
 
-**Merged locally (2026-10-20), all reviewer-approved, tests re-run by the lead on 1.13.2 and 1.10.12:**
+**Lesson (2026-10-20):** a spawned agent's write_guard root is the lead's cwd when it is spawned. `cd` into the target repo or worktree before spawning a lane (the memory dir is outside the root, so this note lives here).
+
+**Merged 2026-10-20 (afternoon), all with a final reviewer approval:**
+- **ChuiCore 0.0.1 release** (`aaca78f`): changelog folded; seeded runtests skips `:doctest`/`:snapshot` by `VERSION < STABLE_MIN` (1.13) when CI_STABLE is unset (fresh-clone fix). Evidence: plain test with CI_STABLE unset passes on 1.13.2 (3369/3369) and 1.10.12 (3262/3262). **User runs** `scratchpad/release-chuicore-001.sh`: push all mains, wait for ChuiCore CI on `aaca78f`, tag v0.0.1, LocalRegistry register (push=false), confirm, push ChuiRegistry. Then the lead adds the releases.md row, runs integration, and fills in compat-matrix. ChuiCore's 0.2.7 sync waits until after the tag.
+- **ChuiTypes phase 4, futures and streams** (`6ee5fac`): Queue, Stream, combinators, time operators, Subject, marbles; ADR-0008 accepted; ADR-0003 §5 and ADR-0004 §2 amended (user ★). `test -- all` 17227 (1.13.2) / 17212 (1.10.12). Phase-5 item 1: switch the Upstream stand-ins to ChuiCore 0.0.1; then the cost claim (fused ≈5.5× Base, runfold ≈43× foldl).
+- **ChuiFrames phase 3, lazy engine and Part A** (`d3bcec8`): lazy/collect/optimize/explain/code_lowered; R-total (filters never move past mutate, accepted for v0); eager replay as CF-008's mechanism; grouped sinks deferred to phase 4; lazy budgets use the ADR-0022 rule-2 formula. Suites 8511 / 8473 / 8512 (-t 4). Pending: a -t 4 CI job (user-approved, T3: needs the user's `FACTORY_ALLOW_T3=1`); a quiet-machine ttfx re-run (1.13 loaded run: 421 of 500 ms); stale AirspeedVelocity mentions in ChuiFrames' benchmark/, ADR-0022 and HANDOFF.
+- **Factory 0.2.7** (`961b764`), synced into the coordinator (`3501ac3`): ci.jl bench, `ci.jl --timeout` (kills the process group), signals in evidence, base fallback, runtests stable by version. **ADR-0011 amended** (`f71c76c`; wording confirmed by the user).
+- User: coordinator `ratchets.toml` keeps its old comment (no T3 edit).
+
+**Merged locally (earlier 2026-10-20), all reviewer-approved, tests re-run by the lead on 1.13.2 and 1.10.12:**
 - **ChuiCore: all five phases done** (`e124ed3`): traits and law kits, schemes/transducers/optics/laziness, performance (ADR-0009/0010 accepted; PrecompileTools), docs site (10 tutorials, doctests), `__init__` banner (invokelatest; fires on any interactive load; user-accepted). 3369 tests. **Next: v0.1.0, needs the user** (release checklist in ChuiCore's HANDOFF).
 - ChuiTypes: phases 1–3 (`bd8bcc0`): core data types; Reader/Writer/State (ADR-0007) and the effect runtime (structured concurrency, cancellation, resources, test mode). 875 / 860 tests (`test -- all`).
 - ChuiFrames: phases 1–2 (`5896de6`): own Arrow IPC reader, dplyr/tidyr verbs, timestamps (ADR-0021), CSV/Arrow/Parquet, printing, budgets (ADR-0022), Polars/DuckDB differentials. 4833 tests. The 1.13 load budget (487 of 500 ms under load) needs a quiet re-run before release.
@@ -78,7 +87,7 @@ All actual runs (`subagent_mode: actual`).
 - **`ci.jl contracts`:** no upstream is released.
 - **`ci.jl format` (Runic):** not yet run in the packages.
 - **ChuiCore on 1.10.12** after the follow-up: not re-run (the change was docs and `.factory-version` only).
-- **AirspeedVelocity failure behaviour:** UNVERIFIED.
+- **AirspeedVelocity:** replaced by `ci.jl bench` (ADR-0011 amendment, 2026-10-20); the new Benchmark.yml has not run on a GitHub runner yet.
 - **Lane cap:** whether teammates count toward the cap is UNVERIFIED.
 
 ## ★ ChuiCore phase 1 (asked 2026-10-20; only ChuiCore is paused)
@@ -111,13 +120,14 @@ eco-amend merged into main (`a414f1b`): ADR-0007 §2 and ADR-0009 amended (dated
 
 ## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
 
-ADRs 0001–0011 Accepted; contracts binding; 0.0.x snapshots; Julia floor 1.10; Runic; `c` plain export; `papply`, fixed empty-input exceptions, `neutral`, retired stubs; MIT, AirspeedVelocity (warning-only at first), local coverage floor; CompatHelper/TagBot via ChuiRegistry; factory sync once reviewed; lane cap 6. Item 13 (permission mode) had no recommendation and stays unchanged. GitHub owner `bonmac`, all public: `Chui` (this coordinator, redacted first), `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl`, `ChuiRegistry`.
+ADRs 0001–0011 Accepted; contracts binding; 0.0.x snapshots; Julia floor 1.10; Runic; `c` plain export; `papply`, fixed empty-input exceptions, `neutral`, retired stubs; MIT, AirspeedVelocity (warning-only at first; replaced by `ci.jl bench`, ADR-0011 amendment 2026-10-20), local coverage floor; CompatHelper/TagBot via ChuiRegistry; factory sync once reviewed; lane cap 6. Item 13 (permission mode) had no recommendation and stays unchanged. GitHub owner `bonmac`, all public: `Chui` (this coordinator, redacted first), `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl`, `ChuiRegistry`.
 
 Open factory notes for the user: the CHANGELOG rule suggests 0.3.0 for stricter guards (kept 0.2.x); `git reset --merge`/`--keep`, `checkout -- .` and `restore .` are not blocked by bash_guard (user's call).
 
 ## Next action
 
-1. The user pushes the 0.2.5 commits (bash_guard blocks `git push` for the lead); then the lead checks that every GitHub workflow is green.
-2. `pre-redaction-backup` is deleted locally; one unredacted copy remains in the lead's session scratchpad (`chui-rewrite`), never pushed; delete when the user agrees.
-3. The coordinator has no format job; Runic would flag `contracts/*.jl` and `reference/prototype/**` (open, low).
-4. L1: relaunch the lead from `<root>` and start each package's phase 1 (Research and ADRs) as parallel lanes.
+1. **User:** run the ChuiCore 0.0.1 release script (it also pushes every repo's main). Then the lead adds releases.md, runs integration, fills compat-matrix, and syncs 0.2.7 into ChuiCore.
+2. Lead: merge sync-027-types and sync-027-frames2 after their final reviews; land requests-p4p3 through a coordinator-rooted agent. The user copies the contract drafts (`scratchpad/contracts-p3p4/`) into `contracts/` (T3).
+3. ChuiFrames -t 4 CI job: needs the user's `FACTORY_ALLOW_T3=1`.
+4. Next phases: ChuiTypes phase 5 (switch to ChuiCore 0.0.1, then cost); ChuiFrames phase 4 (grouped sinks, joins); ChuiCore post-0.0.1.
+5. Unanswered offer: delete the unredacted `chui-rewrite` clone in the scratchpad. The coordinator still has no format job (low).
