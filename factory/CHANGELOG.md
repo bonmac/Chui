@@ -5,6 +5,55 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.6 (2026-10-20)
+
+Lanes that work in their own worktrees. Seven problems lanes hit on 2026-10-20, each reproduced in a
+scratch repo built from the 0.2.5 template before it was fixed (spec:
+`docs/superpowers/specs/2026-10-20-factory-026-design.md`). One guard is stricter: T3 paths of a
+lane worktree that does not exist yet (item 2).
+
+- **`lane new` sets the lane up like its repo** (`scripts/lane.jl`). It copies the gitignored
+  `.agents/factory.local.toml` into the new worktree and runs the lane's `scripts/gen.jl`. In 0.2.5
+  the lane had no `read-only-roots.txt`, so in a repo with `require_read_only_roots = true` every
+  Bash call there failed closed. Copying the user's own file is the intended setup, not a T3 edit.
+- **bash_guard: T3 paths of a lane worktree are protected before it exists**
+  (`_bash_guard_write.sh`, `_bash_guard_cmd.sh`). The command
+  `scripts/lane new y && cp .agents/factory.local.toml .worktrees/y/.agents/` was rc 0: the hook
+  ran before `.worktrees/y` existed, so the path met only the root's globs. `t3_check` now takes
+  `.worktrees/<n>/` and `.claude/worktrees/<n>/` as a checkout root by place, and a `cp`/`mv`/`ln`
+  target ending in `/` is a directory even when absent. Seven regression commands, all rc 0 on 0.2.5.
+- **Merge bases prefer the local base when it contains `origin/<base>`** (`_common.jl` `base_ref`,
+  used by `lane audit`, `dod.jl`, `ratchet.jl`, `bench.jl`). 0.2.5 always took `origin/<base>`, so
+  work merged locally but not pushed failed `lane audit` ("outside owns") and inflated `dod.jl`.
+  `origin/<base>` is still used when the local base is missing, behind or diverged.
+  `lane audit` takes `--base B`.
+- **A lane's session may write its repo's other lane worktrees and `<main>/.lanes/reports/`**
+  (`_lib.sh` `MAIN`/`in_main`, `allowed`). A sub-lane made with `scripts/lane new` inside a lane is
+  a sibling (`<main>/.worktrees/<sub>`), which 0.2.5's write_guard and bash_guard blocked, so lanes
+  fell back to unguarded scratch copies. The main checkout's own files stay outside, and T3 paths in
+  a sibling stay blocked. Why this and not the "disjoint files in one worktree" pattern: see the spec.
+- **teammate_idle and write_guard agree** (`teammate_idle.sh`): a report at `.lanes/reports/<name>.md`
+  in any lane worktree counts, and a lane may write the main checkout's `.lanes/reports/`.
+- **Test template: Supposition on the 1.10 LTS** (ADR-0007 §2, amended 2026-10-20). The seeded
+  `test/runtests.jl` shows `sr = @check record = false db = false …` with
+  `@test Supposition.results(sr).ispass` (`results` is not exported), and says why. A bare failing
+  `@check` exits 0 on 1.10.12 (summary "None"), and a 1.13 counterexample DB crashes 1.10. The
+  seeded `.gitignore` gains `/test/SuppositionDB/`. CLAUDE.md, property_tester and law_tester say
+  the same.
+- **The LTS manifest** (documented, nothing seeded). A Manifest resolved on 1.13 may not load on 1.10:
+  with PrecompileTools 1.3.4 the result is `UndefVarError: StaticData not defined`. Julia 1.10 reads a
+  gitignored `Manifest-v1.10.toml` first; create it and run `Pkg.resolve()` under `julia +lts`.
+  `/Manifest*.toml` already ignores it, and a test now asserts that.
+- **check_docs: a gitignored reference under a subdirectory root** (`scripts/check_docs.jl`, found by
+  this lane's own test run). `git check-ignore -v` names the source `.gitignore` from the repo's
+  top, and 0.2.5 looked that path up from the checked root. For `factory/template` inside the
+  coordinator it was never "tracked", so every gitignored reference there was reported stale (the
+  new `test/SuppositionDB/` mentions were the first). It now uses a `:(top)` pathspec; the new test
+  is false on 0.2.5 and true now.
+- Blind spots added to `.agents/checks.toml` for write_guard, teammate_idle and lane_tool.
+- Seeded files (`.gitignore`, `CLAUDE.md`, `test/runtests.jl`) are not updated in existing repos:
+  sync shows their diff; add `/test/SuppositionDB/` and the Testing bullets by hand.
+
 ## 0.2.5 (2026-10-20)
 
 Checks that give the same answer in a fresh clone as in a dev checkout. The first GitHub

@@ -221,6 +221,12 @@ checkout_profile(root) = get(
                 @test "/$e/Manifest*.toml" in ign || (println(".gitignore misses /$e/Manifest*.toml"); false)
             end
             @test "/docs/Manifest*.toml" in ign
+            # 0.2.6: a version-specific Manifest (a 1.13-resolved Manifest.toml does not instantiate on 1.10) and
+            # Supposition's counterexample DB (one written by 1.13 crashes 1.10; ADR-0007 §2 amendment) are never committed
+            d = tmp_repo(Dict(".gitignore" => read(joinpath(ROOT, ".gitignore"), String)))
+            for p in ("Manifest-v1.10.toml", "test/Manifest-v1.10.toml", "test/SuppositionDB/x/y.bin")
+                @test success(`git -C $d check-ignore -q $p`) || (println(".gitignore does not ignore $p"); false)
+            end
         end
     end
 end

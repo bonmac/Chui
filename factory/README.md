@@ -133,6 +133,11 @@ Either way the change lands through a reviewed PR labelled T3.
   left the main checkout, nor every write made through Bash; `scripts/lane audit <lane>`
   compares the lane's diff with the globs it owns (`scripts/lane new <lane> --owns ...`) and
   with the files it reported. `/change-review` runs it before a lane lands.
+- **A lane is set up like its repo, and its sub-lanes are in-repo** (0.2.6). `scripts/lane new`
+  copies the gitignored `.agents/factory.local.toml` into the worktree and runs `gen.jl` there.
+  A session rooted in a lane worktree may write the repo's other lane worktrees (sub-lanes are
+  siblings, `<repo>/.worktrees/<sub>`) and `<repo>/.lanes/reports/`, never the main checkout.
+  Merge bases use the local base when it contains `origin/<base>`.
 - **Lanes share no file for the changelog** (0.2.4): each adds `changelog.d/<lane>.md`, which
   `dod.jl` accepts; the release manager folds the fragments (`scripts/changelog.jl fold`).
 - **Numbers in docs are derived** (0.2.4): a `<!-- claim: key=value -->` marker on the line

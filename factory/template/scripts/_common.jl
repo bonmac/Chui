@@ -37,10 +37,28 @@ function git(dir, args...; strict = false)
     return chomp(String(take!(out)))
 end
 
-"The merge base of `head` with `base`; tries `origin/<base>` first. `nothing` if none."
+"""
+    base_ref(dir, base) -> String
+
+The ref that stands for `base` (factory 0.2.6): the local `base` when it contains
+`origin/<base>` (local ahead or equal) or there is no `origin/<base>`; `origin/<base>` when the
+local branch is missing, behind or diverged. Before 0.2.6 `origin/<base>` always won, so work
+merged locally but not pushed counted as the lane's own changes (`lane audit`, `dod.jl`).
+"""
+function base_ref(dir, base)
+    startswith(base, "origin/") && return base
+    has(ref) = git(dir, "rev-parse", "--verify", "--quiet", "$ref^{commit}") !== nothing
+    has("refs/remotes/origin/$base") || return base
+    has(base) || return "origin/$base"
+    # `merge-base --is-ancestor A B` exits 0 (git returns "") when A is an ancestor of B
+    return git(dir, "merge-base", "--is-ancestor", "origin/$base", base) === nothing ? "origin/$base" : base
+end
+
+"The merge base of `head` with `base` (the ref `base_ref` picks, then the other one). `nothing` if none."
 function merge_base(dir, base, head = "HEAD")
-    for b in (startswith(base, "origin/") ? (base,) : ("origin/$base", base))
-        mb = git(dir, "merge-base", b, head)
+    b = base_ref(dir, base)
+    for r in unique!([b, base, "origin/$(replace(base, r"^origin/" => ""))"])
+        mb = git(dir, "merge-base", r, head)
         mb === nothing || return mb
     end
     return nothing
