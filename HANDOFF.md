@@ -49,6 +49,8 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 **Waiting on the user:** the T3 copy of `chui-core.md`, `chui-types.md` and `chui-frames.md` into `contracts/`, and the push (`user-steps.sh` in the lead's scratchpad). After the copy: commit the contracts, refresh the packages' vendored `test/contracts/` copies, push again.
 
+**Parquet2 upstream bug (documented, not filed; user, 2026-10-20):** Parquet2 0.2.37 loses 1 ms on ~0.6% of INT64 timestamps (Float64 round trip). ChuiFrames works around it (ADR-0021). The issue draft and reproducer are in `ChuiFrames.jl/docs/research/upstream-parquet2-timestamps.md`; filing is optional and needs the user.
+
 **Next decision for the user:** register a ChuiCore 0.0.1 snapshot in ChuiRegistry (request R4), so ChuiTypes and ChuiFrames can depend on the real ChuiCore and run their contract tests.
 
 Closed this session (all reported; none went idle without a report):
