@@ -1,8 +1,7 @@
 # ADR-0013: Effect–Task adapters keep the exception object and the cancellation, not Base `fetch`'s shape or the `Die`/`Fail` kind
 
-- **Status:** Proposed. The user accepted ChuiTypes ADR-0006's wording at the ChuiTypes phase-1 ★
-  (2026-10-20). Applying the text below to `contracts/chui-types.md` is a T3 edit and needs the
-  user's approval.
+- **Status:** Accepted (2026-10-20, user at the contract ★; the wording was accepted at the
+  ChuiTypes phase-1 ★). The user applies the T3 edit to `contracts/chui-types.md`.
 - **Date:** 2026-10-20
 - **Deciders:** the user (contract files are T3, `risk.toml`)
 - **Scope:** ecosystem (contract ADR for `contracts/chui-types.md`, ADR-0010)

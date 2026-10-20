@@ -89,6 +89,10 @@ All actual runs (`subagent_mode: actual`).
 
 **Answered 2026-10-20: all accepted** (ADRs, contract amendment via a contract ADR, names, requests). The contract ADR and the requests go to the eco-amend lane; registration (R4) comes back to the user.
 
+## ★ Contract changes (asked 2026-10-20; T3, the user applies)
+
+eco-amend merged into main (`a414f1b`): ADR-0007 §2 and ADR-0009 amended (dated sections), contract ADRs 0012 (chui-core) and 0013 (chui-types) Proposed, requests R1–R5 filed. Critic APPROVE. The fully assembled proposed contracts are in the lead's scratchpad (`eco-amend/contracts/`); contracts/check.jl passes on them on 1.13.2 and 1.10.12. Questions: CC-001 amended in place or retired and reissued; IDs for CC-012/CC-013 only; confirm `neutral`/`curry`/`pure`/`ap`/`fmap` public, not exported; accept ADR-0012's proposed section P1–P6 and ADR-0013.
+
 ## L0 checkpoint decisions (answered 2026-10-19: all recommendations accepted)
 
 ADRs 0001–0011 Accepted; contracts binding; 0.0.x snapshots; Julia floor 1.10; Runic; `c` plain export; `papply`, fixed empty-input exceptions, `neutral`, retired stubs; MIT, AirspeedVelocity (warning-only at first), local coverage floor; CompatHelper/TagBot via ChuiRegistry; factory sync once reviewed; lane cap 6. Item 13 (permission mode) had no recommendation and stays unchanged. GitHub owner `bonmac`, all public: `Chui` (this coordinator, redacted first), `ChuiCore.jl`, `ChuiTypes.jl`, `ChuiFrames.jl`, `ChuiRegistry`.

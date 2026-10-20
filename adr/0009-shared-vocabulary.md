@@ -2,8 +2,8 @@
 
 - **Status:** Accepted (2026-10-19, user at the L0 checkpoint); §1, §5 and Consequences amended
   2026-10-20 (see "Amendment 2026-10-20"). Items 1, 3 and 4 are the user's, from the ChuiCore
-  phase-1 ★. Item 2's `neutral` change was approved by the lead and is **pending the user** (★ Q3
-  of ADR-0012).
+  phase-1 ★. Item 2's `neutral` change was approved by the lead and confirmed by the user at the
+  contract ★ (2026-10-20).
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -143,7 +143,8 @@ monoid aggregation. Verified facts:
 
 Items 1, 3 and 4 were decided by the user at the ChuiCore phase-1 ★ (2026-10-20), accepting
 ChuiCore ADR-0001, 0005 and 0006. Item 2's `neutral` change is the lead's, approved on the
-evidence of ChuiCore's phase-2 clash probe, and **pending the user**. The decisions above stay as
+evidence of ChuiCore's phase-2 clash probe, and confirmed by the user at the contract ★
+(2026-10-20). The decisions above stay as
 written; this section records what replaces or settles them.
 
 1. **Three export tiers replace the Consequences line "ChuiCore exports `partial`"** (ChuiCore
@@ -172,7 +173,7 @@ written; this section records what replaces or settles them.
      only its export changes.
    - `c` stays a plain ChuiFrames export: it is outside ChuiCore's tiers.
    - **`neutral` keeps its name, but it becomes public, not exported** (approved by the lead,
-     pending the user's ★ Q3). The clash test wins over ChuiCore ADR-0005 rule 3's list.
+     confirmed by the user at the contract ★, 2026-10-20). The clash test wins over ChuiCore ADR-0005 rule 3's list.
      - **The probe.** ChuiCore's phase-2 lane ran ADR-0005's clash test on Julia 1.13.2 against
        DataFrames 1.3.6, Functors 0.4.12, TypeClasses 1.1.0, Transducers 0.4.85, Accessors
        0.1.45 and Setfield 1.1.2. TypeClasses exports `pure`, `ap`, `neutral`, `combine`, `curry`

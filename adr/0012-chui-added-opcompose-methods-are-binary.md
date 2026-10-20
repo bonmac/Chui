@@ -1,8 +1,8 @@
 # ADR-0012: Chui-added `⨟` methods take two arguments; only the upstream fallback and a downstream closing method are variadic
 
-- **Status:** Proposed. The user decided the CC-001 change at the ChuiCore phase-1 ★ (2026-10-20).
-  The exact text below and the section "Proposed, needs the user" still need the user's approval
-  of the T3 edit to `contracts/chui-core.md`.
+- **Status:** Accepted (2026-10-20, user at the contract ★): CC-001 amended in place, the section
+  "Proposed, needs the user" (P1–P6) accepted in full, stable IDs only for CC-012 and CC-013. The
+  user applies the T3 edit to `contracts/chui-core.md`.
 - **Date:** 2026-10-20
 - **Deciders:** the user (contract files are T3, `risk.toml`)
 - **Scope:** ecosystem (contract ADR for `contracts/chui-core.md`, ADR-0010)

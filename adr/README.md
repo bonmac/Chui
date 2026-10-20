@@ -22,5 +22,5 @@ ADR-0009 §1/§5 carry dated amendment sections from the ChuiCore phase-1 ★ (2
 | 0009 | [Shared vocabulary](0009-shared-vocabulary.md) | Accepted (2026-10-19, L0); amended 2026-10-20 |
 | 0010 | [Cross-repo workflow](0010-cross-repo-workflow.md) | Accepted (2026-10-19, L0) |
 | 0011 | [License, benchmark tool and coverage floor](0011-license-benchmarks-coverage.md) | Accepted (2026-10-19, L0) |
-| 0012 | [Chui-added `⨟` methods take two arguments; only the upstream fallback and a downstream closing method are variadic](0012-chui-added-opcompose-methods-are-binary.md) | Proposed (2026-10-20; CC-001 change decided at the ChuiCore phase-1 ★, contract text awaits the user) |
-| 0013 | [Effect–Task adapters keep the exception object and the cancellation, not Base `fetch`'s shape or the `Die`/`Fail` kind](0013-chui-types-adapters-keep-the-exception-object-not-the-task.md) | Proposed (2026-10-20; wording accepted at the ChuiTypes phase-1 ★, contract text awaits the user) |
+| 0012 | [Chui-added `⨟` methods take two arguments; only the upstream fallback and a downstream closing method are variadic](0012-chui-added-opcompose-methods-are-binary.md) | Accepted (2026-10-20, user at the contract ★; CC-001 in place, P1–P6) |
+| 0013 | [Effect–Task adapters keep the exception object and the cancellation, not Base `fetch`'s shape or the `Die`/`Fail` kind](0013-chui-types-adapters-keep-the-exception-object-not-the-task.md) | Accepted (2026-10-20, user at the contract ★) |
