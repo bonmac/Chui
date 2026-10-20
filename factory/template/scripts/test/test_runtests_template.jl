@@ -18,7 +18,9 @@ end
     else
         m = Module(:SeededRuntests)
         Base.include_string(m, blk, "test/runtests.jl")
-        is_stable, STABLE_MIN = m.is_stable, m.STABLE_MIN
+        # defined in this same top-level expression: call through invokelatest (world age)
+        is_stable(args...) = Base.invokelatest(getglobal(m, :is_stable), args...)
+        STABLE_MIN = getglobal(m, :STABLE_MIN)
         @test STABLE_MIN isa VersionNumber && STABLE_MIN > v"1.10"            # the LTS is never stable
         none = Dict{String, String}()
         @test is_stable(none, STABLE_MIN) && is_stable(none, v"1.14.0")        # default: stable at or above STABLE_MIN
@@ -30,7 +32,12 @@ end
         for bad in ("1", "0", "yes", "TRUE", "False", " true", "true ")
             @test_throws ArgumentError is_stable(Dict("CI_STABLE" => bad), v"1.13")
         end
-        @test occursin("got \"yes\"", sprint(showerror, try is_stable(Dict("CI_STABLE" => "yes")) catch e; e end))
+        err = try
+            is_stable(Dict("CI_STABLE" => "yes"))
+        catch e
+            e
+        end
+        @test err isa ArgumentError && occursin("got \"yes\"", err.msg)
         @test occursin("ADR-0008 §3", blk)                                     # the constant cites its source
     end
     if IN_FACTORY   # CI.yml still decides per job: true on stable ('1'), false on lts and pre
