@@ -1,6 +1,6 @@
 ### Changed
 
-- ADR-0011 decision 2 amended (2026-10-20, factory 0.2.7; in force, the wording awaits the user's ★):
+- ADR-0011 decision 2 amended (2026-10-20, factory 0.2.7; in force, wording confirmed by the user 2026-10-20):
   - CI compares benchmarks with the factory's `scripts/bench.jl` (`julia scripts/ci.jl bench`,
     HEAD vs the merge base with the PR's base branch), not AirspeedVelocity. AirspeedVelocity
     0.6.6 cannot be installed next to CSV.jl 1.x (every JSON3 release caps Parsers at <= 2.8.8).

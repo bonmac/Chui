@@ -22,7 +22,7 @@ ADR-0011 §2 carries one for factory 0.2.7's benchmark workflow (2026-10-20).
 | 0008 | [Documentation layout](0008-documentation-layout.md) | Accepted (2026-10-19, L0) |
 | 0009 | [Shared vocabulary](0009-shared-vocabulary.md) | Accepted (2026-10-19, L0); amended 2026-10-20 (§1, §5; §2's wording) |
 | 0010 | [Cross-repo workflow](0010-cross-repo-workflow.md) | Accepted (2026-10-19, L0) |
-| 0011 | [License, benchmark tool and coverage floor](0011-license-benchmarks-coverage.md) | Accepted (2026-10-19, L0); §2's CI tool amended 2026-10-20 (factory 0.2.7; in force, wording awaits the user's ★) |
+| 0011 | [License, benchmark tool and coverage floor](0011-license-benchmarks-coverage.md) | Accepted (2026-10-19, L0); §2's CI tool amended 2026-10-20 (factory 0.2.7; in force, wording confirmed by the user 2026-10-20) |
 | 0012 | [Chui-added `⨟` methods take two arguments; only the upstream fallback and a downstream closing method are variadic](0012-chui-added-opcompose-methods-are-binary.md) | Accepted (2026-10-20, user at the contract ★; CC-001 in place, P1–P6) |
 | 0013 | [Effect–Task adapters keep the exception object and the cancellation, not Base `fetch`'s shape or the `Die`/`Fail` kind](0013-chui-types-adapters-keep-the-exception-object-not-the-task.md) | Accepted (2026-10-20, user at the contract ★) |
 | 0014 | [`chui-frames.md` follows ChuiFrames' accepted phase-1 ADRs: the Source/Sink interface and reserved verb keywords become entries, and three stable entries get compatible clarifications](0014-chui-frames-contract-follows-phase1-adrs.md) | Accepted (2026-10-20, user at the ChuiFrames contract ★) |

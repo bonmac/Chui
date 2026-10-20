@@ -2,8 +2,8 @@
 
 - **Status:** Accepted (2026-10-19, user at the L0 checkpoint); decision 2's CI tool amended
   2026-10-20 for factory 0.2.7 (see "Amendment 2026-10-20"). The tool change is in force: the
-  user approved the workflow change. Only the amendment's wording waits for the user's
-  confirmation (★ below)
+  user approved the workflow change. The amendment's wording was confirmed by the user
+  2026-10-20 (★ below)
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem
@@ -172,4 +172,5 @@ so that it installs next to CSV.jl 1.x, the factory may switch back to its PR co
 memory table and job summary back. That is a factory change and a further amendment here. Until
 then `bench.jl` is the CI tool.
 
-**★ For the user:** confirm this amendment text (the workflow change itself is already approved).
+**★ Wording confirmed by the user 2026-10-20.** The workflow change itself was approved earlier,
+with factory 0.2.7.
