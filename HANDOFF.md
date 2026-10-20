@@ -36,11 +36,17 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| core-p1 | ChuiCore.jl | `.worktrees/phase1-research` / `feat/phase1-research` | `docs/adr/**`, `docs/research/**`, `docs/superpowers/**`, `HANDOFF.md`, `changelog.d/phase1-research.md` | **★ waiting for the user** (agent closed). `c8d365d`, `2362407`: ADRs 0001–0008 Proposed, 3 critics × 2 passes, no blockers left; check_docs, lane audit and dod OK (lead re-ran the first two). |
-| types-p1 | ChuiTypes.jl | same | same | **★ waiting for the user** (agent closed). `aeede66`, `615a374`: ADRs 0001–0006 Proposed; 2 critics × 3 rounds, 0 blockers; check_docs and lane audit OK (lead re-ran). |
-| frames-p1 | ChuiFrames.jl | same | same | running |
+| core-p2 | ChuiCore.jl | `.worktrees/phase2-traits` / `feat/phase2-traits` | `src/**`, `ext/**`, `test/**`, `Project.toml`, `docs/**`, `benchmark/**`, `HANDOFF.md`, changelog fragment | running: phase 2 traits and law kits (sub-lanes p2-algebra, p2-classes) |
+| types-p2 | ChuiTypes.jl | `.worktrees/phase2-datatypes` / `feat/phase2-datatypes` | same shape | running: phase 2 core data types |
+| frames-p2 | ChuiFrames.jl | `.worktrees/phase2-eager` / `feat/phase2-eager` | same shape | running: phase 2 eager frame (IPC reader spike first) |
+| frames-reqs | coordinator | `.worktrees/frames-reqs` / `feat/frames-reqs` | `adr/**`, `requests/**`, changelog fragment | running: requests (a)–(e), chui-frames.md contract ADR, ADR-0009 §2 wording |
 
-Each ends at its package's ★ report; branches are not merged until the user approves that package.
+Phase 1 is done in all three packages: every ★ answered (all recommendations accepted) and merged locally: ChuiCore `8082735`/`3054d7c`, ChuiTypes `455c085`, ChuiFrames `c5db1cb`. Coordinator: eco-amend merged (`a414f1b`), ADRs 0012/0013 Accepted (`6847d2b`). **Waiting on the user:** copying the reviewed `chui-core.md` and `chui-types.md` into `contracts/` (T3). Not yet pushed: the merges above.
+
+**Factory 0.2.6 follow-ups:**
+- `scripts/lane new` should carry the machine-local `.agents/factory.local.toml` into new worktrees (a coordinator lane without it fails closed).
+- **bash_guard gap (2026-10-20):** the lead's `scripts/lane new … && cp .agents/factory.local.toml .worktrees/frames-reqs/.agents/` was NOT blocked, while `cd <root> && cp` of the same file was. A T3 write slipped through; the user chose to keep the (identical) copy and log the gap.
+- The test template should show `@check record=false db=false` and gitignore `test/SuppositionDB`.
 
 Closed this session (all reported; none went idle without a report):
 - **pkg-core-024, pkg-types-024, pkg-frames-024:** 0.2.4 sync and history rewrite per package.
@@ -88,6 +94,10 @@ All actual runs (`subagent_mode: actual`).
 5. File requests R1–R5 to ChuiCore in `requests/` (R1 is partly answered by ChuiCore ADR-0001; R4 asks for a registered ChuiCore 0.0.1 snapshot, which is an outward action). Recommend yes.
 
 **Answered 2026-10-20: all accepted** (ADRs, contract amendment via a contract ADR, names, requests). The contract ADR and the requests go to the eco-amend lane; registration (R4) comes back to the user.
+
+## ★ ChuiFrames phase 1 (asked 2026-10-20; only ChuiFrames is paused)
+
+`0c17098`, `13ac267`, `685bc6a` on `feat/phase1-research`: ADRs 0001–0020 Proposed; 4 critics, every one ending at 0 blockers / 0 majors; check_docs and lane audit OK (lead re-ran). Questions: own Arrow IPC reader (Arrow.jl reads Polars IPC as an empty table, LC-04); Parquet as a Parquet2 extension and Arrow writer in core (brief deviation); morsel parallelism in phase 3, not 5 (brief deviation); `rename(new = :old)` and `Not` from InvertedIndices. Draft requests (a)–(e) to ChuiCore/ChuiTypes are in the lane's report.
 
 ## ★ Contract changes (asked 2026-10-20; T3, the user applies)
 
