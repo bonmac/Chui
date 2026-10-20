@@ -99,12 +99,46 @@ because `allowed()` lets every write there through. They ran in a gitignored `.l
    counted as tracked. **Fix:** a `:(top)` pathspec. Test: a repo whose root is `sub/` (0.2.5 false,
    0.2.6 true).
 
+9. **Test-item discovery reaches lane worktrees** (added by the lead; ChuiCore's reviewer found
+   it). TestItemRunner's `@run_package_tests` scans the whole package directory, `.worktrees/` and
+   `.lanes/` included.
+   - **Reproduced** in a scratch package: a real `@testmodule Helpers` in `test/`, a stale copy in
+     `.worktrees/x/test/helpers.jl` and a malformed `.lanes/scratch/broken.jl`. Pkg.test fails on
+     1.13.2 and 1.10.12 with `Evaluated: 42 == -1`: the stale module won.
+   - **Fix:** a seeded root `JuliaTestItems.toml` with
+     `exclude = ["/.lanes/", "/.worktrees/", "/.claude/worktrees/", "/.superpowers/"]`. In
+     TestItemRunner 1.3.2's `src/testitems_config.jl`, patterns are gitignore-style, a leading `/`
+     anchors and a trailing `/` covers the subtree, and excluded files are never parsed. The same
+     package passes (1/1) on both versions with the seeded file, and fails again without it.
+   - A new seeded `test/Project.toml` (Test and TestItemRunner, compat `TestItemRunner = "1.3.2"`)
+     and `test/contracts/Project.toml` pin the version that reads the config. The coordinator
+     profile excludes `JuliaTestItems.toml`.
+   - **Test** (`test_ci.jl`): the file has only TestItemRunner's keys and excludes every directory
+     in `SyncFactory.RUNTIME`; both environments' compat is 1.3.2; MANIFEST seeds it and the
+     coordinator excludes it. The template suite has no TestItemRunner (stdlib only), so the
+     end-to-end proof is the scratch package above.
+
 ## Migration
 
 - Managed files update on sync. `.gitignore`, `CLAUDE.md` and `test/runtests.jl` are SEEDED, so
   existing packages see the diff only: add `/test/SuppositionDB/` and the two Testing bullets by hand.
-- No guard is stricter for existing work. The new T3 denial applies to lane worktrees that did not
-  exist yet, which were always meant to be protected.
+- One guard is stricter (item 2). The new T3 denial applies only to lane worktrees that did not
+  exist yet, which were always meant to be protected. The CHANGELOG rule would make that a minor
+  bump; the lead's brief set 0.2.6, recorded in the CHANGELOG as for 0.2.3 and 0.2.4.
+
+## Review round 1 (reviewer FINAL on 6fa430d: APPROVE WITH NITS), addressed
+
+- `base_ref` takes a SHA, tag or expression (`HEAD~1`) as given; only a local branch name is
+  compared with `origin/<name>`. Tested.
+- `lane audit --base B` fails when B already contains the lane's tip (`--base HEAD` audited
+  nothing). Tested.
+- `MAIN` is trusted only when `<main>/.git/worktrees/<n>/gitdir` points back at the session root
+  (no fork; a crafted `.git` file no longer opens writes). Tested.
+- `local_setup` turns a copy error into a warning.
+- A shellcheck SC2034 directive for `IN_MAIN`.
+- Blind spots added: gates run on the base branch itself see nothing; diverged bases prefer origin;
+  a relative gitdir turns MAIN off; unborn lanes of nested repos.
+- Not changed: the two hooks at 149/150 lines (the next fix there must shrink something).
 
 ## Not done
 

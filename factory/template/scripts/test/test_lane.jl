@@ -128,6 +128,13 @@ end
     @test merge_base(wt, "main") == readchomp(`git -C $d rev-parse main`)
     rc, out = lane("audit", "z", "--base", "origin/main")                       # --base overrides the recorded base
     @test rc == 1 && occursin("outside owns: side.md", out)
+    for b in ("feat/z", "HEAD", "feat/z~0")                                     # the review: a base holding the lane's tip audits nothing
+        rc, out = lane("audit", "z", "--base", b)
+        @test rc == 1 && occursin("already contains the lane's tip", out) || (println("--base $b: ", out); false)
+    end
+    # the review: an expression or SHA is taken as given, never rewritten to origin/<expr>
+    @test base_ref(wt, "HEAD~1") == "HEAD~1" && base_ref(wt, "feat/z~1") == "feat/z~1"
+    @test merge_base(wt, "HEAD~1") == readchomp(`git -C $wt rev-parse "HEAD~1"`)
     sh(`git -C $d push -q origin main`); sh(`git -C $d fetch -q origin`)
     @test base_ref(d, "main") == "main"                                         # pushed: equal again
     # local behind origin (someone pushed): origin wins

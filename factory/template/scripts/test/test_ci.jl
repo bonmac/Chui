@@ -227,6 +227,21 @@ checkout_profile(root) = get(
             for p in ("Manifest-v1.10.toml", "test/Manifest-v1.10.toml", "test/SuppositionDB/x/y.bin")
                 @test success(`git -C $d check-ignore -q $p`) || (println(".gitignore does not ignore $p"); false)
             end
+            # 0.2.6: TestItemRunner scans the whole package dir, so a @testmodule in a lane worktree shadowed the real
+            # one (`Evaluated: 42 == -1`). The seeded JuliaTestItems.toml excludes every runtime dir sync never ships,
+            # with TestItemRunner's keys and anchored-directory patterns (gitignore-style, read by >= 1.3.2)
+            jti = TOML.parsefile(joinpath(ROOT, "JuliaTestItems.toml"))
+            @test issubset(keys(jti), ("config-version", "include", "exclude")) && !haskey(jti, "include")
+            for r in filter(r -> endswith(r, "/"), SyncFactory.RUNTIME)
+                @test "/$r" in jti["exclude"] || (println("JuliaTestItems.toml does not exclude /$r"); false)
+            end
+            excluded(rel) = any(p -> startswith(p, '/') && endswith(p, '/') && startswith(rel, p[2:end]), jti["exclude"])
+            @test excluded(".worktrees/x/test/helpers.jl") && excluded(".lanes/scratch/broken.jl") && !excluded("test/answer_tests.jl")
+            for e in ("test", "test/contracts")                            # the version that reads it
+                @test TOML.parsefile(joinpath(ROOT, e, "Project.toml"))["compat"]["TestItemRunner"] == "1.3.2"
+            end
+            m = TOML.parsefile(joinpath(FACTORY, "MANIFEST.toml"))
+            @test "JuliaTestItems.toml" in m["seeded"]["paths"] && "JuliaTestItems.toml" in m["profiles"]["coordinator"]["exclude"]
         end
     end
 end

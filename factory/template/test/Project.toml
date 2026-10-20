@@ -1,0 +1,12 @@
+# Seeded by the ecosystem factory (0.2.6): the package's test environment, repo-owned after the first
+# sync. Add test-only dependencies here, each with a [compat] bound (ADR-0004), e.g. Supposition = "0.3".
+# TestItemRunner >= 1.3.2 reads JuliaTestItems.toml at the package root, which keeps lane worktrees and
+# agent scratch (.worktrees/, .lanes/) out of the test run.
+[deps]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
+
+[compat]
+Test = "1"
+TestItemRunner = "1.3.2"
+julia = "1.10"

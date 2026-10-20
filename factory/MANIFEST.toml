@@ -26,6 +26,8 @@ paths = [
   "docs/superpowers/plans/.gitkeep",
   "changelog.d/.gitkeep",          # changelog fragments (0.2.4): `scripts/changelog.jl fold`
   "test/runtests.jl",
+  "test/Project.toml",             # 0.2.6: TestItemRunner >= 1.3.2 (reads JuliaTestItems.toml)
+  "JuliaTestItems.toml",           # 0.2.6: keeps .worktrees/ and .lanes/ out of test-item discovery
   "test/contracts/upstreams.toml",
   "test/contracts/USED.md",
   "test/contracts/Project.toml",
@@ -68,4 +70,5 @@ exclude = [
   ".github/workflows/CompatHelper.yml",
   ".github/workflows/TagBot.yml",
   "test/*",
+  "JuliaTestItems.toml",
 ]

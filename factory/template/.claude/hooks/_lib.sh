@@ -15,8 +15,11 @@ PAYLOAD=$(cat)
 # directory). Its lane worktrees and .lanes/reports/ count as in-repo (`allowed`): sub-lanes are siblings.
 MAIN="" MAIN_P="" MAIN_L=""
 if [ -f "$ROOT/.git" ] && read -r _gl <"$ROOT/.git" 2>/dev/null; then
-    case $_gl in "gitdir: /"*/.git/worktrees/?*)
-        MAIN=${_gl#gitdir: } && MAIN=${MAIN%/.git/worktrees/*}
+    _gd=${_gl#gitdir: } _back=""
+    case $_gl in "gitdir: /"*/.git/worktrees/?*) read -r _back <"$_gd/gitdir" 2>/dev/null || _back="" ;; esac
+    # trusted only when the main repo's record of this worktree points back at this root (a crafted .git file does not)
+    case $_back in "$ROOT/.git" | "$ROOT_P/.git")
+        MAIN=${_gd%/.git/worktrees/*}
         MAIN_P=$(CDPATH='' cd -- "$MAIN" 2>/dev/null && pwd -P) || MAIN_P=$MAIN
         case $ROOT in */.claude/worktrees/?*) _ml=${ROOT%/.claude/worktrees/*} ;; */.worktrees/?*) _ml=${ROOT%/.worktrees/*} ;; *) _ml="" ;; esac
         [ -z "$_ml" ] || [ "$(CDPATH='' cd -- "$_ml" 2>/dev/null && pwd -P)" != "$MAIN_P" ] || MAIN_L=$_ml
@@ -25,6 +28,7 @@ if [ -f "$ROOT/.git" ] && read -r _gl <"$ROOT/.git" 2>/dev/null; then
 fi
 # in_main ABS: ABS is in a lane worktree of MAIN (.worktrees/<n>/, .claude/worktrees/<n>/) or MAIN/.lanes/reports/;
 # sets IN_MAIN to that MAIN spelling. MAIN's own files stay outside: a lane writes only its repo's lanes and reports.
+# shellcheck disable=SC2034 # IN_MAIN is read by t3_check (_bash_guard_write.sh)
 in_main() {
     IN_MAIN=""
     [ -n "$MAIN" ] || return 1

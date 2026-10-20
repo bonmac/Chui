@@ -275,6 +275,11 @@
         @test inmain("$r/notes.md") == "out" && inmain("$r/.lanes/ledger.jsonl") == "out" && inmain("$r/.worktrees") == "out"
         @test inmain("$r/.worktrees/s/a.md"; root = r) == "out"                               # the main checkout's session: no MAIN
         @test inmain("/opt/x/.worktrees/s/a.md") == "out"
+        # the review: MAIN is trusted only when git's record of the worktree points back at the root (a crafted .git file)
+        forged = realpath(mktempdir()); write(joinpath(forged, ".git"), "gitdir: $r/.git/worktrees/x\n")
+        @test inmain("$r/.worktrees/s/a.md"; root = forged) == "out"
+        fake = realpath(mktempdir()); write(joinpath(fake, ".git"), "gitdir: /opt/evil/.git/worktrees/n\n")
+        @test inmain("/opt/evil/.worktrees/n/a.md"; root = fake) == "out" && inmain("/opt/evil/.lanes/reports/a.md"; root = fake) == "out"
         # end to end OUTSIDE the scratch dirs (every path below /tmp or \$TMPDIR is allowed anyway): a repo under
         # this checkout's gitignored .lanes/, skipped when the checkout itself is in a scratch dir (a /tmp clone)
         nt = joinpath(ROOT, ".lanes", "nontmp-$(getpid())")

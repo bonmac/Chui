@@ -97,8 +97,13 @@ module Lane
     function local_setup(repo, wt; io = stdout)
         src = joinpath(repo, FACTORY_LOCAL)
         isfile(src) || return true
-        mkpath(dirname(joinpath(wt, FACTORY_LOCAL)))
-        cp(src, joinpath(wt, FACTORY_LOCAL); force = true)
+        try
+            mkpath(dirname(joinpath(wt, FACTORY_LOCAL)))
+            cp(src, joinpath(wt, FACTORY_LOCAL); force = true)
+        catch e
+            println(io, "lane: warning: could not copy $FACTORY_LOCAL into the lane: ", sprint(showerror, e))
+            return false
+        end
         println(io, "lane: copied $FACTORY_LOCAL (machine-local, gitignored) into the lane")
         gen = joinpath(wt, "scripts", "gen.jl")
         isfile(gen) || (println(io, "lane: warning: no scripts/gen.jl in the lane; render its local files yourself"); return false)
@@ -160,7 +165,12 @@ module Lane
         wt = joinpath(lanes_dir(repo), name)
         owns = haskey(opts, "--owns") ? split_globs(opts["--owns"]) :
             split_globs(something(git(repo, "config", "branch.$(l.branch).lane-owns"), ""))
-        haskey(opts, "--base") && (l = merge(l, (; base = opts["--base"])))   # 0.2.6: audit against another base
+        if haskey(opts, "--base")   # 0.2.6: audit against another base, never one that already holds the lane's own commits
+            ahead = something(git(wt, "rev-list", "--count", "$(l.base)..HEAD"), "0")
+            git(wt, "merge-base", "--is-ancestor", "HEAD", opts["--base"]) !== nothing && ahead != "0" &&
+                return (println(io, "lane audit $name: [FAIL] --base $(opts["--base"]) already contains the lane's tip ($ahead commits past $(l.base)): it would audit nothing\nlane audit: FAILED (1)"); 1)
+            l = merge(l, (; base = opts["--base"]))
+        end
         # the review: a lane-base rewritten to the lane's own branch (or to a missing ref) audits nothing
         l.base == l.branch && return (println(io, "lane audit $name: [FAIL] its base is its own branch ($(l.base)): branch.$(l.branch).lane-base was rewritten\nlane audit: FAILED (1)"); 1)
         git(wt, "rev-parse", "--verify", "--quiet", "$(l.base)^{commit}") === nothing &&

@@ -10,7 +10,9 @@ version while below 1.0.
 Lanes that work in their own worktrees. Seven problems lanes hit on 2026-10-20, each reproduced in a
 scratch repo built from the 0.2.5 template before it was fixed (spec:
 `docs/superpowers/specs/2026-10-20-factory-026-design.md`). One guard is stricter: T3 paths of a
-lane worktree that does not exist yet (item 2).
+lane worktree that does not exist yet (item 2). That would call for a minor bump, but the lead chose
+0.2.6, as for 0.2.3 and 0.2.4. The stricter rule only blocks writes that were always meant to be
+blocked, so nothing needs migrating.
 
 - **`lane new` sets the lane up like its repo** (`scripts/lane.jl`). It copies the gitignored
   `.agents/factory.local.toml` into the new worktree and runs the lane's `scripts/gen.jl`. In 0.2.5
@@ -50,6 +52,19 @@ lane worktree that does not exist yet (item 2).
   coordinator it was never "tracked", so every gitignored reference there was reported stale (the
   new `test/SuppositionDB/` mentions were the first). It now uses a `:(top)` pathspec; the new test
   is false on 0.2.5 and true now.
+- **Seeded `JuliaTestItems.toml` and `test/Project.toml`** (package profile; the coordinator
+  excludes the first).
+  - The problem, found by ChuiCore's reviewer: TestItemRunner scans the whole package directory, so
+    a `@testmodule` in a lane worktree (`.worktrees/x/test/`) shadowed the real one.
+  - Reproduced in a scratch package: `Evaluated: 42 == -1`, exit 1, on 1.13.2 and 1.10.12.
+  - The fix: `exclude = ["/.lanes/", "/.worktrees/", "/.claude/worktrees/", "/.superpowers/"]`
+    (every runtime dir sync never ships). Excluded files are never parsed. With it the run passes
+    (1/1) on both versions.
+  - `JuliaTestItems.toml` needs TestItemRunner ≥ 1.3.2, so the new seeded `test/Project.toml` and
+    `test/contracts/Project.toml` set `TestItemRunner = "1.3.2"`.
+  - Existing packages: seeded files arrive only when missing, so `JuliaTestItems.toml` reaches them
+    on sync. Their own `test/Project.toml` keeps its compat: raise `TestItemRunner` to `"1.3.2"` by
+    hand (ChuiCore has `"1"`).
 - Blind spots added to `.agents/checks.toml` for write_guard, teammate_idle and lane_tool.
 - Seeded files (`.gitignore`, `CLAUDE.md`, `test/runtests.jl`) are not updated in existing repos:
   sync shows their diff; add `/test/SuppositionDB/` and the Testing bullets by hand.

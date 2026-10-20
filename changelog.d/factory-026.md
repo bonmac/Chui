@@ -5,6 +5,8 @@
   `origin/<base>`, and `lane audit` takes `--base`. A lane's session may write its repo's other lane
   worktrees and `<main>/.lanes/reports/`, which teammate_idle now also reads in lane worktrees. The
   test template shows the ADR-0007 §2 Supposition form (`record=false db=false` plus `@test`) and
-  ignores `test/SuppositionDB/`, and the `Manifest-v1.10.toml` LTS pattern is documented.
+  ignores `test/SuppositionDB/`, and the `Manifest-v1.10.toml` LTS pattern is documented. A seeded
+  `JuliaTestItems.toml` keeps `.worktrees/` and `.lanes/` out of test-item discovery, which needs
+  `TestItemRunner = "1.3.2"` in the new seeded `test/Project.toml`.
   Spec: `docs/superpowers/specs/2026-10-20-factory-026-design.md`. Each repo takes 0.2.6 in its own
   sync lane.
