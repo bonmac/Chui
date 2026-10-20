@@ -36,18 +36,19 @@ Updated: 2026-10-20 · Phase: **L0 done (★ answered 2026-10-19: all recommenda
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| core-p4 | ChuiCore.jl | `.worktrees/phase4-perf` / `feat/phase4-perf` | `src/**`, `ext/**`, `test/**`, `Project.toml`, `docs/**`, `benchmark/**`, `HANDOFF.md`, changelog fragment, `JuliaTestItems.toml` | running: phase 4 performance |
-| types-p3 | ChuiTypes.jl | `.worktrees/phase3-effects` / `feat/phase3-effects` | same shape, plus `.gitignore` | running: phase 3 Reader/Writer/State + effect runtime (in review) |
-| frames-p2b | ChuiFrames.jl | `.worktrees/phase2b-tidyr` / `feat/phase2b-tidyr` | same shape | running: rest of phase 2 (ADR-0021 timestamps, tidyr, ranking tail); a ★ on Parquet2 internals coming |
+| types-p4 | ChuiTypes.jl | `.worktrees/phase4-streams` / `feat/phase4-streams` | src, ext, test, Project.toml, docs, benchmark, HANDOFF, fragment | running: phase 4 futures and streams (R10) |
+| frames-p3 | ChuiFrames.jl | `.worktrees/phase3-lazy` / `feat/phase3-lazy` | same shape | running: phase-2c ★ follow-ups, then phase 3 lazy engine |
+| factory-027 | coordinator | `.worktrees/factory-027` / `feat/factory-027` | `factory/**` | running: bench workflow via ci.jl bench, check_docs `@ref`, evidence.jl signals |
 
 **Merged locally (2026-10-20), all reviewer-approved, tests re-run by the lead on 1.13.2 and 1.10.12:**
-- ChuiCore: phase 1 (`8082735`), phase 2 traits and law kits (`20f5c14`), phase 3 schemes/transducers/optics/laziness/banner (`b4f1ca3`; requests R3, R5, R6, R7, R9 satisfied on main, unreleased). 3044 tests.
-- ChuiTypes: phase 1 (`455c085`), phase 2 core data types (`dc1882c`; `LazyList` exception to ADR-0001 §4, user-approved). 474 / 461 tests.
-- ChuiFrames: phase 1 (`c5db1cb`), phase 2 first milestone (squashed `10e8b9a`, recorded merged `1a2f1eb`): own Arrow IPC reader (spike gate passed), core verbs, CSV/Arrow/Parquet, printing. 3142 / 3112 tests.
-- Coordinator: ADRs 0012–0014 Accepted; ADR-0007 §2 and ADR-0009 amended; requests R1–R10 filed (R8 answered: ChuiFrames owns `missing`-aware aggregators).
-- Factory 0.2.6 (`944f407`; reviewer APPROVE WITH NITS; the user approved the sync including the sub-lane write loosening): synced into the coordinator (`183a2ad`) and the packages (ChuiCore `b601f05`, ChuiTypes `af12b4a`, ChuiFrames `7e39416`).
+- **ChuiCore: all five phases done** (`e124ed3`): traits and law kits, schemes/transducers/optics/laziness, performance (ADR-0009/0010 accepted; PrecompileTools), docs site (10 tutorials, doctests), `__init__` banner (invokelatest; fires on any interactive load; user-accepted). 3369 tests. **Next: v0.1.0, needs the user** (release checklist in ChuiCore's HANDOFF).
+- ChuiTypes: phases 1–3 (`bd8bcc0`): core data types; Reader/Writer/State (ADR-0007) and the effect runtime (structured concurrency, cancellation, resources, test mode). 875 / 860 tests (`test -- all`).
+- ChuiFrames: phases 1–2 (`5896de6`): own Arrow IPC reader, dplyr/tidyr verbs, timestamps (ADR-0021), CSV/Arrow/Parquet, printing, budgets (ADR-0022), Polars/DuckDB differentials. 4833 tests. The 1.13 load budget (487 of 500 ms under load) needs a quiet re-run before release.
+- Coordinator: contracts updated (`e206271`; ADR-0012/0013/0014), vendored copies refreshed in the packages; factory 0.2.6 everywhere.
 
-**Waiting on the user:** the T3 copy of `chui-core.md`, `chui-types.md` and `chui-frames.md` into `contracts/`, and the push (`user-steps.sh` in the lead's scratchpad). After the copy: commit the contracts, refresh the packages' vendored `test/contracts/` copies, push again.
+**Documented, not filed (user):** Parquet2 1-ms timestamp bug (`ChuiFrames.jl/docs/research/upstream-parquet2-timestamps.md`); AirspeedVelocity cannot install with CSV.jl 1.x.
+
+**Pending coordinator items:** a `chui-frames.md` note that `frame_equal` ignores the `drop` flag (T3, user); chui-types obligations 1–2 can become ID'd entries once phase-4 streams land (types-p3 request R-b).
 
 **Parquet2 upstream bug (documented, not filed; user, 2026-10-20):** Parquet2 0.2.37 loses 1 ms on ~0.6% of INT64 timestamps (Float64 round trip). ChuiFrames works around it (ADR-0021). The issue draft and reproducer are in `ChuiFrames.jl/docs/research/upstream-parquet2-timestamps.md`; filing is optional and needs the user.
 
