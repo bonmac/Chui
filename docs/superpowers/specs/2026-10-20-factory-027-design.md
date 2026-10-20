@@ -155,7 +155,7 @@ its 0.0.1 release prep.
   `ArgumentError`. This is the same rule as ChuiCore.jl e80dce9, so the template and ChuiCore
   agree (lead's request).
 - CI.yml is unchanged: it still sets `CI_STABLE` per job (true on `'1'`, false on lts and pre).
-  The block sits between markers, and `scripts/test/test_runtests_template.jl` evaluates it on its
+  The block sits between markers, and `factory/template/scripts/test/test_runtests_template.jl` evaluates it on its
   own. The test covers both defaults (1.10/1.12 not stable; 1.13/1.14 stable), both overrides, an
   empty value, a bad value and the ADR citation.
 - In a package, `test/runtests.jl` is the package's own file (seeded, never overwritten by a sync),
