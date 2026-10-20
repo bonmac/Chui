@@ -183,7 +183,7 @@ module Lane
             # 0.2.7 review B1: `--base origin/<b>` audits a lane merged locally against the remote; when the
             # local `<b>` stands in for it and already holds the lane's tip, the audit would see nothing
             git(wt, "merge-base", "--is-ancestor", "HEAD", rb) !== nothing &&
-                return (println(io, "lane audit $name: [FAIL] the local `$rb` standing in for `$(l.base)` already contains the lane's tip: it would audit nothing. Fetch the remote, or pass --base <the commit before the merge>\nlane audit: FAILED (1)"); 1)
+                return (println(io, "lane audit $name: [FAIL] the local `$rb` standing in for `$(l.base)` already contains the lane's tip (merged locally, or the lane has no commits yet): it would audit nothing. Fetch the remote, or pass --base <the commit before the merge>\nlane audit: FAILED (1)"); 1)
         end
         mb = merge_base(wt, l.base)
         mb === nothing && return (println(stderr, "lane: no merge base between $(l.base) and $(l.branch)"); 2)

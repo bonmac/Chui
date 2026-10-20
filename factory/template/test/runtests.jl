@@ -19,11 +19,26 @@
 # its own gitignored Manifest-v1.10.toml, which Julia 1.10 reads in preference to Manifest.toml.
 using TestItemRunner
 
-# :doctest and :snapshot output depends on the Julia version: CI runs them on stable only
-# (CI.yml sets CI_STABLE=false on the lts and pre jobs). JET is not here: see test/jet/.
-const EXCLUDE = get(ENV, "CI_STABLE", "true") == "false" ?
-    (:slow, :quality, :contract, :differential, :doctest, :snapshot) :
-    (:slow, :quality, :contract, :differential)
+# --- stable-only tags (factory 0.2.7; scripts/test/test_runtests_template.jl evaluates this block) ---
+# :doctest and :snapshot output depends on the Julia version: they run on stable Julia only
+# (ecosystem ADR-0008 §3). CI_STABLE=true/false decides, both ways (CI.yml sets it per job: false on
+# lts and pre). Unset (a plain `]test`), the Julia version decides: stable iff VERSION >= STABLE_MIN.
+# Before 0.2.7 unset meant stable, so `]test` on the LTS ran the doctests and failed.
+# STABLE_MIN: the oldest Julia whose printed output the doctests and snapshots were written against.
+const STABLE_MIN = v"1.13"
+function is_stable(env = ENV, v = VERSION)
+    s = lowercase(strip(get(env, "CI_STABLE", "")))
+    s == "true" && return true
+    s == "false" && return false
+    isempty(s) || error("CI_STABLE must be true or false, got `$(env["CI_STABLE"])`")
+    return v >= STABLE_MIN
+end
+# --- end stable-only tags ---
+# JET is not here: see test/jet/.
+const EXCLUDE = is_stable() ?
+    (:slow, :quality, :contract, :differential) :
+    (:slow, :quality, :contract, :differential, :doctest, :snapshot)
+is_stable() || @info "not stable Julia (VERSION $VERSION < STABLE_MIN $STABLE_MIN, or CI_STABLE=false): :doctest and :snapshot items skipped"
 const SELECT = Symbol.(ARGS)
 :contract in SELECT && @info "contract items run in test/contracts/'s own environment: julia scripts/ci.jl contracts"
 

@@ -1,4 +1,4 @@
-# Factory 0.2.7: four fixes from 2026-10-20 lanes
+# Factory 0.2.7: six fixes from 2026-10-20 lanes
 
 - **Date:** 2026-10-20
 - **Lane:** factory-027 (coordinator, `factory/**`)
@@ -18,25 +18,19 @@ AirspeedVelocity 0.6.6 and for an unpinned AirspeedVelocity. Reproduced in a scr
 2026-10-20, with the General registry as of that day.
 
 **Change (approved by the user).** The job checks out with `fetch-depth: 0`, runs `ci.jl setup`,
-then `julia scripts/ci.jl bench -- --base origin/${{ github.base_ref || 'main' }}`. That is the
+then `julia scripts/ci.jl bench -- --base "origin/$BASE"`, with `BASE` set in the step's `env:` (see
+S2 below). That is the
 factory's own `scripts/bench.jl`: BenchmarkTools on HEAD and on the merge base, in a temporary
 copy of `benchmark/Project.toml`. It needs no tool installed next to the package. The job stays
 warning-only (`continue-on-error: true`, `timeout-minutes: 60`), as ADR-0011 requires.
 `julia-actions/cache` is added, as in CI.yml.
 
-**Open for the user (review S2).** The approved line interpolates `${{ github.base_ref }}` straight
-into the `run:` shell. A git branch name may contain `$(...)`, backticks or `;`, so a base branch
-with such a name would be expanded by the shell. The risk is low: only someone with write access to
-the base repo can create such a branch, and the job token is `contents: read`. GitHub's hardening
-guidance is to pass the value through `env:` instead:
-
-```yaml
-env:
-  BASE: ${{ github.base_ref || 'main' }}
-run: julia scripts/ci.jl bench -- --base "origin/$BASE"
-```
-
-0.2.7 keeps the approved literal. Switching to the `env:` form is the user's call.
+**Base branch through `env:` (review S2, decided by the lead).** The first draft put
+`${{ github.base_ref }}` straight into the `run:` shell line. A git branch name may contain `$(...)`,
+backticks or `;`, so the shell would expand such a name. The risk was low: only someone with write
+access to the base repo can create a branch, and the job token is `contents: read`. The lead chose
+the standard hardening anyway: `env: BASE: ${{ github.base_ref || 'main' }}`, then
+`julia scripts/ci.jl bench -- --base "origin/$BASE"`.
 
 On `workflow_dispatch`, `github.base_ref` is empty and the base is `origin/main`. In a repo whose
 default branch is not `main`, bench.jl then exits 2, and `continue-on-error` hides it. The workflow
@@ -115,8 +109,62 @@ compare it with itself, as the register already says for that case.
 Tests: no remote; a remote whose `origin/main` was deleted; `origin/nope`; and the degenerate
 `origin/`, which never becomes `""`, meaning HEAD.
 
+## 5. Bounded runs must kill the whole tree (added by the lead)
+
+**Cause.** Lanes bounded runs with `perl -e 'alarm N; exec @ARGV' julia scripts/ci.jl test`. When
+the alarm fires it kills ci.jl only. The child julia that `Pkg.test` started keeps running: a hung
+property test ran for about 6 hours at 97% CPU.
+
+**Change.** `ci.jl <job> --timeout SECONDS`, or the env var `CI_TIMEOUT` (the flag wins), bounds
+the whole job.
+- With a limit, each command is spawned detached. libuv then calls `setsid`, so the command gets
+  its own session and process group, with pgid = its pid. Without a limit, behaviour is as in 0.2.6.
+- On expiry: SIGTERM to the whole group, a 10 s grace, then SIGKILL to whatever is still in it.
+  ci.jl prints `TIMED OUT after S s … This is not a pass.` and exits 124, as coreutils `timeout`
+  does.
+- A command that finishes in time also has any leftovers in its group killed.
+- A bad value (`0`, `-1`, `soon`, a missing value) is exit 2.
+
+**Test.** A planted hang in a scratch package: its test process writes its pid, starts a
+grandchild `sleep 600`, and loops forever. The test checks:
+- rc 124, within limit + grace + slack;
+- both pids are dead;
+- `pgrep -f <package dir>` finds nothing.
+
+**Blind spots (in the register).**
+- A process that leaves the group escapes: it calls `setsid` itself or is daemonized.
+- If ci.jl itself is killed from outside (SIGKILL, or the old `perl -e alarm`), the detached group
+  is NOT killed, because nothing is left to kill it. That is why the docs say to use `--timeout`
+  instead of an outer alarm.
+- On Windows only the leader process is killed.
+
+Documented in the template `CLAUDE.md` Commands section and in the `lane-lifecycle` skill. The
+coordinator's own `CLAUDE.md` is outside this lane (`factory/**`), so the lead adds the line there.
+
+## 6. A plain `]test` on the LTS ran stable-only doctests (added by the lead)
+
+**Cause.** The seeded `test/runtests.jl` skipped `:doctest`/`:snapshot` only when `CI_STABLE=false`.
+Unset meant stable, so a fresh clone's `]test` on 1.10 ran them and failed. ChuiCore hit this in
+its 0.0.1 release prep.
+
+**Change.**
+- One constant, `STABLE_MIN = v"1.13"`, the oldest Julia the doctests and snapshots are written
+  against. It cites ADR-0008 §3.
+- `is_stable(env, version)`: `CI_STABLE=true`/`false` decides, both ways, case-insensitively.
+  Empty or unset means `VERSION >= STABLE_MIN`. Any other value is an error.
+- CI.yml is unchanged: it still sets `CI_STABLE` per job (true on `'1'`, false on lts and pre).
+  The block sits between markers, and `scripts/test/test_runtests_template.jl` evaluates it on its
+  own. The test covers both defaults (1.10/1.12 not stable; 1.13/1.14 stable), both overrides, an
+  empty value, a bad value and the ADR citation.
+- In a package, `test/runtests.jl` is the package's own file (seeded, never overwritten by a sync),
+  so the test checks the block only where it exists, and requires it only in the factory.
+
+**Sync note.** Every package needs a hand edit of its `test/runtests.jl`; ChuiCore's release lane
+is making its own. `STABLE_MIN` must be raised by hand when the ecosystem's stable line moves.
+
 ## Not in scope
 
 - Syncing 0.2.7 into the coordinator or the packages: the lead syncs after review, and each
   package takes it in its own lane.
-- The ADR-0011 amendment itself (the user's).
+- The ADR-0011 amendment (the lead writes it in the coordinator).
+- The coordinator's own `CLAUDE.md` line for `--timeout` (outside `factory/**`).

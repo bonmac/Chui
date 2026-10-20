@@ -108,6 +108,14 @@ test = "scripts/test/test_ci.jl"
 blind_spots = ["workflow steps that are not ci.jl calls (setup, cache, upload, TagBot)", "the upstream-main contract run is UNVERIFIED end to end", "a skip's kind (0.2.4) is decided from the checkout: a package is `profile = package` in .factory-version or a root Project.toml; deleting both makes the package jobs `not applicable` (exit 0)", "`waiting` skips (no upstreams, no benchmark/ directory) exit 0 with a NOT RUN notice and a GitHub warning; deleting the whole benchmark/ directory turns `bench` from missing into waiting"]
 
 [[checks]]
+id = "ci_timeout"
+rule = "A bounded run (`ci.jl <job> --timeout S` or CI_TIMEOUT) leaves no process behind: on expiry the command's whole process group, Pkg.test's child julia included, is killed and ci.jl exits 124"
+prevented_by = "scripts/ci.jl"
+runs_in = ["local", "ci (where a workflow passes --timeout or sets CI_TIMEOUT)"]
+test = "scripts/test/test_ci.jl"
+blind_spots = ["a process that leaves the group (calls setsid itself, or is daemonized) escapes", "ci.jl killed from OUTSIDE (SIGKILL, `perl -e alarm`, `timeout`) leaves the detached group running: nothing is left to kill it, so bound runs with --timeout, not an outer alarm", "Windows: only the leader process is killed", "without --timeout or CI_TIMEOUT nothing is bounded, as before 0.2.7", "the limit is for the whole job, checked every 0.1 s, plus up to 10 s of SIGTERM grace"]
+
+[[checks]]
 id = "lane_tool"
 rule = "Worktree lanes live at <repo>/.worktrees/<lane>, within the cap, and are removed only when clean and merged; `lane audit` fails a lane whose changes leave its owned globs or differ from its reported files"
 prevented_by = "scripts/lane.jl"

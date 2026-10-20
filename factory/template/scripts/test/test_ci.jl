@@ -106,6 +106,53 @@ checkout_profile(root) = get(
         @test rc == 0 || (print(out); false)
     end
 
+    @testset "--timeout kills the whole process tree, Pkg.test's child julia included (0.2.7)" begin
+        # factory-027 item 5: `perl -e 'alarm N; exec @ARGV' julia scripts/ci.jl test` killed only ci.jl;
+        # the child julia of Pkg.test (a hung property test) ran on for ~6 h
+        @test CI.time_limit(nothing) === nothing && CI.time_limit("90") == 90.0
+        withenv("CI_TIMEOUT" => "30") do
+            @test CI.time_limit(nothing) == 30.0 && CI.time_limit("5") == 5.0      # the flag wins over the env
+        end
+        @test_throws ErrorException CI.time_limit("0")
+        @test_throws ErrorException CI.time_limit("soon")
+        @test capture(() -> CI.main(["test", "--timeout"]))[1] == 2
+        @test capture(() -> CI.main(["test", "--timeout", "-1"]))[1] == 2
+        d = realpath(mktempdir())
+        write(
+            joinpath(d, "Project.toml"), """
+            name = "FactoryHang"
+            uuid = "6c1d2e3f-4a5b-4c6d-9e7f-8a9b0c1d2e3f"
+            version = "0.1.0"
+            [extras]
+            Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+            [targets]
+            test = ["Test"]
+            """
+        )
+        mkpath(joinpath(d, "src")); write(joinpath(d, "src/FactoryHang.jl"), "module FactoryHang\nend\n")
+        mkpath(joinpath(d, "test"))
+        # the planted hang: the test process records its pid, starts a grandchild, and never returns
+        write(
+            joinpath(d, "test/runtests.jl"), """
+            write(joinpath(@__DIR__, "child.pid"), string(getpid()))
+            g = run(`sleep 600`; wait = false)
+            write(joinpath(@__DIR__, "grandchild.pid"), string(getpid(g)))
+            while true; sleep(1); end
+            """
+        )
+        t0 = time()
+        rc, out = capture(() -> CI.run_job("test", d, String[]; timeout = 60, grace = 3))
+        @test rc == CI.TIMEOUT_EXIT && occursin("ci.jl test: TIMED OUT after 60", out) || (print(out); false)
+        @test time() - t0 < 60 + 3 + 15                                            # bounded: limit + grace + slack
+        alive(pid) = ccall(:kill, Cint, (Cint, Cint), pid, 0) == 0
+        child, grand = (parse(Int, read(joinpath(d, "test", f), String)) for f in ("child.pid", "grandchild.pid"))
+        @test !alive(child) && !alive(grand)                                       # the planted test really started, and is gone
+        @test !success(`pgrep -f $d`)                                              # no process of this run is left
+        # a command that finishes in time is unaffected
+        write(joinpath(d, "test/runtests.jl"), "using Test\n@test true\n")
+        @test capture(() -> CI.run_job("test", d, String[]; timeout = 300))[1] == 0
+    end
+
     @testset "docs, jet and contracts leave tracked files byte-identical (0.2.2)" begin
         # 0.2.1 ran Pkg.develop in docs/ and test/jet/ in place: Julia >= 1.11 wrote an absolute
         # [sources] path into the tracked Project.toml, added the package to [deps], dropped comments.

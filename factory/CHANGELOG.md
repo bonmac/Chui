@@ -7,18 +7,41 @@ version while below 1.0.
 
 ## 0.2.7 (2026-10-20)
 
-Four problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6
+Six problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6
 template before it was fixed (spec: `docs/superpowers/specs/2026-10-20-factory-027-design.md`).
-Two results are stricter: a signalled run is no longer exit 0 in its evidence, and the benchmark
-job now runs a suite where it used to do nothing. The lead chose 0.2.7, as for 0.2.6. Nothing
-needs migrating; an evidence file from 0.2.6 (no `termsignal` line) reads as before.
+Some results are stricter:
+- a signalled run is no longer exit 0 in its evidence;
+- the benchmark job now runs a suite where it used to do nothing;
+- a plain `]test` below `STABLE_MIN` now skips `:doctest`/`:snapshot`.
+
+The lead chose 0.2.7, as for 0.2.6. Only the seeded `test/runtests.jl` needs a hand edit in each
+package (a sync never overwrites a seeded file). An evidence file from 0.2.6 (no `termsignal`
+line) reads as before.
+
+- **`ci.jl --timeout SECONDS` (or `CI_TIMEOUT`) bounds a run and kills the whole tree**
+  (`ci.jl`; template `CLAUDE.md`, `lane-lifecycle` skill).
+  - Why: `perl -e 'alarm N; exec @ARGV' julia scripts/ci.jl test` killed only ci.jl, and Pkg.test's
+    child julia ran on. A hung property test ran ~6 h at 97% CPU.
+  - How: with a limit, each command starts in its own process group. On expiry the group gets
+    SIGTERM, then SIGKILL after 10 s, and ci.jl exits 124 (`TIMED OUT … This is not a pass.`).
+  - Tested with a planted hanging test and a grandchild: both pids are dead and `pgrep` finds
+    nothing.
+- **The seeded `test/runtests.jl` decides "stable" by Julia version** (`test/runtests.jl`, seeded).
+  - `CI_STABLE=true`/`false` still overrides, both ways.
+  - Unset, the run is stable iff `VERSION >= STABLE_MIN` (`v"1.13"`, ADR-0008 §3), so a plain
+    `]test` on the LTS skips the stable-only items. Before, unset meant stable, so that `]test`
+    ran them and failed (ChuiCore 0.0.1 prep).
+  - CI.yml still sets `CI_STABLE` per job.
+  - Tested by `scripts/test/test_runtests_template.jl`: both defaults, both overrides, and a bad
+    value.
 
 - **The Benchmark workflow runs `scripts/ci.jl bench`, not AirspeedVelocity** (`Benchmark.yml`,
   approved by the user). AirspeedVelocity 0.6.6 cannot be installed next to CSV.jl 1.x: the JSON3
   1.14.3 it pulls in caps Parsers at <= 2.8.8, and CSV 1.x needs Parsers 3 ("Unsatisfiable
   requirements detected for package Parsers"), so the job did nothing for such packages. The job
   checks out the full history (`fetch-depth: 0`), runs `ci.jl setup`, then
-  `julia scripts/ci.jl bench -- --base origin/${{ github.base_ref || 'main' }}`. It stays
+  `julia scripts/ci.jl bench -- --base "origin/$BASE"`, with `BASE: ${{ github.base_ref || 'main' }}`
+  passed through `env:` (never in the shell line; review S2, decided by the lead). It stays
   warning-only (`continue-on-error: true`, `timeout-minutes: 60`; ADR-0011). Checked end to end
   on a scratch package on CSV 1.1.0 and Parsers 3.0.0 (`bench.jl: OK`), and with actionlint 1.7.12.
 - **`bench.time_tolerance` only means something on a quiet runner** (`ratchets.toml`, `bench.jl`,

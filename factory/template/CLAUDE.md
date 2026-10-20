@@ -80,12 +80,19 @@ julia scripts/ci.jl jet             # JET, own env test/jet/ (stable Julia only)
 julia scripts/ci.jl format          # Runic --check
 julia scripts/ci.jl guards          # gen --check, ratchets, doc references, factory tests
 julia scripts/dod.jl --base main    # definition of done for the current branch
+julia scripts/ci.jl test --timeout 1800   # bound a run (or CI_TIMEOUT=1800): kills the whole process tree
 ```
+
+Bound a long run with `--timeout SECONDS` (or `CI_TIMEOUT`), never `perl -e 'alarm …'` or `timeout`:
+those kill only the outer process, and Pkg.test's child julia keeps running. On expiry ci.jl kills
+the command's whole process group and exits 124 (TIMED OUT, not a pass).
 
 ## Testing
 
 - `@testitem` (TestItemRunner) with tags `:unit :laws :property :contract :differential
   :snapshot :doctest :slow :quality`; `:snapshot`/`:doctest` run on stable only. Select tags with `julia scripts/ci.jl test -- laws`.
+  Stable means `CI_STABLE=true`/`false` when set, else `VERSION >= STABLE_MIN` in `test/runtests.jl`
+  (so a plain `]test` on the LTS skips them).
 - `JuliaTestItems.toml` keeps `.worktrees/` and `.lanes/` out of test-item discovery (TestItemRunner
   >= 1.3.2): a stale `@testmodule` in a lane worktree would shadow the real one.
 - Write the failing test first. Every typeclass instance gets law tests.

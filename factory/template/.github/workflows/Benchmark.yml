@@ -37,4 +37,7 @@ jobs:
       # the personal registry (ADR-0005) for unregistered ecosystem dependencies
       - run: julia scripts/ci.jl setup
       # no benchmark/ directory yet: a NOT RUN (waiting) notice, exit 0
-      - run: julia scripts/ci.jl bench -- --base origin/${{ github.base_ref || 'main' }}
+      # the base branch goes through env:, never into the shell line (a branch name may hold `$(...)`)
+      - run: julia scripts/ci.jl bench -- --base "origin/$BASE"
+        env:
+          BASE: ${{ github.base_ref || 'main' }}
