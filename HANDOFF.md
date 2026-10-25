@@ -1,6 +1,6 @@
 # HANDOFF — Chui coordinator (lead)
 
-Updated: 2026-10-20 (afternoon) · Phase: **L1.** ChuiCore 0.0.1 is merged and waiting for the user's release script (push, tag, register). ChuiTypes phase 4 and ChuiFrames phase 3 are merged. Factory 0.2.7 is merged and synced into the coordinator; the package syncs are running. Nothing since `1051a0d` (coordinator) is pushed. The current state is in "Open lanes" below; the sections further down are history.
+Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; ChuiCore 0.0.1 is waiting on the user's release script (see "Open lanes"). Earlier status (2026-10-20): ChuiCore 0.0.1 is merged and waiting for the user's release script (push, tag, register). ChuiTypes phase 4 and ChuiFrames phase 3 are merged. Factory 0.2.7 is merged and synced into the coordinator; the package syncs are running. Nothing since `1051a0d` (coordinator) is pushed. The current state is in "Open lanes" below; the sections further down are history.
 
 ## State
 
@@ -36,9 +36,20 @@ Updated: 2026-10-20 (afternoon) · Phase: **L1.** ChuiCore 0.0.1 is merged and w
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| sync-027-types | ChuiTypes.jl | `.worktrees/sync-027` | sync paths, test/runtests.jl, CLAUDE.md, fragment | running: 0.2.7 sync + runtests STABLE_MIN edit |
-| sync-027-frames2 | ChuiFrames.jl | `.worktrees/sync-027` / `chore/sync-027` | same | running: committed 9355509, tests and reviewer pending (replaced sync-027-frames, which was blocked by write_guard's root) |
-| requests-p4p3 | coordinator | `.worktrees/requests-p4p3` (branch docs/requests-p4p3) | `requests/**`, fragment | drafting in the lead's scratchpad (blocked from writing: spawned with root ChuiTypes.jl); a coordinator-rooted agent will commit them |
+| frames-p4 | ChuiFrames.jl | its own `scripts/lane` worktrees | phase 4: grouped sinks, fast group-by, joins, codegen | running (teammate, spawned 2026-10-26 with cwd ChuiFrames.jl) |
+| types-p5 | ChuiTypes.jl | its own `scripts/lane` worktrees | phase 5 item 2 onward: profiling, allocations, TTFX budgets. Item 1 (the ChuiCore switch) waits for the 0.0.1 registration | running (teammate, spawned 2026-10-26 with cwd ChuiTypes.jl) |
+| lead-1026 | coordinator | `.worktrees/lead-1026` | `HANDOFF.md`, `releases.md`, `compat-matrix.md` | the lead's own edits |
+
+**2026-10-26, new lead session:** the previous session's lanes sync-027-types (`08e9468`), sync-027-frames2 (`bc8c97a`) and requests-p4p3 (`3ef6d64`) were already merged.
+
+**ChuiCore 0.0.1 release (user, 2026-10-26: "push, tag, register"):** bash_guard needs `FACTORY_ALLOW_PUSH=1`, which only the user sets. So the user runs `bash private/release-chuicore-001.sh` (gitignored) in their own terminal:
+1. push the four mains;
+2. wait for green ChuiCore CI on `aaca78f`;
+3. clean clone, then tag `v0.0.1`;
+4. LocalRegistry 0.5.7 `register(...; push=false)` into `ChuiRegistry/`;
+5. confirm, then push the registry.
+
+Redaction gate before the push: 0 hits in new history and in the tree for all four repos. Positive control: 12 hits on `private/reference-projects.md`.
 
 **Lesson (2026-10-20):** a spawned agent's write_guard root is the lead's cwd when it is spawned. `cd` into the target repo or worktree before spawning a lane (the memory dir is outside the root, so this note lives here).
 
