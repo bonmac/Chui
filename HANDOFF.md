@@ -43,7 +43,7 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 **Lead handover, 2026-10-26 (user: "make this session lead"):** two lead sessions were running. Session `0fe25a` (transcript `11d20fa9`) stood down at the new lead's request: it closed its frames-p4 and types-p5 lanes with WIP committed (frames `b51ca4e`; types had no tracked changes) and handed over. The new lead verified each claim (heads, clean trees, evidence files) before re-dispatching.
 
 **Lead decisions, 2026-10-26 (no ★ in frames phase 4 or types phase 5):**
-- Join keyword `by =` (dplyr parity, as the spec says), not `on =`.
+- ~~Join keyword `by =`~~ RETRACTED the same day: ChuiFrames ADR-0002 rule 16 (user-accepted) says `on =`, so the keyword is a user ★ (below).
 - ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
 **2026-10-26, new lead session:** the previous session's lanes sync-027-types (`08e9468`), sync-027-frames2 (`bc8c97a`) and requests-p4p3 (`3ef6d64`) were already merged.
@@ -56,6 +56,13 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 5. confirm, then push the registry.
 
 Redaction gate before the push: 0 hits in new history and in the tree for all four repos. Positive control: 12 hits on `private/reference-projects.md`.
+
+## ★ ChuiFrames phase 4 joins (asked 2026-10-26; only lane p4-join is paused; group-by and codegen continue)
+
+The critic on the phase-4 spec found that the join design departs from user-accepted ADRs and from the parity matrix. The contract lists joins as provisional, so no contract change is involved.
+1. **Join keyword:** ADR-0002 rule 16 says `on = :k` / `on = [:a => :b]`. The spec uses dplyr's `by =`. Recommend `by =` with a dated ADR-0002 amendment: the brief targets dplyr parity, and rule 16's reason (`==` on nodes is structural) concerns the expression form, not the keyword's name. The alternative keeps `on =` with no amendment.
+2. **ADR-0003 rules 4 and 11:** always build the hash table on y, and radix-partition only y. x probes per morsel in parallel, which keeps dplyr's row order without a sort. The accepted text has the cost stage choose the build side and partitions both sides. Recommend accepting this as a dated amendment, recorded in ADR-0023, with the thresholds checked in p4-bench. The alternative builds on the smaller side and restores the order with a sort.
+3. **Parity:** ship `cross_join` and equality-only `join_by(:a => :b)` in phase 4. Defer `nest_join` and inequality/rolling joins, and update the parity-matrix rows. Also add the DataAPI `innerjoin`/`leftjoin`/… methods (ADR-0007, not a deviation). Recommend yes.
 
 **Lesson (2026-10-20):** a spawned agent's write_guard root is the lead's cwd when it is spawned. `cd` into the target repo or worktree before spawning a lane (the memory dir is outside the root, so this note lives here).
 
