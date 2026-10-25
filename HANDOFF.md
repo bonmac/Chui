@@ -36,9 +36,15 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 
 | Lane | Repo | Worktree / branch | File scope | Status |
 |---|---|---|---|---|
-| frames-p4 | ChuiFrames.jl | its own `scripts/lane` worktrees | phase 4: grouped sinks, fast group-by, joins, codegen | running (teammate, spawned 2026-10-26 with cwd ChuiFrames.jl) |
-| types-p5 | ChuiTypes.jl | its own `scripts/lane` worktrees | phase 5 item 2 onward: profiling, allocations, TTFX budgets. Item 1 (the ChuiCore switch) waits for the 0.0.1 registration | running (teammate, spawned 2026-10-26 with cwd ChuiTypes.jl) |
+| frames-p4 | ChuiFrames.jl | `.worktrees/phase4` / `feat/phase4` (integration); sub-lanes p4-groupby, p4-join, p4-codegen, then p4-bench | phase 4: grouped sinks, fast group-by, joins, codegen (plan `docs/superpowers/plans/2026-10-26-phase4.md`) | re-dispatched 2026-10-26 by the new lead (sub-lead teammate, max 3 sub-agents). Inherits `b51ca4e` (spec, plan, seam; unreviewed; the first execute.jl edit was made by a script, so the reviewer diffs it line by line). First: seam gate + critic + reviewer |
+| types-p5 | ChuiTypes.jl | its own `scripts/lane` worktrees → integration `feat/phase5` | phase 5 item 2 onward: sink pre-sizing, `fromiter` Vector fast path, per-chunk boxing, JET sites; TTFX dep-free workload + ADR-0009 budgets. Item 1 (the ChuiCore switch) waits for the 0.0.1 registration | re-dispatched 2026-10-26 by the new lead (sub-lead teammate, max 2 sub-agents). Inherits measurements only (`.lanes/reports/types-p5.md`, evidence `*p5*-08e9468.txt`) |
 | lead-1026 | coordinator | `.worktrees/lead-1026` | `HANDOFF.md`, `releases.md`, `compat-matrix.md` | the lead's own edits |
+
+**Lead handover, 2026-10-26 (user: "make this session lead"):** two lead sessions were running. Session `0fe25a` (transcript `11d20fa9`) stood down at the new lead's request: it closed its frames-p4 and types-p5 lanes with WIP committed (frames `b51ca4e`; types had no tracked changes) and handed over. The new lead verified each claim (heads, clean trees, evidence files) before re-dispatching.
+
+**Lead decisions, 2026-10-26 (no ★ in frames phase 4 or types phase 5):**
+- Join keyword `by =` (dplyr parity, as the spec says), not `on =`.
+- ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
 **2026-10-26, new lead session:** the previous session's lanes sync-027-types (`08e9468`), sync-027-frames2 (`bc8c97a`) and requests-p4p3 (`3ef6d64`) were already merged.
 
