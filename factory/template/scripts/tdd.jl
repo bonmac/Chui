@@ -16,6 +16,7 @@ module Tdd
     using TOML
     include(joinpath(@__DIR__, "_common.jl"))
     include(joinpath(@__DIR__, "_tdd_classify.jl"))
+    include(joinpath(@__DIR__, "_tdd_history.jl"))
     include(joinpath(@__DIR__, "evidence.jl"))   # module Tdd.Evidence
 
     const ROLES = ("test-writer", "implementer")
@@ -27,13 +28,14 @@ module Tdd
     is_dirty(root) = !isempty(something(git(root, "status", "--porcelain"), ""))
     "The `TDD:` trailer of commit `rev` (`\"\"` when it has none)."
     phase(root, rev) = String(strip(first(split(something(git(root, "log", "-1", "--format=%(trailers:key=TDD,valueonly)", rev), ""), '\n'))))
-    "Non-merge commits in `base..HEAD`, oldest first; `nothing` when `base` has no merge base with HEAD."
-    function lane_commits(root, base)
+    "The shas of the non-merge commits in `base..HEAD`, oldest first; `nothing` when `base` has no merge
+    base with HEAD. (`lane_commits` in _tdd_history.jl returns them as `LaneCommit`s.)"
+    function lane_shas(root, base)
         mb = merge_base(root, base)
         mb === nothing && return nothing
         return split(something(git(root, "rev-list", "--no-merges", "--reverse", "$mb..HEAD"), ""), '\n'; keepempty = false)
     end
-    lane_commits(root, base, phases) = (cs = lane_commits(root, base); cs === nothing ? nothing : filter(c -> phase(root, c) in phases, cs))
+    lane_shas(root, base, phases) = (cs = lane_shas(root, base); cs === nothing ? nothing : filter(c -> phase(root, c) in phases, cs))
     "The root of the main checkout of the repo that owns `root` (a worktree's `.git` file names it)."
     function main_checkout(root)
         common = git(root, "rev-parse", "--git-common-dir")
@@ -131,7 +133,7 @@ module Tdd
     """
     function green(root; base = "main", io = stdout)
         refuse_dirty(root, io, "green") && return 2
-        reds = lane_commits(root, base, RED_PHASES)
+        reds = lane_shas(root, base, RED_PHASES)
         reds === nothing && (println(io, "tdd.jl green: no merge base with `$base` in $root (exit 2)."); return 2)
         have_ci(root, io, "green") || return 2
         names = unique!([s.name for c in reds for s in requested(root, c).red])
@@ -239,7 +241,7 @@ module Tdd
         refuse_dirty(root, io, "brief") && return 2
         head = Evidence.head_sha(root)
         main = main_checkout(root)
-        commits = lane_commits(root, base)
+        commits = lane_shas(root, base)
         (head === nothing || main === nothing || commits === nothing) &&
             (println(io, "tdd.jl brief: $root is not a git checkout with a merge base with `$base` (exit 2)."); return 2)
         checkout = abspath(root)
