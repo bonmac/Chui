@@ -66,6 +66,12 @@ The critic on the phase-4 spec found that the join design departs from user-acce
 
 **Answered 2026-10-26 (user):** (1) `by =`, with a dated ADR-0002 rule 16 amendment. (2) **Keep ADR-0003** as written: build on the smaller side, partition both sides above the broadcast limit, and restore dplyr's order with a stable sort. (3) **The full matrix:** `nest_join`, `cross_join` and equality `join_by` in phase 4, plus the DataAPI methods. Inequality/rolling joins stay deferred because no design exists. Sent to frames-p4; p4-join starts after group-by tasks 1–2 merge.
 
+**K4, asked and answered 2026-10-26 (user):** mixed `Int64`/`Float64` join keys are **allowed, like dplyr**: compared as Float64, with the precision loss above 2^53 documented. Date/DateTime and Int64/UInt64 pairs stay rejected because they hash inconsistently.
+
+**ChuiTypes p5-perf (lead decisions, 2026-10-26; phase 5 has no ★):**
+- Q1: accept the missed spec time targets. S1 is 3.8× Base collect (target ≤ 2.5×) and S2 is 22× Base foldl (target ≤ 10×). Both improve on the recorded 5.5×/43×. ADR-0009 records them as the budget, with "fold runfold into the fused pipeline" as a follow-up. ADR-0003's "costs what an iterator does" gets a dated note that the claim is **not met**; its decision text is the user's and is unchanged.
+- Q2: `merge` over 4 Vector sources regressed by about 1.5×. One bounded fix attempt; otherwise a benchmark row and a known loss in ADR-0009.
+
 **Lesson (2026-10-20):** a spawned agent's write_guard root is the lead's cwd when it is spawned. `cd` into the target repo or worktree before spawning a lane (the memory dir is outside the root, so this note lives here).
 
 **Merged 2026-10-20 (afternoon), all with a final reviewer approval:**
