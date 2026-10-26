@@ -394,3 +394,5 @@ end
         @test [s.name for s in r.red] == ["far other"] && isempty(r.must_pass)
     end
 end
+
+include("test_tdd_cli.jl")   # tdd.jl red, green, api, brief (plan Task 4)
