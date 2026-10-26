@@ -5,6 +5,89 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.8 (2026-10-26)
+
+The lane cap (`dispatch_limit.sh`) was not enforced. It counted SubagentStart minus SubagentStop,
+and in-process teammates never balance those. The coordinator's ledger has 32 starts, the last on
+2026-10-20T14:12Z, against 716 stops. One lead session had 77 stops, each with a different id,
+and no start. So the open count was always ≤ 0 and `max_open` never fired. Spec:
+`docs/superpowers/specs/2026-10-26-factory-028-design.md`.
+
+The guard is stricter (the cap now fires), which by the rule above would be a minor bump. It ships
+as 0.2.8 because it restores a guard that was meant to work (a bug fix). The user chose "0.2.8
+patch first", before the 0.3.0 test-writer work, on 2026-10-26, answering the lead's question on
+the cap fix. That is consistent with the user keeping 0.2.x at L0.
+
+- **A lane is an Agent dispatch** (`dispatch_limit.sh`, new sourced `_lanes.sh`, `lane_ledger.sh`,
+  `settings.json`, `precompact.sh`).
+  - Open: `dispatch_limit.sh` writes `{ev: dispatch, key, name, desc}` when it allows a call. The
+    key is `tool_input.name`, else `tu:<tool_use_id>`, else `desc:<description>`.
+  - Closed by the lead's own tool results, through `lane_ledger.sh`, now also on PostToolUse and
+    PostToolUseFailure (`Agent|Task|TaskStop`) and on PermissionDenied (`Agent|Task`):
+    - an Agent result with status `completed` (a foreground agent that returned), a failed Agent
+      call, or auto mode's denial of it;
+    - a `TaskStop`, by name. A TaskStop whose ref names no lane of the session (an internal task
+      id) closes by description, as a fallback;
+    - a background subagent's SubagentStop, whose `agent_id` matches the `agentId` its Agent
+      result returned.
+  - `teammate_spawned`, `async_launched` and `remote_launched` keep the lane open. Any other
+    status is logged as `unknown-result` and also keeps the lane open: an unknown status fails
+    toward counting.
+  - `scripts/lane release <name>` closes a lane whose agent is gone. A TaskStop for a gone agent
+    fails validation and fires no hook (hooks docs).
+    - The release is written with session `*` and matches in every session.
+    - The denial names this command.
+    - It writes the ledger the hooks read (`[lanes] ledger`).
+    - It starts a new line after a truncated last line.
+    - It exits 1, without claiming the release, when the write fails or the registry does not
+      parse.
+  - Read, count and append run under a lock, `.lanes/.dispatch.lock`, because parallel Agent
+    calls passed the cap together.
+    - The hook waits up to 5 s for the lock, then denies.
+    - A lock older than one minute is moved aside, checked that it is still stale, then removed.
+      If another hook took a fresh lock in between, it is put back and the hook denies.
+    - A stale lock that is a file or a non-empty directory is put back, and the hook denies at
+      once. It used to spin until the hook timeout.
+    - A `.lanes/` that cannot be created denies.
+  - A payload that is not a JSON object is denied. Before, such payloads were all recorded under
+    one key `desc:`, and every one of them passed.
+  - SubagentStart/Stop stay in the ledger but no longer count on their own.
+  - Re-dispatching an open name counts once.
+  - A dispatch with no spawn record stops counting after `FACTORY_LANE_TTL_HOURS` (default 24;
+    0 = never). That covers dispatches that never ran, and also foreground calls still running past
+    the TTL (a blind spot). A spawned teammate or background agent stays counted until it is
+    closed: sub-leads run for days. A `ts` that does not parse counts.
+  - The cap is per session, and each teammate is its own session.
+  - A ledger written before 0.2.8 counts 0 open lanes, because its lines are not dispatches.
+- **The ledger no longer loses the record after a truncated line** (`_lib.sh` `ledger`). A crash
+  mid-write left a last line with no newline, and the next `>>` record joined it and was skipped as
+  malformed. `ledger` now starts a new line first. A new test found this.
+- **`_lanes.sh` is a new managed hook library** (lane counting, split from `_lib.sh` to stay under
+  the 150-line hook budget). `dispatch_limit.sh` fails closed without it; `lane_ledger.sh` and
+  `precompact.sh` fail open.
+- `CHECK_COVERAGE` rows for `dispatch_limit`, `lane_ledger` and `lane` list the new blind spots.
+  The main ones:
+  - a teammate resumed by SendMessage is not counted;
+  - a dispatch denied in a permission dialog stays open until the TTL or `lane release`;
+  - `lane release` trusts the caller.
+- The `lane-lifecycle` skill says what opens and closes a lane, and how to release one.
+- Tested by `scripts/test/test_hooks_lifecycle.jl`, whose start/stop testset is replaced. The cases:
+  - the 2026-10-26 regression: stops with no starts, plus named dispatches;
+  - teammate, background, remote and foreground lanes;
+  - TaskStop by name and by internal id;
+  - re-dispatch, sessions, the TTL, a truncated line, and the settings wiring;
+  - the critic's cases: a ghost lane released, 6 concurrent dispatches at cap 2 (exactly 2 pass,
+    3 trials), a held lock and a stale lock, a shared description, an unknown status, a long-lived
+    spawned lane, a close before a re-dispatch, an empty TaskStop ref, and PermissionDenied;
+  - the reviewer's cases:
+    - a stale lock that is a file or a non-empty directory denies within 8 s;
+    - 4 non-JSON payloads at cap 2 are all denied;
+    - a release after a truncated line takes effect;
+    - a release whose write fails exits 1;
+    - a release uses `[lanes] ledger`.
+
+  `test_hooks.jl` checks the missing-`_lanes.sh` behaviour.
+
 ## 0.2.7 (2026-10-20)
 
 Six problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6
