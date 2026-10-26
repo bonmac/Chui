@@ -70,5 +70,6 @@ end
     include("test_runtests_template.jl")
     include("test_tdd.jl")
     include("test_tdd_backfill.jl")
+    include("test_tdd_classify2.jl")
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end
