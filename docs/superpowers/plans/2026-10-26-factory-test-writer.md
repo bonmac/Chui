@@ -106,9 +106,9 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
 - [x] **Step 1:** ADR-0015 drafted from spec D0, D1, D3, D4, D6, D7 and §8 (spec lane, 2026-10-26).
 - [x] **Step 2:** The user answered spec §8 on 2026-10-26, all six questions, recorded in spec §8
   and the ADR.
-- [ ] **Step 3:** ★ The user accepts ADR-0015 at the spec branch's merge, and sets
+- [x] **Step 3:** ★ The user accepts ADR-0015 at the spec branch's merge, and sets
   `FACTORY_ALLOW_T3=1` for the probe and Task 10.
-- [ ] **Step 4: The probe, in the real topology.**
+- [x] **Step 4: The probe, in the real topology.**
   - Add the temporary `tw-probe` agent (tools: Read, Bash) as an `[[agents]]` entry in
     `<root>/.agents/agent-registry.toml` plus its body `<root>/.agents/bodies/tw_probe.md`, then
     run `julia scripts/gen.jl` in `<root>` to render `<root>/.claude/agents/tw-probe.md`.
@@ -121,7 +121,7 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
     `git -C <that worktree> status`. Create the probe lane with ChuiCore's `scripts/lane new probe`.
     1. an **unnamed** Agent call: `subagent_type: tw-probe`, no `name`, no `team_name`;
     2. a **named** Agent call: the same, with `name: tw-probe-named`.
-- [ ] **Step 5:** Paste the log lines and record, for each dispatch, whether its PreToolUse
+- [x] **Step 5:** Paste the log lines and record, for each dispatch, whether its PreToolUse
   payloads carry `agent_type: "tw-probe"` and an `agent_id`.
   - **Pass** when the unnamed dispatch carries `agent_type: "tw-probe"` and `tool_input.file_path`
     is the worktree path. This rests on PreToolUse alone.
@@ -130,7 +130,7 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
   - Report missing or mismatched SubagentStart/Stop events, but do not stop on them (spec §13).
   - If the unnamed dispatch lacks `agent_type`, stop at a ★: Task 8 needs another source for the
     role.
-- [ ] **Step 6:** Remove the `tw-probe` registry entry and its body, run `julia scripts/gen.jl` in
+- [x] **Step 6:** Remove the `tw-probe` registry entry and its body, run `julia scripts/gen.jl` in
   `<root>`, remove the hook entries from `<root>/.claude/settings.json`, and delete the probe lane.
   Check, and paste the output of:
   - `ls <root>/.claude/agents/tw-probe.md` must fail ("No such file or directory"). gen.jl's
@@ -139,6 +139,28 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
   - `grep -n tw.probe <root>/.agents/agent-registry.toml <root>/.claude/settings.json` must print
     nothing;
   - `julia scripts/gen.jl --check` in `<root>` must be OK.
+
+**Task 0 result (2026-10-27, the lead, after the user's T3 restart; steps 3–6 done):**
+- **Deviation:** an agent type added mid-session is not loaded ("Agent type 'tw-probe' not found"),
+  so the probe used the existing custom read-only agent `reviewer`. The question is the same: does
+  a custom subagent's PreToolUse payload carry its `agent_type`? The tw-probe stanza was still added
+  and removed. Consequence for Tasks 9–10: the new test-writer/implementer agents become
+  dispatchable only after a session restart.
+- **Unnamed** (`subagent_type: reviewer`, no name): Read and Bash payloads carry
+  `agent_type: "reviewer"` and `agent_id`. `tool_input.file_path` is the worktree path. **PASS.**
+- **Named** (`name: tw-probe-named`, an in-process teammate): the payloads carry
+  `agent_type: "reviewer"` but **no `agent_id`**, and their own `session_id`. So TDD dispatches **may**
+  use `name`, but Task 8 must key the role on `agent_type` only, never on `agent_id`.
+- **Main session (the lead):** no `agent_type` and no `agent_id`. That confirms "the caller with no
+  `agent_type`" as the lead's identity.
+- **SubagentStart/SubagentStop:** 0 events for either dispatch, so they are not usable here. Reported per
+  spec §13; nothing relies on them.
+- **Step 6 checks:** `ls .claude/agents/tw-probe.md` gave "No such file or directory"; the grep printed
+  nothing (exit 1); `gen.jl --check` was OK (26 files); the probe lane and branch were deleted.
+- **Evidence:** the log is kept at `<root>/.lanes/archive/tw-task0/probe.jsonl`.
+- **Follow-up found on the way (0.3.0 item):** the factory hook tests inherit `FACTORY_ALLOW_T3` from
+  the caller's env and fail (101 failures) when it is set. The test runner must unset
+  `FACTORY_ALLOW_T3` and `FACTORY_ALLOW_PUSH` for its children.
 
 ### Task 1: Failure-output fixtures
 
