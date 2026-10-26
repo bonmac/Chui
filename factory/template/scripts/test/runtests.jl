@@ -74,6 +74,7 @@ end
     include("test_sync_factory.jl")
     include("test_runtests_template.jl")
     include("test_tdd.jl")
+    include("test_tdd_rename.jl")   # renamed red item must not deadlock green (0.3.0)
     include("test_tdd_backfill.jl")
     include("test_tdd_classify2.jl")
     include("test_tdd_review.jl")
