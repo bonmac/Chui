@@ -3,6 +3,9 @@
 # Stdlib only. Hooks are run as real `sh` processes with JSON on stdin. Needs git and jq.
 using Test
 
+# factory 0.3.0: a caller's FACTORY_ALLOW_* leaked into every child process and flipped 101+ hook deny tests.
+foreach(v -> delete!(ENV, v), ("FACTORY_ALLOW_T3", "FACTORY_ALLOW_PUSH", "FACTORY_ALLOW_OUTWARD"))
+
 const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
 const HOOKS = joinpath(ROOT, ".claude", "hooks")
