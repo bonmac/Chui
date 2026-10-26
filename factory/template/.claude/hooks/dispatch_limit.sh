@@ -17,13 +17,26 @@ done
 . "$d/_lib.sh"
 . "$d/_lanes.sh"
 need_jq
+payload_ok || deny "cannot parse the hook payload as a JSON object, so the dispatch cannot be keyed or counted (fails closed)."
 max=${FACTORY_MAX_OPEN_LANES:-${MAX_OPEN_LANES:-4}}
 lock="$(dirname "$LEDGER_FILE")/.dispatch.lock"
 mkdir -p "$(dirname "$LEDGER_FILE")" 2>/dev/null || deny "cannot create $(dirname "$LEDGER_FILE"), so no dispatch can be recorded (fails closed)."
 _n=0
 until mkdir "$lock" 2>/dev/null; do
-    # a lock left by a killed hook (older than a minute; the hook timeout is 10 s) is broken
-    if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then rmdir "$lock" 2>/dev/null; continue; fi
+    # A lock left by a killed hook (older than a minute; the hook timeout is 10 s) is broken by moving
+    # it aside, then checking that what moved is still the stale one (another hook may have broken it
+    # and taken a fresh lock in between: then deny, never enter alongside it), then removing it.
+    # Not an empty directory (a file, a non-empty dir): put it back and deny (reviewer B1: it spun).
+    if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
+        _aside="$lock.stale.$$"
+        if mv "$lock" "$_aside" 2>/dev/null; then
+            [ -n "$(find "$_aside" -maxdepth 0 -mmin +1 2>/dev/null)" ] ||
+                { rmdir "$_aside" 2>/dev/null; deny "the lane ledger lock changed hands while breaking a stale one; retry the dispatch."; }
+            rmdir "$_aside" 2>/dev/null && continue
+            [ -e "$lock" ] || mv "$_aside" "$lock" 2>/dev/null
+            deny "cannot break the stale lock $lock: it is not an empty directory. Inspect and remove it by hand."
+        fi
+    fi
     _n=$((_n + 1))
     [ "$_n" -lt 50 ] || deny "the lane ledger lock $lock is held (waited 5 s), so the open-lane cap cannot be checked (fails closed). Retry; if no hook is running, remove that directory."
     sleep 0.1

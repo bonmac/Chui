@@ -15,8 +15,10 @@ lane_key() {
 
 # LANE_TTL_SECS: a dispatch that never ran (no `spawned` or `unknown-result` record: a permission
 # denial, another hook's denial, a validation error) stops counting after FACTORY_LANE_TTL_HOURS
-# (default 24; 0 = never). A lane that ran stays counted however long it lives (sub-leads run for
-# days; critic M4): close it with TaskStop or `scripts/lane release`. Not a whole number: 24.
+# (default 24; 0 = never). A lane with such a record stays counted however long it lives
+# (sub-leads run for days; critic M4): close it with TaskStop or `scripts/lane release`. A
+# foreground call has no record until it returns, so one running past the TTL stops counting
+# (reviewer m3, a blind spot). Not a whole number: 24.
 _ttl=${FACTORY_LANE_TTL_HOURS:-24}
 case $_ttl in '' | *[!0-9]*) _ttl=24 ;; esac
 # shellcheck disable=SC2034 # used by the hooks that source this file

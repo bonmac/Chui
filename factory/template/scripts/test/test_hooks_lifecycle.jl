@@ -135,6 +135,19 @@
         @test occursin("\"session\":\"*\"", last(readlines(led(r))))
         @test allow(pre("g2"), r, 1)
         @test capture(() -> Lane.main(["release", "--repo", r]))[1] == 2          # a key is required
+        # reviewer M1: a release after a truncated last line takes effect; a failed write is not "released"
+        r = tmp_repo()
+        @test allow(pre("h1"), r, 1)
+        open(io -> print(io, "{\"ts\":\"2026"), led(r), "a")
+        @test capture(() -> Lane.main(["release", "h1", "--repo", r]))[1] == 0
+        @test allow(pre("h2"), r, 1)
+        r = tmp_repo(); write(joinpath(r, ".lanes"), "a file, so .lanes/ledger.jsonl cannot be written\n")
+        rel = capture(() -> Lane.main(["release", "h1", "--repo", r]))
+        @test rel[1] == 1 && !occursin("released", rel[2])
+        # reviewer m2: release writes the ledger the hooks read ([lanes] ledger, rendered into limits.env as LEDGER)
+        r = tmp_repo(Dict(".agents/agent-registry.toml" => "[lanes]\nmax_open = 4\nledger = \"var/lanes.jsonl\"\n"))
+        @test capture(() -> Lane.main(["release", "h3", "--repo", r]))[1] == 0
+        @test occursin("\"ref\":\"h3\"", read(joinpath(r, "var/lanes.jsonl"), String)) && !isfile(led(r))
         # M1: concurrent dispatches are serialised by a lock (6 at once, cap 2: exactly 2 pass)
         for trial in 1:3
             r = realpath(mktempdir())
@@ -153,6 +166,25 @@
         r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/.dispatch.lock"))                # a stale lock is broken
         run(`touch -t 202601010000 $(joinpath(r, ".lanes/.dispatch.lock"))`)
         @test allow(pre("q1"), r, 5)
+        @test !any(startswith(".dispatch.lock.stale"), readdir(joinpath(r, ".lanes")))          # moved aside, then removed
+        # reviewer B1: a stale lock that is a FILE or a non-empty directory denies at once (it spun to the hook timeout)
+        for kind in (:file, :nonempty)
+            r = realpath(mktempdir()); lk = joinpath(r, ".lanes/.dispatch.lock"); mkpath(dirname(lk))
+            kind == :file ? write(lk, "x") : (mkpath(lk); write(joinpath(lk, "f"), "x"))
+            run(`touch -t 202601010000 $lk`)
+            out, err = IOBuffer(), IOBuffer()
+            cmd = addenv(`sh $(joinpath(TEST_HOOKS, "dispatch_limit.sh"))`, "CLAUDE_PROJECT_DIR" => r, cap(5)...)
+            p = run(pipeline(ignorestatus(cmd); stdin = IOBuffer(pre("q2")), stdout = out, stderr = err); wait = false)
+            done = timedwait(() -> process_exited(p), 8.0) == :ok
+            done || kill(p, Base.SIGKILL)
+            @test (done && p.exitcode == 2 && occursin("stale lock", String(take!(err)))) || (println("stale $kind lock: done=$done"); false)
+            @test ispath(lk)                                                                   # left for a human, not deleted
+        end
+        # reviewer B2: a payload that is not a JSON object is denied (0.2.7 recorded `desc:` and let all of them pass)
+        r = realpath(mktempdir())
+        @test all(_ -> denied("not json", r, 2), 1:4)
+        @test denied("[1,2]", r, 2)
+        @test !isfile(led(r)) || !any(l -> occursin("\"ev\":\"dispatch\"", l), readlines(led(r)))
         # M2: the description fallback applies only to a ref that names no lane of the session
         r = realpath(mktempdir())
         for n in ("ra", "rb")

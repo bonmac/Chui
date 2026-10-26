@@ -121,15 +121,30 @@ module Lane
         return ok
     end
 
-    "Append one JSON line to the repo's lane ledger (.lanes/ledger.jsonl); never fails the command."
+    "The lane ledger the hooks read: `[lanes] ledger` in the registry (gen.jl renders it into limits.env), default .lanes/ledger.jsonl."
+    function ledger_path(repo)
+        p = joinpath(repo, ".agents", "agent-registry.toml")
+        rel = isfile(p) ? get(get(TOML.parsefile(p), "lanes", Dict()), "ledger", ".lanes/ledger.jsonl") : ".lanes/ledger.jsonl"
+        return joinpath(repo, rel)
+    end
+
+    """
+    Append one JSON line to the repo's lane ledger; returns `true` if it was written. Never throws.
+    After a truncated last line (a crash mid-write) it starts a new line first, as the hooks'
+    `ledger` does (0.2.8): otherwise this record joins the fragment and is skipped as malformed.
+    """
     function ledger_line(repo, ev; kw...)
         esc(x) = "\"" * replace(string(x), "\\" => "\\\\", "\"" => "\\\"") * "\""
         val(v) = v isa AbstractVector ? "[" * join(esc.(v), ",") * "]" : esc(v)
         fields = ["\"ts\":" * esc(Dates_now()), "\"ev\":" * esc(ev), ("\"$k\":" * val(v) for (k, v) in kw)...]
+        f = ledger_path(repo)
         return try
-            mkpath(joinpath(repo, ".lanes"))
-            open(io -> println(io, "{", join(fields, ","), "}"), joinpath(repo, ".lanes", "ledger.jsonl"), "a")
+            mkpath(dirname(f))
+            torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
+            open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
+            true
         catch
+            false
         end
     end
     Dates_now() = Dates.format(Dates.now(Dates.UTC), "yyyy-mm-ddTHH:MM:SS") * "Z"
@@ -260,7 +275,10 @@ module Lane
     """
     function cmd_release(repo, key; io = stdout)
         k = replace(key, r"[^A-Za-z0-9_./:@-]" => "_")
-        ledger_line(repo, "close"; session = "*", ref = k, why = "released")
+        if !ledger_line(repo, "close"; session = "*", ref = k, why = "released")
+            println(stderr, "lane: could not write the lane ledger $(ledger_path(repo)); $k is NOT released")
+            return 1
+        end
         println(io, "lane: released $k (the dispatch cap no longer counts a lane with that name, key or agent id)")
         return 0
     end

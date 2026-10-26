@@ -127,6 +127,23 @@ Changes:
 - **m3, m4, m5:** documented (resumed background agents not recounted; the cap is per session,
   each teammate being its own session; O(dispatches x events) cost).
 
+## Revision 3 (the reviewer's REQUEST CHANGES on d028c96: `.lanes/reports/factory028-reviewer.md`)
+
+- **B1:** a stale lock that is a file or a non-empty directory made the wait loop spin to the
+  hook timeout, where the call goes through. It is now moved aside. If what moved is fresh,
+  another hook broke it first, so this hook denies. Otherwise it is removed; if it is not an
+  empty directory it is put back and the hook denies at once.
+- **B2:** `payload_ok || deny` straight after `need_jq`. A non-JSON payload is denied; before, it
+  was recorded as key `desc:` and passed.
+- **M1:** `lane.jl ledger_line` starts a new line after a truncated last line, and returns
+  whether it wrote. `lane release` exits 1 and claims nothing when the write failed.
+- **M2:** the fix commit carries the `Spec:` line, so `dod.jl --base main` reports DONE.
+- **m1:** breaking by mv-aside plus a staleness re-check. The remaining window is documented.
+- **m2:** `lane.jl` writes the ledger named by `[lanes] ledger`.
+- **m3:** wording. A foreground call has no record until it returns, so the TTL can drop it while
+  it runs; this is documented.
+- **n1, n2:** documented (a duplicate live name counts once; names that sanitise alike collide).
+
 ## Blind spots (for CHECK_COVERAGE; revision 2 wording is in `.agents/checks.toml`)
 
 - A teammate resumed with SendMessage after TaskStop is not counted.

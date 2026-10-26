@@ -24,7 +24,7 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   is an Agent dispatch, open until its call returns (foreground), its background agent stops, or
   you `TaskStop <name>` it (a teammate). Give every teammate a `name`. A lane whose agent is gone
   (TaskStop says no task found; a dispatch that never ran) is released with
-  `scripts/lane release <name>`; a lane that ran is never dropped by time.
+  `scripts/lane release <name>`. A spawned teammate or background agent is never dropped by time.
 
 **Monitor**
 - Wait for completion notifications; do not poll output files.

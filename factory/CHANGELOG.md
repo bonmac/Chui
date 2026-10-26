@@ -37,16 +37,24 @@ the cap fix. That is consistent with the user keeping 0.2.x at L0.
     fails validation and fires no hook (hooks docs).
     - The release is written with session `*` and matches in every session.
     - The denial names this command.
+    - It writes the ledger the hooks read (`[lanes] ledger`).
+    - It starts a new line after a truncated last line.
+    - It exits 1, without claiming the release, when the write fails.
   - Read, count and append run under a lock, `.lanes/.dispatch.lock`, because parallel Agent
     calls passed the cap together.
     - The hook waits up to 5 s for the lock, then denies.
-    - A lock older than one minute is broken.
+    - A lock older than one minute is moved aside, checked that it is still stale, then removed.
+    - A stale lock that is a file or a non-empty directory is put back, and the hook denies at
+      once. It used to spin until the hook timeout.
     - A `.lanes/` that cannot be created denies.
+  - A payload that is not a JSON object is denied. Before, such payloads were all recorded under
+    one key `desc:`, and every one of them passed.
   - SubagentStart/Stop stay in the ledger but no longer count on their own.
   - Re-dispatching an open name counts once.
-  - A dispatch that never ran stops counting after `FACTORY_LANE_TTL_HOURS` (default 24; 0 =
-    never). A lane that ran stays counted until it is closed: sub-leads run for days. A `ts` that
-    does not parse counts.
+  - A dispatch with no spawn record stops counting after `FACTORY_LANE_TTL_HOURS` (default 24;
+    0 = never). That covers dispatches that never ran, and also foreground calls still running past
+    the TTL (a blind spot). A spawned teammate or background agent stays counted until it is
+    closed: sub-leads run for days. A `ts` that does not parse counts.
   - The cap is per session, and each teammate is its own session.
   - A ledger written before 0.2.8 counts 0 open lanes, because its lines are not dispatches.
 - **The ledger no longer loses the record after a truncated line** (`_lib.sh` `ledger`). A crash
@@ -68,7 +76,13 @@ the cap fix. That is consistent with the user keeping 0.2.x at L0.
   - re-dispatch, sessions, the TTL, a truncated line, and the settings wiring;
   - the critic's cases: a ghost lane released, 6 concurrent dispatches at cap 2 (exactly 2 pass,
     3 trials), a held lock and a stale lock, a shared description, an unknown status, a long-lived
-    spawned lane, a close before a re-dispatch, an empty TaskStop ref, and PermissionDenied.
+    spawned lane, a close before a re-dispatch, an empty TaskStop ref, and PermissionDenied;
+  - the reviewer's cases:
+    - a stale lock that is a file or a non-empty directory denies within 8 s;
+    - 4 non-JSON payloads at cap 2 are all denied;
+    - a release after a truncated line takes effect;
+    - a release whose write fails exits 1;
+    - a release uses `[lanes] ledger`.
 
   `test_hooks.jl` checks the missing-`_lanes.sh` behaviour.
 

@@ -9,11 +9,14 @@
     - `TaskStop <name>`;
     - for an agent that is gone, `scripts/lane release <name>`.
   - An unknown result status keeps the lane counted.
-  - Only dispatches that never ran expire, after `FACTORY_LANE_TTL_HOURS` (default 24).
+  - A payload that is not JSON, or a stale lock it cannot break, is denied (fail closed).
+  - Only dispatches with no spawn record expire, after `FACTORY_LANE_TTL_HOURS` (default 24).
   - The ledger no longer drops the record that follows a truncated line.
   - New hook library `_lanes.sh`. New PostToolUse, PostToolUseFailure and PermissionDenied wiring in
     `settings.json`. New subcommand `lane release`.
 
   Spec: `docs/superpowers/specs/2026-10-26-factory-028-design.md`. The release was reviewed by the
-  critic: ACCEPT WITH FIXES. B1, M1–M5 and m1 are fixed and tested; m2–m5 are documented. The coordinator sync is T3
+  critic: ACCEPT WITH FIXES. B1, M1–M5 and m1 are fixed and tested; m2–m5 are documented. Then the reviewer asked for changes:
+  B1, B2, M1, m1 and m2 are fixed and tested; M2 is fixed by the `Spec:` line; m3, n1 and n2 are
+  documented. The coordinator sync is T3
   (`FACTORY_ALLOW_T3=1`), and each package takes 0.2.8 in its own sync lane.
