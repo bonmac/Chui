@@ -14,6 +14,8 @@
 #   adr        an NNNN-*.md file in the ADR directory (not the template) changed, or the body cites
 #              ADR-NNNN. The directory is `adr_dir` in .factory-version (from the MANIFEST profile;
 #              `adr` for the coordinator), default docs/adr; --adr-dir overrides it.
+#   tdd        (0.3.0) the lane history passes H1-H9 (_tdd_history.jl, spec §4.2): its first problem
+#              fails it; "no src/ext change" or "tdd history OK (N commits, mode M)" passes it
 #   ci, review reported only: CI is the caller; review is branch protection's job
 # In CI the labels and body come from the pull_request event (see .github/workflows/Guards.yml).
 # Exit 0 = done, 1 = not done, 2 = could not evaluate.
@@ -21,6 +23,9 @@ module DoD
 
     using TOML
     include(joinpath(@__DIR__, "_common.jl"))
+    # 0.3.0: LaneCommit, lane_commits, history_rules, stub_declares_only (needs _common.jl first).
+    # Its short top-level names (changed, counts, clean, ...) are only shadowed by locals here.
+    include(joinpath(@__DIR__, "_tdd_history.jl"))
 
     const TIERS = ("T0", "T1", "T2", "T3")
     tierindex(t) = findfirst(==(t), TIERS)
@@ -44,15 +49,17 @@ module DoD
     )
 
     """
-        evaluate(risk, changed, labels, text) -> (tier, results)
+        evaluate(risk, changed, labels, text; commits, stub_ok) -> (tier, results)
 
     Pure core: `changed` is the list of changed paths, `text` the PR body plus commit messages.
+    `commits` is the lane's `LaneCommit`s (oldest first) and `stub_ok(sha)` decides H5; with
+    `commits === nothing` a src/ext change reports `tdd` as :info (not checked).
     `results` is a vector of (requirement, status, detail) with status :pass, :fail or :info.
     """
     function evaluate(
             risk, changed::Vector{<:AbstractString}, labels, text::AbstractString;
             kept::Vector{<:AbstractString} = changed, added::Vector{<:AbstractString} = kept,
-            adr_dir::AbstractString = "docs/adr"
+            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true
         )
         lt = label_tier(labels)
         pts = filter(!isnothing, [path_tier(risk, f) for f in changed])
@@ -91,6 +98,8 @@ module DoD
                 )
                 (adr || occursin(r"ADR-\d{4}", text)) ? (:pass, "ADR changed or cited") :
                     (:fail, "a T3 change needs an ADR ($dir or a cited coordinator ADR-NNNN)")
+            elseif req == "tdd"
+                tdd_result(commits, src_changed, stub_ok)
             elseif req == "ci"
                 (:info, "CI is the caller")
             elseif req == "review"
@@ -101,6 +110,16 @@ module DoD
             push!(results, (req, r...))
         end
         return tier, results
+    end
+
+    "Requirement `tdd`: H9 applies to every lane, H2-H8 only when code changed (spec §4.2 H1)."
+    function tdd_result(commits, src_changed, stub_ok)
+        commits === nothing &&
+            return src_changed ? (:info, "not checked: no lane history given") : (:pass, "no src/ext change")
+        problems = history_rules(commits; stub_ok)
+        isempty(problems) || return (:fail, first(problems))
+        src_changed || return (:pass, "no src/ext change")
+        return (:pass, "tdd history OK ($(length(commits)) commits, mode $(first(lane_mode(commits))))")
     end
 
     function main(args)
@@ -131,9 +150,12 @@ module DoD
         added = filter(f -> !is_fragment(f) || !isempty(strip(something(git(root, "show", "$head:$f"), ""))), names("--diff-filter=A"))
         msgs = something(git(root, "log", "--format=%B", "$mb..$head"), "")
         risk = TOML.parsefile(joinpath(root, "risk.toml"))
+        # lane_commits reads base..HEAD (not --head); an empty list when the merge base vanished
+        commits = something(lane_commits(root, base), LaneCommit[])
         tier, results = evaluate(
             risk, changed, labels, body * "\n" * msgs; kept, added,
-            adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root)
+            adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root),
+            commits, stub_ok = s -> stub_declares_only(root, s)
         )
         println("dod.jl: $(length(changed)) files changed since $(first(mb, 10)); tier $tier")
         for (req, st, detail) in results
