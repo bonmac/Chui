@@ -1,6 +1,8 @@
 # Factory 0.2.8: the lane cap counts dispatches, not SubagentStart
 
-Status: proposed (factory-028 lane, 2026-10-26). Tier: factory template change (hooks).
+Status: proposed (factory-028 lane, 2026-10-26), revision 2 after the critic's ACCEPT WITH FIXES
+(`.lanes/reports/factory028-critic.md`: B1, M1–M5, m1–m5; see "Revision 2" at the end).
+Tier: factory template change (hooks).
 
 ## Problem
 
@@ -93,7 +95,39 @@ by key, so re-dispatching an open name counts once.
 registry key). `precompact.sh` keeps reading `OPEN_LANES_JQ` (`.ids`, `.count`); the ids are
 now lane keys (names).
 
-## Blind spots (for CHECK_COVERAGE)
+## Revision 2 (the critic's findings; this section overrides the text above where they differ)
+
+Docs read 2026-10-26 (Context7 `/websites/code_claude`, hooks and Agent SDK pages):
+- Validation rejections (`tool_use_error`) "happen before hooks run, so they fire neither PreToolUse
+  nor PostToolUseFailure". Permission denials fire PreToolUse but not PostToolUseFailure;
+  auto mode's denials fire `PermissionDenied` (a dialog denial fires nothing).
+- Matching hooks for one event run in parallel.
+- Agent tool output `status`: `completed` (with `agentId`), `async_launched` (`agentId`),
+  `remote_launched` (`taskId`). `teammate_spawned` and TaskStop's `command` remain transcript-only.
+
+Changes:
+- **B1: `scripts/lane release <key>`.** A TaskStop for a gone agent ("No task found", "is not
+  running") is a validation error and fires no hook, so the old "a failed TaskStop closes" path
+  did not exist for that case. `lane release` appends `{ev: close, ref: key, why: released,
+  session: "*"}` (key sanitised as the hooks do); `OPEN_LANES_JQ` takes `session: "*"` closes
+  from every session. The denial names the command; so do the skill and CHECK_COVERAGE.
+- **M1: a lock.** `dispatch_limit` holds `.lanes/.dispatch.lock` (mkdir) around read, count and
+  append: retry 50 x 0.1 s, then deny; a lock older than one minute is broken; `trap` removes it.
+  An uncreatable `.lanes/` now denies (fail closed).
+- **M2:** the description fallback applies only when the close's ref names no dispatch name, key
+  or agent id of the session.
+- **M3:** close only on `completed` or PostToolUseFailure. `teammate_spawned`, `async_launched`
+  and `remote_launched` record `spawned` (agent id: `agentId`, `agent_id` or `taskId`). Anything
+  else records `unknown-result` and the lane stays open (fail toward counting).
+- **M4:** the TTL drops only dispatches that never ran (no `spawned`/`unknown-result`). A lane
+  that ran stays counted until closed.
+- **M5:** `PermissionDenied(Agent|Task)` closes the dispatch; labels refreshed from the docs.
+- **m1:** tests for "a close before a re-dispatch does not close it" and "an empty TaskStop ref
+  closes no unnamed lane"; both surviving mutations now fail.
+- **m3, m4, m5:** documented (resumed background agents not recounted; the cap is per session,
+  each teammate being its own session; O(dispatches x events) cost).
+
+## Blind spots (for CHECK_COVERAGE; revision 2 wording is in `.agents/checks.toml`)
 
 - A teammate resumed with SendMessage after TaskStop is not counted.
 - A dispatch whose call never runs and produces no PostToolUse/PostToolUseFailure (the user

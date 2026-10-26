@@ -122,6 +122,79 @@
         @test denied(pre("m3"), r, 2)
         # default cap comes from limits.env (generated from the registry)
         @test occursin("MAX_OPEN_LANES=", read(joinpath(HOOKS, "limits.env"), String))
+
+        # --- the factory028 critic's findings (each was RED on 7c61229) ---
+        # B1: a GONE agent's lane (TaskStop fails validation, no hook fires) is released by `scripts/lane release`
+        r = tmp_repo()
+        @test allow(pre("g1"), r, 1)
+        hook("lane_ledger.sh", post("g1", team("g1")), r)
+        rc, _, err = hook("dispatch_limit.sh", pre("g2"), r; env = cap(1))
+        @test rc == 2 && occursin("scripts/lane release g1", err)
+        rel = capture(() -> Lane.main(["release", "g1", "--repo", r]))
+        @test rel[1] == 0 && occursin("released g1", rel[2])
+        @test occursin("\"session\":\"*\"", last(readlines(led(r))))
+        @test allow(pre("g2"), r, 1)
+        @test capture(() -> Lane.main(["release", "--repo", r]))[1] == 2          # a key is required
+        # M1: concurrent dispatches are serialised by a lock (6 at once, cap 2: exactly 2 pass)
+        for trial in 1:3
+            r = realpath(mktempdir())
+            procs = map(1:6) do i
+                cmd = addenv(`sh $(joinpath(TEST_HOOKS, "dispatch_limit.sh"))`, "CLAUDE_PROJECT_DIR" => r, cap(2)...)
+                run(pipeline(ignorestatus(cmd); stdin = IOBuffer(pre("p$i")), stdout = devnull, stderr = devnull); wait = false)
+            end
+            foreach(wait, procs)
+            @test count(p -> p.exitcode == 0, procs) == 2 || (println("race trial $trial: ", [p.exitcode for p in procs]); false)
+            @test count(l -> occursin("\"ev\":\"dispatch\"", l), readlines(led(r))) == 2
+            @test !isdir(joinpath(r, ".lanes/.dispatch.lock"))
+        end
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/.dispatch.lock"))                # a held lock: deny, fail closed
+        rc, _, err = hook("dispatch_limit.sh", pre("q1"), r; env = cap(5))
+        @test rc == 2 && occursin("lock", err)
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/.dispatch.lock"))                # a stale lock is broken
+        run(`touch -t 202601010000 $(joinpath(r, ".lanes/.dispatch.lock"))`)
+        @test allow(pre("q1"), r, 5)
+        # M2: the description fallback applies only to a ref that names no lane of the session
+        r = realpath(mktempdir())
+        for n in ("ra", "rb")
+            @test allow(pre(n; desc = "Review"), r, 5)
+            hook("lane_ledger.sh", post(n, team(n); desc = "Review"), r)
+        end
+        hook("lane_ledger.sh", stopcall("ra"; cmd = "Review"), r)
+        @test denied(pre("rc"), r, 1)                                                          # rb still open
+        # M3: an unknown result status keeps the lane open (fail toward counting) and is logged
+        r = realpath(mktempdir())
+        @test allow(pre("k1"), r, 1)
+        hook("lane_ledger.sh", post("k1", "{\"status\":\"teammate_started_v2\"}"), r)
+        @test denied(pre("k2"), r, 1)
+        @test any(l -> occursin("\"unknown-result\"", l) && occursin("teammate_started_v2", l), readlines(led(r)))
+        hook("lane_ledger.sh", post("k1", "\"plain text\""), r)                               # not an object: still open
+        @test denied(pre("k2"), r, 1)
+        # M5 (docs): remote_launched is a spawn (open, its taskId closes it); auto mode's PermissionDenied closes
+        r = realpath(mktempdir())
+        @test allow(pre(""; tu = "tuR"), r, 1)
+        hook("lane_ledger.sh", post("", "{\"status\":\"remote_launched\",\"taskId\":\"rt9\"}"; tu = "tuR"), r)
+        @test denied(pre("j1"), r, 1)
+        hook("lane_ledger.sh", stopcall("rt9"), r)
+        @test allow(pre("j1"), r, 1)
+        hook("lane_ledger.sh", post("j1", "{}"; ev = "PermissionDenied"), r)
+        @test allow(pre("j2"), r, 1)
+        # M4: the TTL drops only dispatches that never ran; a spawned long-running lane stays counted
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes"))
+        write(led(r), "{\"ts\":\"2026-01-01T00:00:00Z\",\"ev\":\"dispatch\",\"session\":\"s2\",\"key\":\"sub\",\"name\":\"sub\"}\n" *
+            "{\"ts\":\"2026-01-01T00:00:05Z\",\"ev\":\"spawned\",\"session\":\"s2\",\"key\":\"sub\",\"agent_id\":\"sub@session-s2\"}\n")
+        @test denied(pre("y2"), r, 1)
+        # m1: a close BEFORE a re-dispatch does not close it; an empty TaskStop ref closes no unnamed lane
+        r = realpath(mktempdir())
+        @test allow(pre("c1"), r, 1)
+        hook("lane_ledger.sh", post("c1", team("c1")), r)
+        hook("lane_ledger.sh", stopcall("c1"), r)
+        @test allow(pre("c1"; tu = "tu_c1b"), r, 1)
+        @test denied(pre("c2"), r, 1)
+        r = realpath(mktempdir())
+        @test allow(pre(""; tu = "tuB"), r, 1)
+        hook("lane_ledger.sh", post("", bg("abg"); tu = "tuB"), r)
+        hook("lane_ledger.sh", stopcall(""), r)
+        @test denied(pre("e1"), r, 1)
     end
 
     @testset "precompact writes a snapshot; session_start re-injects it" begin
@@ -173,6 +246,7 @@
             m = readlines(pipeline(`jq -r ".hooks.$ev[]? | select(.hooks[].command | contains(\"lane_ledger.sh\")) | .matcher" $settings`))
             @test m == ["Agent|Task|TaskStop"] || (println("$ev matchers: $m"); false)
         end
+        @test readlines(pipeline(`jq -r '.hooks.PermissionDenied[]? | select(.hooks[].command | contains("lane_ledger.sh")) | .matcher' $settings`)) == ["Agent|Task"]
         # advisory hooks stay fail-open
         adv = readlines(pipeline(`jq -r '.hooks | to_entries[] | select(.key != "PreToolUse") | .value[].hooks[].command' $settings`))
         @test !isempty(adv) && all(c -> !occursin("exit 2", c), adv)

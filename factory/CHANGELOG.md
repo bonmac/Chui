@@ -13,25 +13,41 @@ and in-process teammates never balance those. The coordinator's ledger has 32 st
 and no start. So the open count was always ≤ 0 and `max_open` never fired. Spec:
 `docs/superpowers/specs/2026-10-26-factory-028-design.md`.
 
-The guard is stricter (the cap now fires), which by the rule above would be a minor bump; the user
-chose to ship it as the 0.2.8 patch ahead of the 0.3.0 test-writer work.
+The guard is stricter (the cap now fires), which by the rule above would be a minor bump. It ships
+as 0.2.8 because it restores a guard that was meant to work (a bug fix). The user chose "0.2.8
+patch first", before the 0.3.0 test-writer work, on 2026-10-26, answering the lead's question on
+the cap fix. That is consistent with the user keeping 0.2.x at L0.
 
 - **A lane is an Agent dispatch** (`dispatch_limit.sh`, new sourced `_lanes.sh`, `lane_ledger.sh`,
   `settings.json`, `precompact.sh`).
   - Open: `dispatch_limit.sh` writes `{ev: dispatch, key, name, desc}` when it allows a call. The
     key is `tool_input.name`, else `tu:<tool_use_id>`, else `desc:<description>`.
   - Closed by the lead's own tool results, through `lane_ledger.sh`, now also on PostToolUse and
-    PostToolUseFailure (`Agent|Task|TaskStop`):
-    - an Agent result other than `teammate_spawned` or `async_launched` (a foreground agent that
-      returned), or a failed Agent call;
-    - a `TaskStop`, done or failed, by name. A TaskStop given an internal task id closes by
-      description, as a fallback;
+    PostToolUseFailure (`Agent|Task|TaskStop`) and on PermissionDenied (`Agent|Task`):
+    - an Agent result with status `completed` (a foreground agent that returned), a failed Agent
+      call, or auto mode's denial of it;
+    - a `TaskStop`, by name. A TaskStop whose ref names no lane of the session (an internal task
+      id) closes by description, as a fallback;
     - a background subagent's SubagentStop, whose `agent_id` matches the `agentId` its Agent
       result returned.
+  - `teammate_spawned`, `async_launched` and `remote_launched` keep the lane open. Any other
+    status is logged as `unknown-result` and also keeps the lane open: an unknown status fails
+    toward counting.
+  - `scripts/lane release <name>` closes a lane whose agent is gone. A TaskStop for a gone agent
+    fails validation and fires no hook (hooks docs).
+    - The release is written with session `*` and matches in every session.
+    - The denial names this command.
+  - Read, count and append run under a lock, `.lanes/.dispatch.lock`, because parallel Agent
+    calls passed the cap together.
+    - The hook waits up to 5 s for the lock, then denies.
+    - A lock older than one minute is broken.
+    - A `.lanes/` that cannot be created denies.
   - SubagentStart/Stop stay in the ledger but no longer count on their own.
-  - Re-dispatching an open name counts once. A dispatch older than `FACTORY_LANE_TTL_HOURS`
-    (default 24; 0 = never) stops counting. A `ts` that does not parse counts.
-  - The denial now lists the open lanes and says how to clear one (`TaskStop <name>`).
+  - Re-dispatching an open name counts once.
+  - A dispatch that never ran stops counting after `FACTORY_LANE_TTL_HOURS` (default 24; 0 =
+    never). A lane that ran stays counted until it is closed: sub-leads run for days. A `ts` that
+    does not parse counts.
+  - The cap is per session, and each teammate is its own session.
   - A ledger written before 0.2.8 counts 0 open lanes, because its lines are not dispatches.
 - **The ledger no longer loses the record after a truncated line** (`_lib.sh` `ledger`). A crash
   mid-write left a last line with no newline, and the next `>>` record joined it and was skipped as
@@ -39,19 +55,20 @@ chose to ship it as the 0.2.8 patch ahead of the 0.3.0 test-writer work.
 - **`_lanes.sh` is a new managed hook library** (lane counting, split from `_lib.sh` to stay under
   the 150-line hook budget). `dispatch_limit.sh` fails closed without it; `lane_ledger.sh` and
   `precompact.sh` fail open.
-- `CHECK_COVERAGE` rows for `dispatch_limit` and `lane_ledger` list the new blind spots. The main
-  ones:
+- `CHECK_COVERAGE` rows for `dispatch_limit`, `lane_ledger` and `lane` list the new blind spots.
+  The main ones:
   - a teammate resumed by SendMessage is not counted;
-  - a dispatch that never runs stays open until TaskStop or the TTL;
-  - parallel dispatches in one message are capped only if their PreToolUse hooks run one at a time
-    (UNVERIFIED).
-- The `lane-lifecycle` skill says what opens and closes a lane.
-- Tested by `scripts/test/test_hooks_lifecycle.jl`, whose start/stop testset is replaced. The new
-  cases:
+  - a dispatch denied in a permission dialog stays open until the TTL or `lane release`;
+  - `lane release` trusts the caller.
+- The `lane-lifecycle` skill says what opens and closes a lane, and how to release one.
+- Tested by `scripts/test/test_hooks_lifecycle.jl`, whose start/stop testset is replaced. The cases:
   - the 2026-10-26 regression: stops with no starts, plus named dispatches;
-  - teammate, background and foreground lanes;
-  - TaskStop by name, by internal id, and failed;
-  - re-dispatch, sessions, the TTL, a truncated line, and the settings wiring.
+  - teammate, background, remote and foreground lanes;
+  - TaskStop by name and by internal id;
+  - re-dispatch, sessions, the TTL, a truncated line, and the settings wiring;
+  - the critic's cases: a ghost lane released, 6 concurrent dispatches at cap 2 (exactly 2 pass,
+    3 trials), a held lock and a stale lock, a shared description, an unknown status, a long-lived
+    spawned lane, a close before a re-dispatch, an empty TaskStop ref, and PermissionDenied.
 
   `test_hooks.jl` checks the missing-`_lanes.sh` behaviour.
 

@@ -5,6 +5,10 @@
 #   scripts/lane list [--repo DIR]
 #   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE]
 #   scripts/lane remove <name> [--repo DIR] [--allow-ignored]
+#   scripts/lane release <agent name or lane key> [--repo DIR]
+#
+# release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
+#         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
 #
 # new     refuses past the cap ([lanes] max_open in the repo's .agents/agent-registry.toml,
 #         default 4) and when .worktrees/ is not gitignored; branch <prefix>/<name> from base;
@@ -246,8 +250,23 @@ module Lane
         return 0
     end
 
+    """
+        cmd_release(repo, key)
+
+    Close an agent lane the dispatch cap still counts (factory 0.2.8, critic B1): appends
+    `{ev: close, ref: key, why: released, session: "*"}`, which `_lanes.sh` matches in every session
+    against a dispatch's name, key or agent id. For an agent that is gone: a TaskStop for it fails
+    validation and fires no hook. `key` is sanitised as the hooks' `ledger` does.
+    """
+    function cmd_release(repo, key; io = stdout)
+        k = replace(key, r"[^A-Za-z0-9_./:@-]" => "_")
+        ledger_line(repo, "close"; session = "*", ref = k, why = "released")
+        println(io, "lane: released $k (the dispatch cap no longer counts a lane with that name, key or agent id)")
+        return 0
+    end
+
     function main(args)
-        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored]"
+        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR]"
         opts, pos = try
             parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported"))
         catch e
@@ -264,6 +283,7 @@ module Lane
         sub == "list" && length(pos) == 1 && return cmd_list(repo)
         sub == "new" && length(pos) == 2 && return cmd_new(repo, pos[2], opts)
         sub == "audit" && length(pos) == 2 && return cmd_audit(repo, pos[2], opts)
+        sub == "release" && length(pos) == 2 && !isempty(pos[2]) && return cmd_release(repo, pos[2])
         sub == "remove" && length(pos) == 2 && return cmd_remove(repo, pos[2]; allow_ignored = get(opts, "--allow-ignored", false))
         println(stderr, usage)
         return 2
