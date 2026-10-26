@@ -113,6 +113,23 @@ abspath() {
     normpath "$_p"
 }
 
+# phys ABS (0.3.0, the tdd hooks): ABS with symlinks resolved (a missing tail kept) as RP; one fork.
+phys() {
+    _p=$1 _t="" _n=0
+    while [ -L "$_p" ] && [ "$_n" -lt 20 ]; do _n=$((_n + 1)) _l=$(readlink "$_p"); case $_l in /*) _p=$_l ;; *) _p="${_p%/*}/$_l" ;; esac; done
+    while [ -n "$_p" ] && [ ! -d "$_p" ]; do _t="/${_p##*/}$_t" _p=${_p%/*}; done
+    _r=$(CDPATH='' cd -P -- "${_p:-/}" 2>/dev/null && pwd -P) && RP=${_r%/}$_t || RP=""
+}
+# shellcheck disable=SC2034 # REL is read by the tdd hooks
+# co_of ABS: the checkout holding ABS (nearest ancestor with a .git entry, after phys) as CO, ABS relative to it as REL.
+co_of() {
+    phys "$1"
+    CO=$RP
+    while [ -n "$CO" ] && [ ! -e "$CO/.git" ]; do CO=${CO%/*}; done
+    case $RP in "$CO"/*) REL=${RP#"$CO"/} ;; *) REL="" ;; esac
+}
+in_root() { case $CO in "$ROOT_P" | "$ROOT_P"/*) return 0 ;; esac; return 1; } # CO is at or under the session root
+
 # allowed ABS: true if ABS is inside the repo root, a lane worktree or the reports of its main checkout (in_main), or a scratch location.
 allowed() {
     in_main "$1" && return 0
