@@ -333,19 +333,44 @@ end
             @test any(x -> occursin("tdd_commit_post.sh", x), c)
         end
     end
-    @testset "checks.toml has the tdd and tdd_boundary rows (spec §4.6)" begin
+    @testset "checks.toml has the tdd and tdd_boundary rows (spec §4.6) (tdd_boundary split in two)" begin
+        # spec §4.6 gives tdd_boundary one prose prevented_by naming two hooks; the register invariant in
+        # test_gen.jl ("check register covers every hook and guard script") needs one existing file per row,
+        # so the row splits into tdd_boundary + tdd_commit_post, and their blind spots together are the spec's 10.
         rows = Dict(r["id"] => r for r in TOML.parsefile(joinpath(ROOT, ".agents", "checks.toml"))["checks"])
-        @test haskey(rows, "tdd") && haskey(rows, "tdd_boundary")
+        @test haskey(rows, "tdd") && haskey(rows, "tdd_boundary") && haskey(rows, "tdd_commit_post")
         a, b = get(rows, "tdd", Dict()), get(rows, "tdd_boundary", Dict())
+        c = get(rows, "tdd_commit_post", Dict())
         @test get(a, "prevented_by", "") == "scripts/tdd.jl" && get(a, "test", "") == "scripts/test/test_tdd.jl"
         @test length(get(a, "blind_spots", [])) == 9 && length(get(a, "runs_in", [])) == 2
-        @test get(b, "prevented_by", "") == ".claude/hooks/tdd_boundary.sh (with _tdd_commit_guard.sh) and .claude/hooks/tdd_commit_post.sh"
-        @test get(b, "test", "") == "scripts/test/test_hooks_tdd.jl"
-        @test get(b, "runs_in", []) == ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)",
-            "hook PreToolUse(Agent|Task)", "hook PostToolUse(Bash) and PostToolUseFailure(Bash)"]
-        @test length(get(b, "blind_spots", [])) == 10
-        @test startswith(get(b, "rule", ""), "A test-writer reads and writes only allowlisted paths")
         @test startswith(get(a, "rule", ""), "In a lane that changes src/ext: mode required has a RED")
+        post = ["PostToolUse cannot undo a commit: a violating commit exists until audit E5 fails the lane",
+            "a cancelled Bash call fires no post event: its commit is recorded only by the next call's sweep of .lanes/tdd-pending (marked late), so a session that ends right after a cancelled commit leaves it unrecorded and E5 fails the lane"]
+        spec10 = ["the role comes from agent_type, documented for subagents only; teammates and a missing agent_type leave reads unguarded (TDD lanes are subagent-only)",
+            "the Bash allowlist relies on bash_guard's parser; unparsed forms are denied, not modelled",
+            "test code that reads src at run time is detected after the fact by review, never prevented; an uncommitted read leaves no trace",
+            "run output names src files and lines, and show() can expose fields",
+            "the lead's paraphrase in a brief passes; only review of the saved prompts catches it",
+            post[1], post[2],
+            "E5 needs the local ledger: a fresh clone or CI sees H9 only, and a forged ledger line passes",
+            "fails closed on every Read/Grep/Glob/Bash call, the lead's included, when jq or a library is missing (availability cost)",
+            "two instances of one model share priors; other harnesses (.codex) run no hooks"]
+        # tdd_boundary: the PreToolUse hook
+        @test get(b, "prevented_by", "") == ".claude/hooks/tdd_boundary.sh"
+        @test startswith(get(b, "rule", ""), "A test-writer reads and writes only allowlisted paths")
+        @test get(b, "runs_in", []) == ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)",
+            "hook PreToolUse(Agent|Task)"]
+        @test get(b, "test", "") == "scripts/test/test_hooks_tdd.jl"
+        @test length(get(b, "blind_spots", [])) == 8
+        @test sort(get(b, "blind_spots", String[])) == sort(setdiff(spec10, post))
+        # tdd_commit_post: the post hook
+        @test get(c, "prevented_by", "") == ".claude/hooks/tdd_commit_post.sh"
+        @test get(c, "runs_in", []) == ["hook PostToolUse(Bash) and PostToolUseFailure(Bash)"]
+        @test get(c, "test", "") == "scripts/test/test_hooks_tdd.jl"
+        @test occursin("tdd-commit", get(c, "rule", ""))
+        @test get(c, "blind_spots", []) == post
+        # together: exactly the spec's 10
+        @test sort(vcat(get(b, "blind_spots", String[]), get(c, "blind_spots", String[]))) == sort(spec10)
     end
 
     # ---- fail closed ----
