@@ -10,8 +10,8 @@
 #   tests      src/ or ext/ changed  =>  test/ changed
 #   changelog  CHANGELOG.md changed, or a changelog.d/<name>.md fragment ADDED (0.2.4): lanes in one
 #              repo then never share a file; the release manager folds the fragments into
-#              CHANGELOG.md with `julia scripts/changelog.jl fold`. An added fragment holding a
-#              Markdown heading fails it (0.3.0): the fold refuses it
+#              CHANGELOG.md with `julia scripts/changelog.jl fold`. An added or modified fragment
+#              holding a Markdown heading fails it (0.3.0): the fold refuses it (deleted: not checked)
 #   adr        an NNNN-*.md file in the ADR directory (not the template) changed, or the body cites
 #              ADR-NNNN. The directory is `adr_dir` in .factory-version (from the MANIFEST profile;
 #              `adr` for the coordinator), default docs/adr; --adr-dir overrides it.
@@ -67,7 +67,7 @@ module DoD
             risk, changed::Vector{<:AbstractString}, labels, text::AbstractString;
             kept::Vector{<:AbstractString} = changed, added::Vector{<:AbstractString} = kept,
             adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true,
-            headed::Vector{<:AbstractString} = String[]   # added fragments with a heading (fold refuses them)
+            headed::Vector{<:AbstractString} = String[]   # added/modified fragments with a heading (fold refuses them)
         )
         lt = label_tier(labels)
         pts = filter(!isnothing, [path_tier(risk, f) for f in changed])
@@ -161,7 +161,8 @@ module DoD
         # an empty fragment would never reach CHANGELOG.md (changelog.jl fold refuses it): not evidence
         frag_text(f) = something(git(root, "show", "$head:$f"), "")
         added = filter(f -> !is_fragment(f) || !isempty(strip(frag_text(f))), names("--diff-filter=A"))
-        headed = filter(f -> is_fragment(f) && has_heading(frag_text(f)), added)   # 0.3.0: fold refuses these
+        # 0.3.0: fold refuses these; added OR modified (kept = not deleted), so an edit cannot sneak one in
+        headed = filter(f -> is_fragment(f) && has_heading(frag_text(f)), kept)
         msgs = something(git(root, "log", "--format=%B", "$mb..$head"), "")
         risk = TOML.parsefile(joinpath(root, "risk.toml"))
         # lane_commits reads base..head (review B3); an empty list (tdd fails on a src change) when none
