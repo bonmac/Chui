@@ -1,9 +1,11 @@
 # Factory 0.3.0: a `test-writer` role and test-first lanes
 
-- **Date:** 2026-10-26 (revision 2: the critic's findings on `6b1c4f1` are addressed; the table is in §10)
+- **Date:** 2026-10-26. Revision 2 addressed the critic's findings on `6b1c4f1`. Revision 3 makes
+  context separation the goal, after the user clarified the purpose. Both tables are in §10.
 - **Lane:** testwriter-spec (coordinator; this spec and its plan only)
 - **Asked by the user:** "plan the test-writer role. It should follow proper TDD principles. Write
-  any missing tests once done."
+  any missing tests once done." Clarified purpose (relayed by the lead): "separate the tester
+  from the implementer to have separate contexts and valid testing as per TDD."
 - **Tier:** T3 in every repo that takes it, because the registry, the agent bodies, the gate
   scripts, their tests and `risk.toml` all change. Implementing it needs the user's
   `FACTORY_ALLOW_T3=1` and ADR-0015, which plan Task 0 asks for before any code is written (§7.3).
@@ -13,33 +15,230 @@
   1.10.12, scratch package `TddScratch`; the output is in
   `.lanes/scratch/tw-critic/TddScratch/*.txt` of the main checkout, which is gitignored).
 
-## 0. Problem
+## 0. Goal and design principle: separate contexts
 
-Today the `implementer` writes both the test and the code:
+### 0.1 Goal
+
+**Goal 1, the design principle:** the test is written in a context that has never seen the
+implementation, and the code is written against tests its author cannot change. A test the
+implementer wrote, or one written by an agent that has read the implementer's reasoning, tends to
+restate the code instead of the spec. Then "red, then green" proves only that the code agrees with
+itself. Valid TDD needs a test that comes from the spec, so its red means "the behaviour is
+missing" and its green means "the behaviour now exists".
+
+Everything else in this spec serves goal 1 or gives evidence for it:
+
+- **Separation itself:** two agent instances, a defined boundary (§0.3–0.4), briefs built by a tool
+  (§0.5), per-role git authors (§0.6), and guards (§0.7).
+- **Evidence that the separation held, and that the tests are valid:**
+  - the `TDD:` trailers and the history rules (§4.2) show who changed what, in which order;
+  - the classifier (§3.3) shows each red failed for a behavioural reason;
+  - the audit (§4.3) shows the evidence exists.
+
+  None of these is the point on its own.
+- **Goal 2:** backfill the missing tests in the existing packages, under the same separation (§5).
+
+### 0.2 Problem
+
+Today the `implementer` writes both the test and the code, in one context:
 
 - its `file_scope` is `["src/**", "test/**", "ext/**", "changelog.d/**"]`;
 - its rule is "Test first: write the failing test, run it, see it fail, then implement".
 
-Nothing checks that rule:
+Nothing separates the two, and nothing checks the rule:
 
 - `dod.jl`'s `tests` requirement passes when `test/` changed at all, in any order. The register
   says the check cannot tell "that the changed tests test the changed code".
 - No evidence records that a test was ever red, or why.
-- The author of the code also picks the test, so the test tends to restate the code instead of
-  the spec.
+- The author of the code also picks the test.
 
 The law, property and differential testers already prove that their tests can fail. Unit and
 example tests have no such rule. Every package's `coverage.floor` is `0.0` (the `ratchets.toml` of
 ChuiCore.jl, ChuiTypes.jl and ChuiFrames.jl, read 2026-10-26).
 
+### 0.3 Two distinct agent instances per task
+
+For each plan task, the lead or sub-lead dispatches:
+
+- **one test-writer instance**, spawned fresh with `subagent_type: test-writer` and named
+  `tw-<lane>-<task>`;
+- **one implementer instance**, spawned fresh with `subagent_type: implementer` and named
+  `impl-<lane>-<task>`.
+
+These rules hold for every task:
+
+- **Never one agent switching roles.** No agent is told "now write the tests" after writing code, or
+  the reverse.
+- **Never a fork of the other.** A `fork` inherits its parent's whole context. Neither role is ever
+  dispatched as a fork, and neither is dispatched by an agent that has seen the other side.
+- **Never resumed with the other's transcript.** An agent may be continued with SendMessage *within
+  its own task*, because its transcript then holds only its own side. A new task gets fresh
+  instances.
+- **Neither role dispatches agents**, so neither can launder context through a sub-agent.
+- **Use subagents, not tmux-pane teammates, in TDD lanes.** In-process teammates are fine. The
+  guards in §0.7 identify a role by the hook field `agent_type`. Claude Code documents that field
+  for subagents and in-process teammates (code.claude.com/docs/en/hooks, "Common input fields",
+  read through Context7 on 2026-10-26). For a pane teammate, which is a separate process, it is
+  UNVERIFIED, and plan Task 0 probes it.
+
+### 0.4 What crosses the boundary, and only that
+
+| To | Receives | Never receives |
+|---|---|---|
+| test-writer | the plan task text; the spec (path); the public API docs: `docs/src/` plus docstrings of public names, rendered by `tdd.jl api`; the **STUB diffs** of the lane, which H5 checks are declarations only; the test files and red evidence it made itself; written test-fix requests that passed `brief-check` | anything under `src/`/`ext/` beyond the STUB diffs; any GREEN or REFACTOR diff; the implementer's messages, reports or reasoning; the lane's changelog fragment, HANDOFF and `.lanes/reports/` |
+| implementer | the plan task text; the spec; the **red test files** (paths; it reads them itself); the **red evidence** files | the test-writer's messages, reports or reasoning. It reads the tests, not why they were chosen, and may not edit them (H3/H4) |
+
+**Disputes go in writing, through the sub-lead.** The two roles never talk to each other. The
+implementer writes a **test-fix request** to the sub-lead. It names:
+
+- the item;
+- what is wrong *relative to the spec*, citing the spec line;
+- the expected behaviour it proposes.
+
+A request holds no source code: `brief-check` fails a request with a `src/` or `ext/` path, or a
+line copied from a GREEN or REFACTOR diff. The sub-lead passes it, unchanged, inside a
+`tdd.jl brief` to the test-writer. The test-writer answers with a `test-fix` commit, or with a
+reason, which goes back to the implementer the same way. The lead decides when the two disagree.
+
+### 0.5 Brief templates (built by `tdd.jl brief`, checked by `tdd.jl brief-check`)
+
+The dispatcher does not write a role's brief by hand. It runs
+`tdd.jl brief --role test-writer|implementer --task FILE [--requests FILE...]` and dispatches with
+the output, adding nothing. The tool writes the brief to
+`.lanes/briefs/<lane>/<role>-<task>-<n>.md` (gitignored), headed by
+`<!-- tdd-brief role=<role> lane=<lane> head=<sha> -->`.
+
+**test-writer brief:**
+
+- **Includes:**
+  - `## Task`: the plan task text, from FILE;
+  - `## Spec`: the spec path;
+  - `## Public API`: `tdd.jl api` output (docstrings of exported or `public` names; signatures, no
+    bodies; needs Julia ≥ 1.11) plus a list of `docs/src/` pages;
+  - `## Stub diffs`: `git show` of each `stub` commit in the lane, inside
+    `<!-- stub-diff -->…<!-- /stub-diff -->`. They are included only if H5 passes;
+  - `## Test-fix requests`: each one that passed `brief-check`;
+  - `## Boundary`: the rules in §0.3–0.4, and the read guard in force.
+- **Excludes**, and `brief-check` fails on:
+  - a `src/` or `ext/` path outside the stub-diff block;
+  - any line of 30 or more characters that also appears in a `green`, `refactor` or stub-*body* diff
+    of the lane;
+  - a missing or wrong header.
+
+**implementer brief:**
+
+- **Includes:**
+  - `## Task`;
+  - `## Spec`;
+  - `## Red tests`: the paths of the files touched by the `red`/`test-fix` commits it must turn
+    green, and their sha;
+  - `## Red evidence`: the paths of the `red-<sha7>` files;
+  - `## Boundary`: you may not edit `test/**` (H4), and disputes go as a test-fix request.
+- **Excludes:** the test-writer's report and messages. `brief-check` fails on text taken from
+  `.lanes/reports/tw-*`.
+
+**How the briefs are enforced.**
+
+- **At dispatch.** The `tdd_boundary` hook (§0.7) checks every Agent call with
+  `subagent_type: test-writer` or `implementer`. It denies the call when:
+  - the prompt lacks the matching `tdd-brief` header;
+  - the name does not follow `tw-*` / `impl-*`;
+  - the prompt has a `src/`/`ext/` path outside the stub-diff block (test-writer only).
+
+  The hook also saves each prompt to `.lanes/briefs/<lane>/dispatched/`. SendMessage to a `tw-*`
+  agent gets the same path check and is saved the same way.
+- **At audit.** `tdd.jl audit` rule E5 re-runs the full `brief-check`, including the copied-line
+  check, on every saved prompt and message.
+- **At review.** The reviewer reads the saved briefs (§4.5).
+
+### 0.6 Identity: a git author per role
+
+- **Authors.** Each role's commits carry their own author:
+  - `test-writer <test-writer@factory.invalid>` for `red`, `test-fix`, `test-refactor` and
+    `backfill`;
+  - `implementer <implementer@factory.invalid>` for `stub`, `green` and `refactor`.
+
+  The committer stays the machine's user, and merges are the lead's.
+- **History rule H9 (§4.2).** Each phase commit's author must be its phase's role. dod checks this
+  too.
+- **The commit guard ties the author to the harness, not to the agent's word.** For a `git commit`
+  run in a session or subagent whose hook `agent_type` is `test-writer` or `implementer`, the
+  `tdd_boundary` hook requires `--author` to name exactly that role. It denies other ways of setting
+  the identity (`-c user.*`, `GIT_AUTHOR_*`/`GIT_COMMITTER_*` in the command). It also denies, *for
+  any caller*, a commit whose `--author` names a role the caller is not. So the lead cannot write a
+  `test-writer` commit either.
+- **Staged paths are checked before the commit.** The same hook denies a test-writer commit with
+  staged `src/`/`ext/`/`Project.toml`/`changelog.d/` paths, and an implementer commit with staged
+  `test/**` paths (`git diff --cached --name-only`; about 10 ms).
+
+**What this proves, and what it does not.** It turns "the trailer says test-writer" into "the
+harness reported `agent_type = test-writer` for the process that ran `git commit`, through a
+modelled command". So it partly closes the critic's "one git identity" blind spot. The author is
+still not strong identity:
+
+- one machine and one user set both authors;
+- a commit made through a path bash_guard does not model gets past the commit guard: julia or
+  `sh -c` code, `git commit-tree`, a script, or an amend run outside the hooks;
+- the author records *which role committed*, not *what that agent had read*. The read guard (§0.7)
+  and the briefs (§0.5) cover what it read.
+
+The register's blind spot says exactly this (§4.6).
+
+### 0.7 Mechanical guards: the `tdd_boundary` hook
+
+**Feasible with the current hooks: yes.** PreToolUse hooks already run for every tool call,
+subagents included, and per the Claude Code docs their input carries `agent_type` inside a subagent
+(UNVERIFIED on this machine's version; plan Task 0 probes it). A hook can deny a call.
+`bash_guard.sh` already parses Bash commands into words, wrappers and targets, and keeps a
+read-only command allowlist for the read-only roots. So a new managed hook,
+.claude/hooks/tdd_boundary.sh, with a library `_tdd_boundary_lib.sh` to stay under the 150-line
+hook budget, is registered on `Read|Grep|Glob|Bash|Agent|SendMessage`. It applies only when
+`agent_type` is `test-writer` or `implementer`, or when the call dispatches or messages one.
+
+| Caller | Tool | Rule |
+|---|---|---|
+| test-writer | Read | deny a `file_path` under `<root>/src/`, `<root>/ext/`, any lane worktree's `src/`/`ext/`, `.lanes/reports/`, `.lanes/briefs/` (except its own), `changelog.d/`, `HANDOFF.md` |
+| test-writer | Grep, Glob | deny unless `path` is given and is under an allowed prefix: `test/`, `docs/`, the spec and plan paths, `Project.toml`, `.lanes/evidence/` |
+| test-writer | Bash | **allowlist, default deny**: `julia scripts/{tdd,ci,evidence}.jl …`; `git status`, `git add <test paths>`, `git commit` (the commit guard); `git diff/log/show` only with a pathspec under `test/` and without `-p` for other paths; `ls`, `cat`, `head`, `tail`, `wc`, `grep`/`rg` with explicit allowed-prefix paths. Anything else is denied, including `julia -e`, `sh -c`, `git show <sha>` without a pathspec, and `git blame` |
+| both | Agent | deny: neither role dispatches agents |
+| both | SendMessage | deny unless `to` is a lead name (`[tdd] lead_names` in `.agents/factory.toml`, default `["main", "team-lead"]`) |
+| any | Agent with `subagent_type` test-writer/implementer | the brief checks in §0.5; save the prompt |
+| any | SendMessage to `tw-*` | the path check; save the message |
+| any | Bash `git commit` | the commit guard (§0.6) |
+
+The implementer gets no read restriction. It is meant to read the tests, and nothing it reads
+leaks back to the test-writer, since the reverse channel is guarded.
+
+**Fails closed.** If the hook cannot parse its payload, or a library is missing, it denies, as the
+other guards do. An `agent_type` that is absent leaves reads unguarded, because the hook cannot know
+the role. That is why TDD lanes use subagents (§0.3).
+
+### 0.8 Where separation still leaks
+
+| Leak | Mitigation | Left as a blind spot |
+|---|---|---|
+| The test-writer reads src through git (`git log -p`, `git show <sha>`, `git blame`, `git grep`) | Bash allowlist: git only with `test/` pathspecs | git through code the guard does not model (julia, `sh -c`, scripts) is denied by the allowlist, but only for modelled command forms |
+| Test code reads src at run time (`read(pathof(M))`, `@less`, `@which`, `methods(f)`, `code_lowered`, `include("../src/…")`), and the test-writer runs it | `tdd.jl red` lints the red diff for these forms and fails the run with class `BOUNDARY` | obfuscated or indirect forms; the lint is a pattern list |
+| Run output: stacktraces name `src` files and lines, and `show` of a value can expose struct fields | Accepted: no source text is printed | yes: paths, line numbers and field values reach the test-writer |
+| Shared repo files: `docs/src/` and docstrings written by the implementer | By design: public docs are API, and tests may rely on them | a docstring that describes implementation details |
+| Shared repo files: the changelog fragment, HANDOFF, `.lanes/reports/` | The read guard denies them; the test-writer does not write the fragment (the implementer or the sub-lead does) | content copied into an allowed file |
+| The sub-lead relays: pastes src or the implementer's reasoning into a brief or a message | `tdd.jl brief` builds briefs; the hook checks paths at dispatch and saves prompts; `brief-check` (E5) checks for lines copied from GREEN, REFACTOR or STUB bodies; the reviewer reads the saved briefs | a paraphrase ("make sure you test the cache path") passes every check, so only the reviewer catches it |
+| The lead's own context holds both sides | The lead never writes tests or code in a TDD lane (CLAUDE.md "do not implement") | yes |
+| Backfill mutation sites: the test-writer sees `file:line` and the `--from`/`--to` tokens of the lines it mutates | The sites come from `gaps --lcov`, proposed by the sub-lead or a helper; the tokens of one line only | yes: a narrow, deliberate leak (§5.4) |
+| Same model, same priors: two instances of one model are separate contexts, not independent judges | Tests must cite the spec; reviewer; optionally a different `model` for test-writer (§9 Q9) | yes |
+| A pane teammate without `agent_type` | It cannot make role commits (fail closed), but its reads are unguarded: use subagents | yes, until probed |
+| Another harness (Codex agents in `.codex/agents/`) | None: the hooks are Claude Code's | yes |
+
+
 ## 1. Decision summary
 
 | # | Question | Decision (recommended) |
 |---|---|---|
+| D0 | Context separation (goal 1) | Two fresh agent instances per task, never a role switch, a fork or a shared transcript. A defined boundary (§0.4). Briefs built by `tdd.jl brief` and checked at dispatch and at audit (§0.5). A git author per role, tied to the harness's `agent_type` by a commit guard (§0.6). A `tdd_boundary` hook that denies the test-writer reads of src, its git history and the other side's reports (§0.7). The remaining leaks are listed (§0.8). |
 | D1 | The role | A 13th template role, `test_writer` / `test-writer`, in `write` mode, for unit and example tests only. The implementer's commits may not touch `test/**`, and the history check enforces that (§4.2 rule H4). |
 | D2 | TDD protocol | Per behaviour: STUB (only for new names) → RED → GREEN → REFACTOR, plus `test-fix` and `test-refactor` for changing tests. Each commit carries a `TDD:` trailer, and the history has to follow the order in §3.1. |
 | D3 | Right-reason red | `tdd.jl red` parses only the failure *headers* and classifies each one. An assertion failure counts, and so does any exception raised inside an item, `MethodError` included. Rejected: `UndefVarError`, parse or load errors, a load error caught by `@test_throws`, a run with no summary, a test that passes, and a run that matched no items. |
-| D4 | Enforcement | `tdd.jl audit` runs the history rules H1–H8 plus the evidence rules E1–E4. `dod.jl` gets the history rules as requirement `tdd`. The lead runs both locally before every merge, since Chui merges locally. The lane mode has one source, a `TDD-Mode:` trailer. TDD lanes merge `main` in and never rebase. |
+| D4 | Enforcement | `tdd.jl audit` runs the history rules H1–H9 (H9: per-role authors) plus the evidence rules E1–E5 (E5: saved briefs). `dod.jl` gets the history rules as requirement `tdd`. The lead runs both locally before every merge, since Chui merges locally. The lane mode has one source, a `TDD-Mode:` trailer. TDD lanes merge `main` in and never rebase. |
 | D5 | Backfill | Characterization items are committed first (`TDD: backfill`). Then `tdd.jl mutate` runs each one against a mutated persistent scratch copy and writes evidence `mutate-<slug>`; a wrong-expectation fallback writes `mutexp-<slug>`. `tdd.jl gaps` finds the gaps. Order: ChuiCore, then ChuiTypes, then ChuiFrames. Bugs found become `@test_broken` and are reported. Mutation has a time cap. |
 | D6 | Version | 0.3.0, a minor bump: a guard becomes stricter and a role's scope narrows. |
 | D7 | Coordinator | Its registry does not take the role. The body arrives unused, as `implementer.md` does today. |
@@ -58,8 +257,8 @@ description = "Use in a test-first lane before the implementer writes code, to w
 model = "inherit"
 color = "yellow"
 default_mode = "write"
-file_scope = ["test/**", "changelog.d/**"]
-scorecard = ["each test derived from the spec or public docs, cited", "RED evidence: every new item fails for the right reason (tdd.jl red)", "one behaviour per test item, no implementation details asserted", "backfill: every characterization item killed a mutant (tdd.jl mutate)", "stays out of src/ and the specialist test files"]
+file_scope = ["test/**"]
+scorecard = ["worked only from its tdd.jl brief: no src beyond the stub diffs, no implementer context", "each test derived from the spec or public docs, cited", "RED evidence: every new item fails for the right reason (tdd.jl red)", "one behaviour per test item, no implementation details asserted", "backfill: every characterization item killed a mutant (tdd.jl mutate)", "stays out of src/ and the specialist test files"]
 output_format = "behaviours and their sources, test items written, tdd.jl red or mutate output, disputes and bugs found, checks not run and why, scorecard"
 ```
 
@@ -88,10 +287,15 @@ The user asked for the role. ADR-0015 records the decision before anything is bu
 
 ### 2.2 Body (new .agents/bodies/test_writer.md, managed)
 
+0. **Your context is the boundary.** You work only from your `tdd.jl brief` (§0.4–0.5). Never read
+   `src/`, `ext/`, their git history, the implementer's reports or the lane's changelog fragment,
+   and never ask for them. The `tdd_boundary` hook denies most of these; the rest is on you. Write
+   only to the lead. Commit with `--author "test-writer <test-writer@factory.invalid>"`.
 1. **Derive each test from a stated source.** A source is a spec or plan line, a docstring,
    `docs/src/`, a contract entry or an ADR; cite it in the item name or a one-line comment.
-   - In a TDD lane, read no `src/` beyond the STUB diff.
-   - Never test code you wrote.
+   - Beyond the docs, the only view of `src/` you get is the STUB diffs in your brief.
+   - Never test code you wrote. Never write test code that reads source (`pathof`, `@less`,
+     `methods`, `read` of a src file): `tdd.jl red` fails such code as `BOUNDARY`.
 2. **One behaviour per `@testitem`.** Name the behaviour, for example
    `"select: unknown column throws ArgumentError naming it"`, and keep the assertions few and about
    that behaviour.
@@ -108,9 +312,10 @@ The user asked for the role. ADR-0015 records the decision before anything is bu
      caught that way, but it cannot see one caught inside a law or property kit (§4.5).
 5. **Stay out of the code.** Never edit `src/`, `ext/` or `Project.toml`. If a stub is missing,
    name it in your report; the implementer adds it (§3.2).
-6. **Disputes.** When the implementer disputes a test, answer with either:
+6. **Disputes.** A dispute reaches you only as a written test-fix request inside a new brief, never
+   as a conversation (§0.4). Answer with either:
    - a `TDD: test-fix` commit, re-checked by `tdd.jl red`; or
-   - a written reason why the test stands.
+   - a written reason why the test stands, sent to the lead.
 
    The lead decides if you two disagree.
 7. **`test-refactor`.** Restructure tests, for example extract a shared `@testsnippet`, only after
@@ -118,14 +323,15 @@ The user asked for the role. ADR-0015 records the decision before anything is bu
    weakened; the reviewer checks this.
 8. **Backfill** (§5). Commit items with `TDD: backfill`, then run `tdd.jl mutate` for each one
    against that commit. A bug becomes `@test_broken` plus a report line; never fix it yourself.
-9. **Shared rules.** Edit/Write only; add a changelog fragment; report the changed files as a list;
-   say which checks did not run.
+9. **Shared rules.** Edit/Write only. Report the changed files as a list, and say which checks did
+   not run. You do not write the changelog fragment; the implementer or the sub-lead does, because
+   it may describe the implementation.
 
 ### 2.3 What changes for the other roles
 
 | Role | Change |
 |---|---|
-| implementer | `file_scope = ["src/**", "ext/**", "changelog.d/**"]`. New role line: "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged." New rules: never touch `test/**` (rule H4 fails the lane); a test you dispute goes back to the test-writer; STUB declares only (rule H5 checks it); GREEN is the minimal code that passes the red items; REFACTOR only after a green. Scorecard: "failing test written first" becomes "tdd.jl audit OK". |
+| implementer | `file_scope = ["src/**", "ext/**", "changelog.d/**"]`. New role line: "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged." New rules: you work from your `tdd.jl brief` (the task, the spec, the red test files and the red evidence), never from the test-writer's messages; commit with `--author "implementer <implementer@factory.invalid>"`; message only the lead, and dispatch no agents; never touch `test/**` (rule H4 fails the lane); a test you dispute goes to the sub-lead as a written test-fix request, with no source code in it (§0.4); you write the lane's changelog fragment; STUB declares only (rule H5 checks it); GREEN is the minimal code that passes the red items; REFACTOR only after a green. Scorecard: "failing test written first" becomes "tdd.jl audit OK". |
 | law-tester, property-tester, differential-tester | Scope unchanged. One added line: "In a test-first lane, commit new items with `TDD: red` before the code; `tdd.jl red` checks them." Their "plant a violation" rule stays. |
 | reviewer | The checklist in §4.4. |
 | contract-steward | No change. |
@@ -144,8 +350,9 @@ TEST-REFACTOR test-writer  test/** only, after a green             TDD: test-ref
 BACKFILL      test-writer  test/** only, characterization items    TDD: backfill      + mutate evidence per item
 ```
 
-- **One worktree, turn-taking.** A lane is one worktree and one branch. The two agents take turns
-  and never run at once. Each agent commits before it hands over. The lead dispatches them in order.
+- **One worktree, two instances, turn-taking.** A lane is one worktree and one branch. Its two
+  agents are separate instances (§0.3). They take turns, never run at once, and commit before they
+  hand over. The sub-lead dispatches each one with a fresh `tdd.jl brief` and relays nothing else.
 - **Small steps.** A RED commit covers one behaviour, or a small group the plan names, in a few
   items. A plan task with five behaviours runs five cycles.
 - **Trailers.** `TDD: <phase>` is a git trailer. The lane's oldest non-merge commit also carries
@@ -196,6 +403,7 @@ TestItemRunner prints every failure as a header line, the same on 1.10.12 and 1.
 | `PASSED` | a requested item with no header | no |
 | `NOT-RUN` | a requested item that the runner did not select (§3.4) | no |
 | `COLLATERAL` | a header inside the span of an item that was not requested | no (the run fails) |
+| `BOUNDARY` | the red diff's test code reads source (`pathof(`, `@less`, `@edit`, `@which`, `@code_`, `code_lowered`, `methods(`, `read(` or `open(` on a path containing `src/`, `include(` of a `src/` path); a lint run before the tests (§0.8) | no (the run fails) |
 
 - **An item is red** when it has at least one `ASSERTION` or `BEHAVIOUR` header and no
   `WRONG-REASON` header. **The run passes** when every requested item is red and nothing is
@@ -258,11 +466,18 @@ julia scripts/tdd.jl green  [--root DIR]               the lane's red items pass
 julia scripts/tdd.jl audit  [--root DIR] [--base B]    history rules H1-H8 + evidence rules E1-E4
 julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S
 julia scripts/tdd.jl gaps   [--root DIR] [--lcov FILE] public names with no test; uncovered lines (Julia >= 1.11)
+julia scripts/tdd.jl api    [--root DIR]               docstrings of exported/public names, no bodies (Julia >= 1.11)
+julia scripts/tdd.jl brief  --role R --task FILE [--requests FILE...]   build a role's brief (§0.5)
+julia scripts/tdd.jl brief-check --role R FILE        lint a brief, request or message against the boundary
 ```
+
+The context-boundary hook, .claude/hooks/tdd_boundary.sh (with `_tdd_boundary_lib.sh`;
+managed, T3), is specified in §0.7.
 
 - Each file stays under the 400-line `scripts/*.jl` budget. The classifier goes in
   scripts/_tdd_classify.jl, the history rules in scripts/_tdd_history.jl (which `dod.jl` includes
-  as well), and mutate and gaps in scripts/_tdd_backfill.jl.
+  as well), mutate and gaps in scripts/_tdd_backfill.jl, and api, brief and brief-check in
+  scripts/_tdd_brief.jl.
 - The new phase vocabulary: `stub | red | green | refactor | test-fix | test-refactor | backfill`.
 - The modes: `required | refactor | skip`.
 
@@ -276,12 +491,13 @@ commit; when it is absent, the mode is `required`. Let *code* mean `src/**` or `
 |---|---|
 | H1 | If no commit changes code, PASS: rules H2–H8 do not apply. Otherwise every commit that changes code has a phase trailer. |
 | H2 | At least one `red` commit exists (B1: a lane of only `stub`/`refactor` commits FAILS). |
-| H3 | Paths by phase. `stub`, `green` and `refactor` change no `test/**`. `red`, `test-fix`, `test-refactor` and `backfill` change no code and no `Project.toml`. |
+| H3 | Paths by phase. `stub`, `green` and `refactor` change no `test/**`. `red`, `test-fix`, `test-refactor` and `backfill` change no code, no `Project.toml` and no `changelog.d/`. |
 | H4 | The implementer's test ban: no commit without a test-writer phase (`red`, `test-fix`, `test-refactor`, `backfill`) touches `test/**` (M4; this is H3 seen from the other side, listed for the register). |
 | H5 | A `stub` adds only declarations. tdd.jl parses each changed `src`/`ext` file at the commit and at its parent (`Meta.parseall`) and compares the top-level expressions. The new ones may only be `function NAME end`; a `struct`/`mutable struct`/`abstract type`/`primitive type` whose body holds only field declarations (no inner constructors, no methods); `export`/`public`; a docstring attached to one of these; or `using`/`import`. Any other new or changed top-level expression FAILS. |
 | H6 | Order. A `stub` is followed by a `red` before any `green`. Each `green` comes after a `red`/`test-fix` with no other `green` since that red (one green per red: squash small steps). A `refactor` or `test-refactor` comes after a `green`, with no `red` waiting for its green in between. |
 | H7 | The last code-changing phase in the lane is `green` or `refactor`, so a lane does not end on a red. |
 | H8 | Mode `refactor`: no `red`/`green`/`stub`; every code commit is `refactor`; no commit touches `test/**`. Mode `skip`: the `TDD-Mode:` line carries a reason, and no other rule applies. |
+| H9 | Authorship (§0.6): every `red`, `test-fix`, `test-refactor` and `backfill` commit is authored `test-writer <test-writer@factory.invalid>`, and every `stub`, `green` and `refactor` commit is authored `implementer <implementer@factory.invalid>`. No commit without a phase carries either role author. Together with the commit guard, this ties each phase to the harness role that ran it. |
 
 ### 4.3 Evidence rules (`tdd.jl audit` only; the files are local and gitignored)
 
@@ -291,6 +507,7 @@ commit; when it is absent, the mode is `required`. Let *code* mean `src/**` or `
 | E2 | Every `green`, `refactor` and `test-refactor` commit has `green-<sha7>` that passed. In mode `refactor`, the merge base also needs a passing `green-<sha7>` (green before the change). |
 | E3 | Every item a `backfill` commit adds has a `mutate-<slug>` or `mutexp-<slug>` file, at that commit or a later lane commit, that passed (§5.2). The exception: an item whose only assertions are `@test_broken` (m4) is listed, not proved. |
 | E4 | No evidence file is `dirty: true` or has `termsignal ≠ 0`. |
+| E5 | Boundary (§0.5): every test-writer and implementer dispatch in the lane has a saved prompt in `.lanes/briefs/<lane>/dispatched/`, and so does every message to a `tw-*` agent. Each one passes the full `brief-check` against the lane's history at audit time, including the check for lines copied from GREEN, REFACTOR or STUB-body diffs. |
 
 ### 4.4 Where it runs, merges and rebases
 
@@ -309,6 +526,15 @@ commit; when it is absent, the mode is `required`. Let *code* mean `src/**` or `
 
 ### 4.5 Reviewer checklist (body additions)
 
+- **Context boundary first.**
+  - Read every saved brief and message in `.lanes/briefs/<lane>/dispatched/`.
+  - None of them carries src, the implementer's reasoning or a paraphrase of the implementation
+    ("test the cache path"). `brief-check` cannot catch a paraphrase.
+  - Each role was a fresh instance: the lane ledger shows separate `agent_id`s with `agent_type`
+    test-writer and implementer, and no fork.
+  - The commit authors match H9.
+  - `tdd_boundary` denials in the ledger show attempts to cross the boundary. Read each one: it is a
+    finding, even when the guard held.
 - `tdd.jl audit` and `dod.jl` outputs pasted and OK; the `TDD-Mode:` reason holds.
 - RED items cite their source and assert behaviour, not implementation.
 - For each `BEHAVIOUR` red caused by a `MethodError`: the call's arguments match the spec's
@@ -319,7 +545,7 @@ commit; when it is absent, the mode is `required`. Let *code* mean `src/**` or `
 - Backfill: each mutation changes behaviour the item claims to test; every `mutexp` fallback is
   justified.
 
-### 4.6 Register row (`.agents/checks.toml`)
+### 4.6 Register rows (`.agents/checks.toml`)
 
 ```toml
 [[checks]]
@@ -329,7 +555,7 @@ prevented_by = "scripts/tdd.jl"
 runs_in = ["local /change-review: tdd.jl audit (history + evidence) and dod.jl requirement `tdd` (history) before every merge", "ci Guards dod.jl on pull_request only (Chui merges locally: none today)"]
 test = "scripts/test/test_tdd.jl"
 blind_spots = [
-  "`TDD:` trailers are self-declared: one git identity serves every agent, so an implementer commit labelled `test-fix` passes H3/H4; the lane ledger records which agents ran, not which commit each made",
+  "authorship (H9) ties a phase to the harness role only through the tdd_boundary commit guard: one machine and one user set both authors, and a commit made outside the modelled command forms (julia/sh -c code, git commit-tree, a script, a hook-less session) can carry any author and trailer; the author records which role committed, not what that agent had read",
   "evidence is gitignored (.lanes/evidence/): rules E1-E4 run only on the machine that made it; dod.jl checks history only",
   "that a test is derived from the spec and not the code, asserts behaviour rather than implementation, that GREEN is minimal, that a test-refactor weakens nothing",
   "a MethodError from wrong arguments is classed BEHAVIOUR (reviewer checks the signature)",
@@ -338,7 +564,24 @@ blind_spots = [
   "a rebase or squash orphans sha-keyed evidence and the order; merge commits are skipped, so a test edit made while resolving a conflict is seen only by the reviewer (`git show --cc`)",
   "H5 compares top-level expressions: a declaration-only struct can still hide behaviour in a field type or a `Base.@kwdef` default (a macro call is not a declaration, so @kwdef fails H5)",
   "mutate proves the item fails for ONE mutation, not how strong it is; `mutexp` (wrong expectation) proves only that the assertion runs",
-  "gaps: a public name counts as tested if it appears as a whole word anywhere in test/ (short names like `map` give false positives); needs Julia >= 1.11 for Base.ispublic"
+  "gaps: a public name counts as tested if it appears as a whole word anywhere in test/ (short names like `map` give false positives); needs Julia >= 1.11 for Base.ispublic",
+  "test code that reads source at run time is caught only by the BOUNDARY lint's pattern list"
+]
+
+[[checks]]
+id = "tdd_boundary"
+rule = "The test-writer works in a separate context: it cannot read src/ext, their git history, the implementer's reports or the lane's changelog fragment; neither role dispatches agents or messages anyone but the lead; test-writer/implementer dispatches carry a tdd.jl brief that holds no src outside the checked stub diffs, and are saved; a git commit's role author matches the caller's agent_type, and its staged paths match the role"
+prevented_by = ".claude/hooks/tdd_boundary.sh"
+runs_in = ["hook PreToolUse(Read|Grep|Glob|Bash|Agent|SendMessage)"]
+test = "scripts/test/test_hooks_tdd.jl"
+blind_spots = [
+  "the role comes from the hook input's agent_type, documented for subagents and in-process teammates; a tmux-pane teammate may not carry it (UNVERIFIED), and then its reads are unguarded (its role commits still fail closed)",
+  "the Bash allowlist is only as good as bash_guard's parser: forms it does not model (see bash_guard's blind spots) are denied by default only when recognised as commands at all",
+  "run output reaches the test-writer: stacktraces name src files and lines, and `show` of a value can expose fields",
+  "a sub-lead's paraphrase of the implementation passes the path check and the copied-line check; only the reviewer reading the saved briefs catches it",
+  "docs/src and docstrings are shared by design and may describe implementation",
+  "the lead's own context holds both sides; two instances of one model share priors (separate contexts, not independent judges)",
+  "other harnesses (.codex/agents) run no Claude Code hooks"
 ]
 ```
 
@@ -379,7 +622,9 @@ Each mutate run:
    a fresh precompile, and on 1.10 a re-resolve.
 2. **Mutation.** Apply one textual replacement, `--from` to `--to`, at `--src F:LINE` (in `src/`;
    the default proof) or `--expect F:LINE` (the item's expected value in `test/`; the fallback,
-   m5). It is exit 2 if `--from` is not on that line.
+   m5). It is exit 2 if `--from` is not on that line. Because the test-writer runs mutate, nothing
+   mutate prints, and nothing it writes to the evidence file, quotes the `src` line: only
+   `F:LINE`, `--from` and `--to`, which the test-writer already holds (§0.8).
 3. **Run.** Run the item there (`item=NAME`, with `TDD_MATCHED` set). It must be matched and FAIL
    with an `ASSERTION` or `BEHAVIOUR` on a non-`@test_broken` assertion. A `WRONG-REASON` result
    means the mutation broke loading, so pick another.
@@ -399,7 +644,7 @@ the full suite on `julia +lts` still runs at the end of the lane.
 - **Per mutant:** a recompile of the mutated package with its test dependencies already warm, plus
   the item run. That is 30–120 s for ChuiCore-sized packages, so 60 items take about 0.5 to 2 hours
   of machine time.
-- **Cap:** plan Task 11 measures one area first (about 10 items). When the projection for the
+- **Cap:** plan Task 13 measures one area first (about 10 items). When the projection for the
   package exceeds **2 hours per lane**, the lead splits the backfill into area lanes. Lanes in one
   repo run one at a time, because they share the depot's precompile locks. Or the user accepts the
   cost at a ★ checkpoint. Sampling items, with the rest left unproved, is not allowed.
@@ -416,7 +661,14 @@ the full suite on `julia +lts` still runs at the end of the lane.
 ### 5.4 Lanes and order
 
 One backfill lane per package, in that package's repo. File scope: `test/**` minus the specialist
-paths, plus its fragment. Mode `required`; the lane changes no code, so H1 passes, and E3 still
+paths. The sub-lead writes the lane's fragment, because the test-writer may not touch
+`changelog.d/` (H3). The test-writer's briefs hold the gaps list, `tdd.jl api` and the spec or docs;
+for backfill it has no stub diffs and reads no `src/`. **Backfill under the boundary:** the
+test-writer chooses `mutate --src F:LINE` targets without reading src. So the sub-lead, or a separate
+read-only helper agent that never talks to the test-writer, proposes the mutation sites. Each one
+comes from the uncovered-lines list (`gaps --lcov`) as `file:line` plus `--from`/`--to` tokens, and
+the test-writer only picks one per item. Seeing a line's tokens, never the function, is accepted
+as a narrow leak (§0.8). Mode `required`; the lane changes no code, so H1 passes, and E3 still
 applies.
 
 | Order | Package | When |
@@ -435,7 +687,7 @@ applies.
 - a dispute round (sometimes).
 
 That is 2–4 more agent handoffs per task, each with a fresh context, run in sequence. Expect
-roughly 1.5–2× the wall-clock per task (an estimate; plan Task 8 measures it).
+roughly 1.5–2× the wall-clock per task (an estimate; plan Task 10 measures it).
 
 **Modes.** The lead decides in the brief. The lane's first commit carries
 `TDD-Mode: <mode> — <reason>`; the reason is required for `refactor` and `skip`. That trailer is the
@@ -468,10 +720,10 @@ meant to be blocked. Here every code lane's workflow changes. **Recommendation: 
 
 | Repo | Sync brings (managed) | Hand edits (seeded; T3 there) |
 |---|---|---|
-| ChuiCore.jl | tdd.jl and its three helpers, test_tdd.jl, test_writer.md, the changed bodies, `checks.toml`, `dod.jl`, `/change-review`, the lane-lifecycle skill | the registry entry and the implementer scope; `risk.toml` (`tdd` added to T1–T3 `requires`, the 4 new scripts added to the T3 globs); `test/runtests.jl` (the selection block). Waits for v0.0.1. |
+| ChuiCore.jl | tdd.jl and its four helpers, test_tdd.jl, `tdd_boundary.sh` and its lib, the hook's test file, `.claude/settings.json` (the new matcher), test_writer.md, the changed bodies, `checks.toml`, `dod.jl`, `/change-review`, the lane-lifecycle skill | the registry entry and the implementer scope; `risk.toml` (`tdd` added to T1–T3 `requires`, the 5 new scripts added to the T3 globs; the hook is already covered by `.claude/hooks/*`); `test/runtests.jl` (the selection block); `.agents/factory.toml` `[tdd] lead_names` if the default does not fit. Waits for v0.0.1. |
 | ChuiTypes.jl | same | same; after its phase-5 branches merge |
 | ChuiFrames.jl | same | same; after its `feat/p4-*` branches merge |
-| coordinator | same managed files (the body is unused) | `risk.toml`: the 4 new scripts in its T3 globs. The registry is unchanged (D7). |
+| coordinator | same managed files (the body is unused) | `risk.toml`: the 5 new scripts in its T3 globs. The registry is unchanged (D7). |
 
 **D7.** The coordinator has no `test/` tree; the profile excludes `test/*`. Its tests are the
 factory's `scripts/test/*`, which `coord_factory_maintainer` writes. **Recommendation:** no
@@ -483,7 +735,7 @@ H1's sense. Revisit if factory changes keep landing with tests written after the
 1. **ADR-0015**, "Test-first lanes with a separate test-writer" (coordinator `adr/`). It records D1
    (the 13th role), D3, D4, D6 and the answers to §9. The user accepts it **before** plan Task 1
    (M7).
-2. **`FACTORY_ALLOW_T3=1`** for the coordinator sync session (Task 9). The sync writes
+2. **`FACTORY_ALLOW_T3=1`** for the coordinator sync session (plan Task 11). The sync writes
    `.agents/bodies/*`, `scripts/*` and `.agents/checks.toml`.
 3. **Per package:** the hand edits (§7.2), and later the `coverage.floor` raise (§5.1).
 
@@ -495,11 +747,24 @@ H1's sense. Revisit if factory changes keep landing with tests written after the
     `@test_throws` + `Thrown: UndefVarError` → WRONG-REASON, `new method on existing g` → BEHAVIOUR,
     the helper → BEHAVIOUR + HELPER, the nested testset prefix, `ERROR: LoadError: Some tests did not pass` ignored,
     and `Total 0` → NOT-RUN;
-  - each history rule H1–H8, on synthetic commit lists and on a scratch git repo for H5;
-  - each evidence rule E1–E4;
+  - each history rule H1–H9, on synthetic commit lists and on a scratch git repo for H5;
+  - each evidence rule E1–E5;
   - mutate: a killed mutant, a surviving mutant, a load-breaking mutation, a dirty tree, an
     unmatched name, the scratch file restored after a throw, two items at one sha giving two files;
   - gaps.
+- **scripts/test/test_hooks_tdd.jl (new):** hook payloads for each row of the §0.7 table. Both
+  allowed and denied cases are tested, with and without `agent_type`, plus a malformed payload
+  (fail closed) and a missing library (fail closed). This covers:
+  - a test-writer `Read` of `src/x.jl` → denied;
+  - `git show HEAD` → denied; `git log -- test/` → allowed;
+  - `julia -e` → denied;
+  - a commit with the wrong `--author` → denied; a lead commit with a role author → denied;
+  - an implementer commit with staged `test/` → denied;
+  - a dispatch without the brief header → denied;
+  - a SendMessage from the test-writer to `impl-*` → denied.
+- **`test_tdd.jl` additions:** `brief` and `brief-check`: a src path outside the stub block, a line
+  copied from a green diff, a request holding source, a missing header. Also the `BOUNDARY` lint
+  forms, H9, and E5.
 - **`test_dod.jl`:** the `tdd` requirement, delegating to the history rules.
 - **`test_gen.jl`:** 13 agents, and the implementer scope without `test/**`.
 - **`test_runtests_template.jl`:** `item=` selection, `:contract` never selected, the stable-only
@@ -507,7 +772,7 @@ H1's sense. Revisit if factory changes keep landing with tests written after the
 
 **Dogfood limit (m7).** The factory's own tests are `@testset`s in `scripts/test/`, not
 `@testitem`s, and the factory has no `src/`. So `tdd.jl red` cannot classify the factory's reds,
-and `tdd.jl audit` on the factory lane passes vacuously through H1. Plan Tasks 1–8 use a separate
+and `tdd.jl audit` on the factory lane passes vacuously through H1. Plan Tasks 1–10 use a separate
 test-writer subagent and paste the raw failing output. That is process discipline, not a
 mechanical check, and the report must say so.
 
@@ -534,6 +799,14 @@ mechanical check, and the report must say so.
 7. **Raise `coverage.floor` after each backfill?** Yes: 1 point below the measured value, set by the
    user.
 8. **A coordinator test-writer?** No (D7).
+9. **A different model for the test-writer?** Two instances of one model share priors (§0.8).
+   Recommendation: keep `model = "inherit"` for now, and record in the dogfood measurement (plan
+   Task 10) whether the reviewer finds tests that mirror the implementation. Revisit if it does.
+10. **The read guard: deny by default (a Bash allowlist) or deny a list of reads?** Deny by default
+    (§0.7). A list of denied reads misses every read tool it does not name. The cost is that the
+    test-writer cannot use ad-hoc shell commands.
+11. **TDD lanes with subagents only, until the pane-teammate `agent_type` probe passes?** Yes
+    (§0.3).
 
 ## 10. Revision 2: critic findings → changes
 
@@ -559,3 +832,14 @@ mechanical check, and the report must say so.
 | m7: dogfood audit is vacuous | Stated as a limit: the factory's reds are pasted raw and do not count as a mechanical review (§7.4) |
 | m8: nobody refactors tests | A `test-refactor` phase for the test-writer, after a green, with green evidence; the reviewer checks no assertion is weakened (§2.2, §3.1) |
 | m9: `item=` bypassed exclusions | `:contract` is excluded first and the stable-only exclusion is kept for named items (§3.4) |
+
+### Revision 3: the user's clarified purpose → changes
+
+| Lead's item | Change |
+|---|---|
+| 1. Context separation is goal 1 and the design principle; trailers, classifier and audit are its evidence | New §0.1 (goal and principle); D0 in the decision table; the problem restated as one context (§0.2) |
+| 2. Two distinct instances: no role switch, no fork, no resume with the other's transcript; no pasting of src or reasoning | §0.3: fresh `subagent_type` dispatches named `tw-*`/`impl-*`; continuation only within one's own task; neither role dispatches agents; the hook denies dispatches without a brief (§0.5, §0.7) |
+| 3. What crosses the boundary; disputes as written test-fix requests through the sub-lead | §0.4 table (receives / never receives); requests are checked by `brief-check` and carry no src; §2.2 rule 6 and the implementer's rules updated; backfill mutation sites are proposed by the sub-lead or a separate helper, as tokens only (§5.4); the test-writer no longer writes the changelog fragment (scope `test/**`; H3) |
+| 4. A git author per role, H-rules on authorship, an honest blind spot | §0.6 authors `test-writer|implementer <…@factory.invalid>`; H9; a commit guard that ties `--author` to the hook's `agent_type` and checks the staged paths; the old "one git identity" blind spot rewritten (§4.6): it is partly closed, since one machine sets both |
+| 5. Brief templates; the reviewer checks the briefs | §0.5 include/exclude lists for both roles; `tdd.jl brief` and `brief-check`; prompts saved at dispatch; E5; the reviewer's boundary-first checklist (§4.5) |
+| 6. Leaks, and whether reads can be denied mechanically | §0.8 leak table. §0.7: feasible: the `tdd_boundary` PreToolUse hook (Read/Grep/Glob/Bash allowlist, Agent, SendMessage, commit guard), keyed on the documented `agent_type`; the version on this machine is UNVERIFIED (plan Task 0 probe). A new `BOUNDARY` class for test code that reads source; a new register row `tdd_boundary` |

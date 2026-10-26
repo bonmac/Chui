@@ -2,8 +2,15 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add the `test-writer` role and mechanically checked test-first lanes (scripts/tdd.jl) to
-the factory template, release them as 0.3.0, then backfill the missing tests in the three packages.
+**Goal:** Separate the tester's context from the implementer's, so that TDD tests come from the
+spec and not from the code. The deliverables:
+
+- the `test-writer` role;
+- the context-boundary hook, the brief builder and per-role git authors;
+- the evidence that the separation held: tdd.jl's red classifier, history rules and audit.
+
+Release them as factory 0.3.0, then backfill the missing tests in the three packages under the same
+separation.
 
 **Architecture:** The work is split into four files:
 
@@ -15,6 +22,12 @@ the factory template, release them as 0.3.0, then backfill the missing tests in 
 - scripts/tdd.jl wires them into subcommands and runs tests through `evidence.jl`.
 
 The seeded runner gains `item=` selection and a `TDD_MATCHED` record of what it actually ran.
+A new managed hook, `tdd_boundary.sh`, enforces the context boundary at the harness. It works from
+the hook input's `agent_type`, and covers:
+
+- reads by the test-writer;
+- dispatches and messages;
+- the commit author and staged paths.
 
 **Tech Stack:** Julia 1.13.2 and 1.10.12 (juliaup `julia` and `julia +lts`), TestItemRunner ≥ 1.3.2,
 git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `dod.jl`, `gen.jl`).
@@ -40,13 +53,24 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
     kind is at most 40 characters.
 - Classes: `ASSERTION | BEHAVIOUR | WRONG-REASON | PASSED | NOT-RUN | COLLATERAL`, with the
   `HELPER` flag (spec §3.3, verbatim).
+- **Context boundary (spec §0):**
+  - **Authors:** `test-writer <test-writer@factory.invalid>`, `implementer <implementer@factory.invalid>`.
+  - **Agent names:** `tw-<lane>-<task>` and `impl-<lane>-<task>`.
+  - **Brief header:** `<!-- tdd-brief role=<role> lane=<lane> head=<sha> -->`.
+  - **Stub block markers:** `<!-- stub-diff -->` … `<!-- /stub-diff -->`.
+  - **Lead names:** default `["main", "team-lead"]`, from `[tdd] lead_names` in `.agents/factory.toml`.
 - Exit codes: 0 OK, 1 NOT OK, 2 could not evaluate (also used for a dirty tree, a bad argument, or
   no `@testitem` in a red commit).
 - Edit/Write only on tracked files. No `sed -i`, redirects or heredocs.
 - TDD lanes merge `main` in and never rebase.
 - Reference repos are read only: run nothing there.
-- **Dogfood (spec §7.4):** for each task, a separate subagent briefed with the draft `test_writer`
-  body writes the step-1 tests. Paste the raw failing output. The factory's tests are `@testset`s
+- **Dogfood (spec §7.4) keeps the separation by hand:**
+  - For each task, a fresh subagent briefed with the draft `test_writer` body writes the step-1
+    tests. Its brief holds only that task's text, the spec and the Interfaces block. It gets no
+    script source, and is never the factory-maintainer or a fork of it.
+  - The factory-maintainer then implements from the committed tests.
+  - Paste the raw failing output.
+  - Until Task 9 lands, no hook enforces any of this. The factory's tests are `@testset`s
   and the factory has no `src/`, so `tdd.jl red`/`audit` cannot check this lane. Say so in the
   report.
 
@@ -63,6 +87,10 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
    `"two items at one sha give two files"`.
 5. **A `test-fix` commit that also touches `src/`** must fail H3, even though `test-fix` is a
    test-writer phase. Task 5: `"test-fix touching src fails H3"`.
+6. **A test-writer that reads src through git** (`git show HEAD`, `git log -p`) must be denied,
+   while `git log -- test/` is allowed. Task 9: `"git show without test pathspec denied"`.
+7. **A sub-lead that pastes a GREEN line into a test-writer brief** must fail `brief-check` (E5).
+   Task 8: `"brief with a copied green line fails"`.
 
 ---
 
@@ -75,8 +103,19 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
 - [ ] **Step 2:** The critic reviews the ADR.
 - [ ] **Step 3:** ★ The user answers §9 and accepts ADR-0015. Record the answers in the ADR. Any
   answer that differs from the spec's recommendation goes back to this spec lane first.
-- [ ] **Step 4:** The user sets `FACTORY_ALLOW_T3=1` for the session that runs Task 9. Tasks 1–8
+- [ ] **Step 4:** The user sets `FACTORY_ALLOW_T3=1` for the session that runs Task 11. Tasks 1–10
   write only `factory/**`, which is T2 in the coordinator.
+- [ ] **Step 5: The `agent_type` probe**, which the boundary depends on (spec §0.3, §0.7).
+  - In a scratch copy of the template under `.lanes/scratch/`, register a PreToolUse hook on
+    `Read|Bash|Agent|SendMessage` that appends its JSON input to a log.
+  - Dispatch, from a session started in that scratch root:
+    1. a subagent with `subagent_type` set to a custom agent named `test-writer`;
+    2. an in-process teammate of that type;
+    3. if available, a tmux-pane teammate;
+    4. a `fork`.
+  - Record `agent_type` and `agent_id` for each. Paste the log lines.
+  - If a subagent's `agent_type` is not `test-writer`, stop at a ★: the hook design (Task 9) needs
+    another source of the role.
 
 ### Task 1: Failure-output fixtures
 
@@ -223,14 +262,16 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
 
 **Interfaces:**
 - Produces:
-  - `struct LaneCommit; sha::String; phase::Union{Nothing, String}; mode::Union{Nothing, Tuple{String, String}}; paths::Vector{String}; end`.
+  - `struct LaneCommit; sha::String; author::String; phase::Union{Nothing, String}; mode::Union{Nothing, Tuple{String, String}}; paths::Vector{String}; end`.
+    `author` is `"Name <email>"` from `%an <%ae>`.
   - `lane_commits(root, base)::Vector{LaneCommit}`, from `git rev-list --no-merges --reverse`.
   - `trailers(msg)::NamedTuple{(:phase, :mode)}`.
   - `history_rules(commits; stub_ok::Function)::Vector{String}`. It is pure and checks spec §4.2
-    H1–H8. `stub_ok(sha)::Bool` runs H5; the callers inject it.
+    H1–H9. `stub_ok(sha)::Bool` runs H5; the callers inject it.
   - `stub_declares_only(root, sha)::Bool`, which compares the top-level expressions of the parent
     and the commit for each changed src/ext file.
-  - `evidence_rules(root, commits)::Vector{String}`, for E1–E4.
+  - `evidence_rules(root, commits)::Vector{String}`, for E1–E4. E5 is added in Task 8, once
+    `brief-check` exists.
   - `audit(root; base, io)::Int`, which prints the problems, then `tdd audit: OK` or `NOT OK`.
 
 - [ ] **Step 1: Failing tests** (synthetic `LaneCommit` lists unless noted):
@@ -257,6 +298,9 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
   - `"backfill item without mutate evidence fails E3"`
   - `"@test_broken-only item exempt from E3"`
   - `"dirty evidence fails E4"`
+  - `"red commit authored implementer fails H9"`
+  - `"green commit authored test-writer fails H9"`
+  - `"phase-less commit with a role author fails H9"`
 - [ ] **Step 2:** STUB, then see the tests fail.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Green on both versions.
@@ -310,7 +354,7 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
 **Files:**
 - Modify `scripts/dod.jl`: `evaluate` gains `commits = nothing` and `stub_ok`; `main` builds them
   with `lane_commits` and `stub_declares_only`.
-- Modify `risk.toml` (seeded): add `tdd` to the T1, T2 and T3 `requires`; add the four tdd scripts
+- Modify `risk.toml` (seeded): add `tdd` to the T1, T2 and T3 `requires`; add the five tdd scripts (tdd.jl, _tdd_classify.jl, _tdd_history.jl, _tdd_backfill.jl, _tdd_brief.jl)
   to the T3 globs; add the comment for `tdd`.
 - Test: `scripts/test/test_dod.jl`.
 
@@ -331,7 +375,105 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
   factory lane and paste it.
 - [ ] **Step 5:** Commit: `feat(factory): dod tdd requirement`.
 
-### Task 8: Registry, bodies, register, skill, docs; VERSION 0.3.0
+### Task 8: `tdd.jl api`, `brief`, `brief-check`, the BOUNDARY lint, rule E5
+
+**Files:** Modify scripts/tdd.jl and scripts/_tdd_history.jl. Create scripts/_tdd_brief.jl. Test:
+scripts/test/test_tdd.jl.
+
+**Interfaces:**
+- Consumes: `lane_commits`, `stub_declares_only` (Task 5); `item_spans` (Task 3).
+- Produces:
+  - `api(root; io)::Int`. Julia ≥ 1.11, else exit 2 with `NOT RUN`. For each exported or `public`
+    name it prints `## name` and `Base.Docs.doc(binding)` as text: docstrings only, never method
+    bodies. It runs in the package's test environment as a subprocess.
+  - `brief(root; role, task_file, requests = String[], io)::Int`. It writes
+    `.lanes/briefs/<lane>/<role>-<task>-<n>.md` with the spec §0.5 sections, in order, and the
+    header. For a test-writer it includes stub diffs only when `stub_declares_only` holds, else
+    exit 1 naming the stub. It runs `brief_check` on its own output before writing, and prints the
+    path.
+  - `brief_check(root, text; role)::Vector{String}`. The problems, per spec §0.5 Excludes:
+    - a src/ext path outside the stub block;
+    - a line of 30 or more characters (after `strip`) that occurs in any lane `green`, `refactor`
+      or stub-body diff;
+    - for an implementer, text from `.lanes/reports/tw-*`;
+    - a missing or mismatched header.
+  - `boundary_lint(diff_text)::Vector{String}`: the spec §3.3 BOUNDARY forms, found in the added
+    lines of a red diff. `red()` calls it first, and on any hit exits 1 with class `BOUNDARY`.
+  - E5 in `evidence_rules`: every file in `.lanes/briefs/<lane>/dispatched/` passes `brief_check`.
+
+- [ ] **Step 1: Failing tests:**
+  - `"api prints docstrings, not bodies"`
+  - `"api on 1.10 exits 2 NOT RUN"`
+  - `"brief test-writer has the five sections and the header"`
+  - `"brief refuses a stub that fails H5"`
+  - `"brief with a src path outside the stub block fails"`
+  - `"brief with a copied green line fails"`
+  - `"request holding a src line fails"`
+  - `"implementer brief with test-writer report text fails"`
+  - `"BOUNDARY: pathof, @less, methods(, read of src path"`
+  - `"red exits 1 on BOUNDARY before running"`
+  - `"E5: saved dispatch failing brief-check fails audit"`
+- [ ] **Step 2:** STUB, then see the tests fail.
+- [ ] **Step 3:** Implement.
+- [ ] **Step 4:** Green on both versions (the `api` tests run on 1.13 only).
+- [ ] **Step 5:** Commit: `feat(factory): tdd briefs and boundary lint`.
+
+### Task 9: The `tdd_boundary` hook
+
+**Files:**
+- Create .claude/hooks/tdd_boundary.sh and .claude/hooks/_tdd_boundary_lib.sh (each ≤ 150
+  lines).
+- Modify `.claude/settings.json` (a PreToolUse matcher `Read|Grep|Glob|Bash|Agent|SendMessage` that
+  runs `tdd_boundary.sh` through the same fail-closed `sh -c '… exit 2'` wrapper as the other
+  guards) and `.agents/factory.toml` (seeded: `[tdd] lead_names`).
+- Test: scripts/test/test_hooks_tdd.jl (new; registered in `scripts/test/runtests.jl`).
+
+**Interfaces:**
+- Consumes: `_lib.sh` (`field`, `ledger`, `ROOT`, `MAIN`), and `_bash_guard_lib.sh`'s word
+  splitter and wrapper handling (sourced, never copied).
+- Produces: exit 0 (allow), or exit 2 with a message on stderr naming the rule and spec §0.7 (deny).
+  Each denial appends a `tdd-boundary-denied` ledger line `{agent_type, tool, rule}`. Prompts and
+  `tw-*` messages are saved to `.lanes/briefs/<lane>/dispatched/<ts>-<name>.md`. The lane comes from
+  the brief header; with no header the call is denied anyway.
+
+- [ ] **Step 1: Failing tests**, one payload per spec §0.7 row, allowed and denied:
+  - `"test-writer Read src denied"`
+  - `"test-writer Read test allowed"`
+  - `"test-writer Read lane report denied"`
+  - `"test-writer Grep without path denied"`
+  - `"test-writer Grep test/ allowed"`
+  - `"git show without test pathspec denied"`
+  - `"git log -- test/ allowed"`
+  - `"git log -p -- src denied"`
+  - `"julia -e denied"`
+  - `"julia tdd.jl red allowed"` (the command `julia scripts/` + `tdd.jl red`)
+  - `"cat src/x.jl denied"`
+  - `"rg foo (no path) denied"`
+  - `"implementer Read src allowed"`
+  - `"either role Agent denied"`
+  - `"SendMessage to impl-x from test-writer denied"`
+  - `"SendMessage to team-lead allowed"`
+  - `"dispatch test-writer without brief header denied"`
+  - `"dispatch test-writer with src path outside stub block denied"`
+  - `"dispatch with name not tw-* denied"`
+  - `"dispatch prompt saved"`
+  - `"commit by test-writer with implementer author denied"`
+  - `"commit by lead with a role author denied"`
+  - `"commit with -c user.name denied"`
+  - `"test-writer commit with staged src denied"`
+  - `"implementer commit with staged test denied"`
+  - `"no agent_type: reads allowed, role commit denied"`
+  - `"malformed payload fails closed"`
+  - `"missing library fails closed"`
+- [ ] **Step 2:** Write the hook skeleton that exits 0 for every payload, then see the deny cases
+  fail.
+- [ ] **Step 3:** Implement. Add the `tdd_boundary` row (spec §4.6) to `.agents/checks.toml` here,
+  so that `test_gen.jl`'s "every hook registered" test holds.
+- [ ] **Step 4:** Green on both versions. Time the hook per call on the test payloads; the target is
+  under 30 ms, like bash_guard. Paste the timing.
+- [ ] **Step 5:** Commit: `feat(factory): tdd_boundary context guard`.
+
+### Task 10: Registry, bodies, register, skill, docs; VERSION 0.3.0
 
 **Files:**
 - `.agents/agent-registry.toml` (seeded): the spec §2.1 entry; the implementer's role,
@@ -359,10 +501,10 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
 - [ ] **Step 4:** Run the full template suite and `gen.jl --check` on both versions, through
   `evidence.jl`, and paste the totals.
 - [ ] **Step 5:** Measure the dogfood cost: count the handoffs and the wall-clock per task for
-  Tasks 2–7 from the lane ledger, and put the numbers in the CHANGELOG entry.
+  Tasks 2–9 from the lane ledger, and put the numbers in the CHANGELOG entry.
 - [ ] **Step 6:** Commit: `feat(factory): test-writer role, factory 0.3.0`.
 
-### Task 9: Review and coordinator sync
+### Task 11: Review and coordinator sync
 
 - [ ] **Step 1:** The critic, then the reviewer, on the factory branch. The report says that
   `tdd.jl audit` on this lane is vacuous (spec §7.4), and that the dogfood reds were pasted raw.
@@ -370,11 +512,11 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
   `julia factory/template/scripts/sync_factory.jl --from factory --to . --profile coordinator`.
   A conflict goes to the lead; never `--force`.
 - [ ] **Step 3:** `--apply` (with the user's `FACTORY_ALLOW_T3=1` from Task 0). Hand-edit the
-  coordinator `risk.toml` T3 globs (add the four tdd scripts). Run `julia scripts/gen.jl`,
+  coordinator `risk.toml` T3 globs (add the five tdd scripts). Run `julia scripts/gen.jl`,
   `julia scripts/test/runtests.jl` and `julia scripts/check_docs.jl`: all must be OK.
 - [ ] **Step 4:** Commit, review, merge.
 
-### Task 10: Package syncs (one lane per package, in that repo)
+### Task 12: Package syncs (one lane per package, in that repo)
 
 - [ ] **ChuiCore.jl**, after v0.0.1 is tagged:
   - sync 0.3.0 (dry run first);
@@ -385,10 +527,12 @@ git trailers, and the existing factory scripts (`_common.jl`, `evidence.jl`, `do
 - [ ] **ChuiTypes.jl**: the same, after `feat/phase5`, `feat/p5-perf` and `feat/p5-ttfx` merge.
 - [ ] **ChuiFrames.jl**: the same, after the `feat/p4-*` branches merge.
 
-### Task 11: Backfill missing tests (the user's second request)
+### Task 13: Backfill missing tests (the user's second request)
 
 One `test-writer` lane per package, in this order: ChuiCore.jl, ChuiTypes.jl, ChuiFrames.jl, each
-after its Task 10 lane merges. Create it with `scripts/lane new backfill --prefix test --owns '<test files>'`.
+after its Task 12 lane merges. The test-writer is a fresh `tw-backfill-*` subagent working from
+`tdd.jl brief` output, and the `tdd_boundary` hook is active. The sub-lead proposes the mutation
+sites from `gaps --lcov` as `file:line` plus tokens (spec §5.4), and writes the changelog fragment. Create it with `scripts/lane new backfill --prefix test --owns '<test files>'`.
 No `TDD-Mode:` is needed, because the lane changes no code (H1). E3 still applies.
 
 - [ ] **Step 1:** Run `tdd.jl gaps` on 1.13 (and with `--lcov` if Task 6 made that work locally).
