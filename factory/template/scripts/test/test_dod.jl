@@ -87,6 +87,33 @@
         @test rc == 0 && occursin(r"\[PASS\] changelog +changelog fragment changelog\.d/lane-f\.md added", out)
     end
 
+    # 0.3.0 (cl-headings): `changelog.jl fold` refuses a fragment holding a Markdown heading, so dod
+    # must not accept one as evidence (ChuiFrames had 14 such fragments, the coordinator 5)
+    @testset "a fragment with a heading fails changelog (0.3.0)" begin
+        d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n"))
+        sh(`git -C $d checkout -q -b feat/h`)
+        commit!(
+            d, Dict("docs/x.md" => "y\n", "changelog.d/lane-h.md" => "### Added\n\n- feat: X\n"),
+            "docs: X\n\nPlan: docs/superpowers/plans/2026-10-27-h.md"
+        )
+        rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
+        @test rc == 1 && fails(out) == ["changelog"] || (print(out); false)
+        @test occursin(r"\[FAIL\] changelog +changelog\.d/lane-h\.md contains a Markdown heading.*changelog\.jl fold", out) ||
+            (print(out); false)
+        commit!(d, Dict("CHANGELOG.md" => "- X\n"), "docs: CHANGELOG")   # the fold still breaks: still a fail
+        rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
+        @test rc == 1 && fails(out) == ["changelog"] || (print(out); false)
+        commit!(d, Dict("changelog.d/lane-h.md" => "- **Added:**\n  - feat: X (# not a heading)\n"), "docs: list items")
+        rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
+        @test rc == 0 || (print(out); false)
+        # dod duplicates changelog.jl's heading regex (no shared helper there): keep the two in step
+        cl = read(joinpath(ROOT, "scripts", "changelog.jl"), String)
+        @test isdefined(DoD, :FRAGMENT_HEADING) && occursin(DoD.FRAGMENT_HEADING.pattern, cl)
+        @test isdefined(DoD, :FRAGMENT_HEADING) &&
+            all(l -> occursin(DoD.FRAGMENT_HEADING, l), ["# A", "### Added", "   ## x", "##"]) &&
+            !any(l -> occursin(DoD.FRAGMENT_HEADING, l), ["- # x", "    # code", "#tag", "- feat"])
+    end
+
     @testset "CLI on a real branch" begin
         d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
