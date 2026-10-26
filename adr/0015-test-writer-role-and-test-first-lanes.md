@@ -1,7 +1,8 @@
 # ADR-0015: Test-writer role and test-first lanes
 
-- **Status:** Proposed. The user accepts it at the merge of `feat/testwriter-spec`. The six design
-  questions in it were already answered by the user on 2026-10-26.
+- **Status:** Accepted (2026-10-26, user, at the merge of `feat/testwriter-spec`). The six design
+  questions in it were answered by the user the same day. Implementation follows the plan, after
+  factory 0.2.8.
 - **Date:** 2026-10-26
 - **Deciders:** the user. The change is T3 in every repo that takes it: the registry, the bodies,
   the hooks and the gate scripts.
