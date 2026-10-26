@@ -65,10 +65,10 @@ function item_run(dir, name, spans; io)
     name in r.matched || return (NOT_RUN, r, Pair{String, Symbol}[name => NOT_RUN])
     result = classify(r.output, spans, ItemSpan[], r.matched; termsignal = r.termsignal)
     own = [p.second for p in result if p.first == name]
-    # Wrong reasons the classifier does not see: a package that no longer loads fails its items with
-    # Pkg's "The following 1 package failed to precompile:"; a `@test_broken` that now passes
-    # ("Unexpected Pass") is not a kill on a non-broken assertion (spec §5.2).
-    occursin(r"Failed to precompile \S+ \[|Unexpected Pass", r.output) && (result = Pair{String, Symbol}[name => WRONG_REASON])
+    # A wrong reason the classifier does not see (a package that fails to precompile it does see,
+    # REJECTED): a `@test_broken` that now passes ("Unexpected Pass") is not a kill on a non-broken
+    # assertion (spec §5.2).
+    occursin("Unexpected Pass", r.output) && (result = Pair{String, Symbol}[name => WRONG_REASON])
     class = any(p -> p.second === WRONG_REASON, result) ? WRONG_REASON :
         (isempty(own) || total < 1) ? NOT_RUN : first(own)
     return (class, r, result)

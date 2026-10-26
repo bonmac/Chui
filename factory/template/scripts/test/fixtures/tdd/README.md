@@ -26,6 +26,7 @@ The critic's `TddScratch` (`<root>/.lanes/scratch/tw-critic/TddScratch`), with `
 | `setup module` (new) | `setup_tests.jl` | its `setup = [BrokenSetup]` module throws UndefVarError at load |
 | `none` (new) | none | `item=nosuch` matches nothing: exit 0, `Total 0` |
 | `killed` (new) | `killed_tests.jl` | the test process gets SIGTERM while the item sleeps |
+| `precompile fail` (new; run as `item=assert`) | `items_tests.jl` | made in a scratch copy of scratchpkg with its `scripts/test/fixtures/tdd/scratchpkg/src/TddScratch.jl` line 4 changed to `g(x) = x + 1)`, run with `item=assert`: the package fails to precompile, so `assert` errors with `Got exception outside of a @test` and 1.13's `The following 1 package failed to precompile:` or 1.10's `Failed to precompile TddScratch [...]` (outputs `precompile-fail-1.13.txt`, `precompile-fail-1.10.txt`) |
 
 The `stub outside test` and `typo outside` cases do not break the package or the file: each fails only
 its own item, with `Got exception outside of a @test` and a `LoadError: ` prefix. One source tree serves

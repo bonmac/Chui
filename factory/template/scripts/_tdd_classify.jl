@@ -23,8 +23,11 @@ const HEADER_RE = r"^(.+): (Test Failed|Error During Test) at (.+):(\d+)$"
 
 """
 Exceptions that make a failure the wrong reason (spec §3.3): a missing name or a typo, a file that
-does not parse or load, a missing package. Matched against an exception line with one `LoadError: `
-removed, and against a `@test_throws` block's `Thrown:` type or message.
+does not parse or load, a missing package, a package that fails to precompile. Matched against an
+exception line with one `LoadError: ` removed, and against a `@test_throws` block's `Thrown:` type or
+message. The precompile lines are measured (fixtures/tdd/README.md, `precompile-fail`): 1.13's first
+exception line is `The following 1 package failed to precompile:`, 1.10's is
+`Failed to precompile <Pkg> [<uuid>] to ...`.
 """
 const REJECTED = (
     r"^UndefVarError\b",
@@ -34,6 +37,8 @@ const REJECTED = (
     r"^SystemError: opening file",
     r"^(ArgumentError: )?Package \S+ not found",
     r"^ArgumentError: Package\b",
+    r"^Failed to precompile \S+ \[",
+    r"^The following \d+ .*failed to precompile",
 )
 
 rejected(s::AbstractString) = any(re -> occursin(re, s), REJECTED)
