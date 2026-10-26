@@ -34,6 +34,10 @@ function is_stable(env = ENV, v = VERSION)
         throw(ArgumentError("CI_STABLE must be \"true\", \"false\" or unset, got $(repr(s))"))
 end
 # --- end stable-only tags ---
+# --- item selection ---
+function select_item end
+function record_match end
+# --- end item selection ---
 # JET is not here: see test/jet/.
 const EXCLUDE = is_stable() ?
     (:slow, :quality, :contract, :differential) :
