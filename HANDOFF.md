@@ -61,6 +61,11 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
   - **B1 (CF-008):** a collected join side keeps unobserved dictionary levels, so `group_by(...; drop=false)` above a join shows n=0 groups that eager doesn't.
   - Fix lane p4-levels was approved by the lead. After it merges, the FULL gate set plus `dod.jl --base main` run at the new head, and the quiet window waits until then.
   - p4-levels merged as 9ef025e (reviewer FINAL APPROVE WITH CONDITIONS: 0/2880 bad cases at the lane head against 30/1806 at af85082; MINOR-1 fixed in 470c8fe, MINOR-2..5 recorded as phase-5 follow-ups). The full gate set runs at d410a46.
+- Full phase-4 gates were green at frames d410a46, with `dod.jl --base main` DONE and no waiver:
+  - tests: 14788 / t4 14789 / lts 14740 / diff 1970 / slow-t4 35;
+  - quality, JET, guards, docs: all OK;
+  - bench-check: 138/138 on both versions.
+- **User, 2026-10-26: defer the quiet timing run.** Load is about 8, all of it from outside Chui (Chrome, mediaanalysisd). The phase-4 time rows are INCONCLUSIVE. The quiet run (ttfx and run.jl `--check` on 1.13 and LTS, plus `ci.jl bench` against main) becomes a gate before ChuiFrames' first release. Next: the final reviewer FINAL, then the ★ (ADRs 0023–0025 and the ADR-0022 rule 1 note), then the lead's main merge.
 - Follow-up (lead-owned, before any ChuiFrames release): `scripts/changelog.jl fold` rejects fragments that hold Markdown headings, and that rule is by design. Fragments with `###` headings:
   - ChuiFrames: phase1-research, phase2-eager, phase2b-tidyr, phase2c-perf, phase3-lazy, and the phase-4 fragments;
   - coordinator: eco-amend, adr-0011-amend, frames-reqs, requests-p4p3, sync-027.
