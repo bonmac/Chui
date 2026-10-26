@@ -94,16 +94,17 @@ POSIX sh + jq hooks; git trailers; the existing factory scripts.
 
 ### Task 0: ADR-0015, the user's answers, and the `agent_type` probe in topology (a)
 
-**Files:** Create (lead): `adr/0015-test-first-lanes-and-test-writer.md`. Temporary (removed in
-step 6): a probe agent .claude/agents/tw-probe.md and a logging hook entry in the coordinator's
-`.claude/settings.json`. Both are T3.
+**Files:** `adr/0015-test-writer-role-and-test-first-lanes.md`, drafted as Proposed in the spec
+lane. Temporary (removed in step 6): a probe agent .claude/agents/tw-probe.md and a logging hook
+entry in the coordinator's `.claude/settings.json`. Both are T3.
 
-- [ ] **Step 1:** The lead drafts ADR-0015 from spec D0, D1, D3, D4, D6 and D7. It lists the 6
-  questions of spec §8 with their recommendations.
-- [ ] **Step 2:** The critic reviews the ADR.
-- [ ] **Step 3:** ★ The user answers the questions, accepts the ADR, and sets `FACTORY_ALLOW_T3=1`
-  for the probe and Task 10. An answer that differs from the recommendation comes back to the spec
-  lane first.
+**Prerequisite:** factory 0.2.8 (the dispatch_limit fix, spec §13) is merged in `factory/`.
+
+- [x] **Step 1:** ADR-0015 drafted from spec D0, D1, D3, D4, D6, D7 and §8 (spec lane, 2026-10-26).
+- [x] **Step 2:** The user answered spec §8 on 2026-10-26, all six questions, recorded in spec §8
+  and the ADR.
+- [ ] **Step 3:** ★ The user accepts ADR-0015 at the spec branch's merge, and sets
+  `FACTORY_ALLOW_T3=1` for the probe and Task 10.
 - [ ] **Step 4: The probe, in the real topology.**
   - Add the temporary `tw-probe` agent (tools: Read, Bash) and a PreToolUse hook on
     `Read|Bash|Agent|Task`, plus SubagentStart and SubagentStop hooks, that append their JSON input

@@ -682,23 +682,24 @@ writes the fragment.
 - glob negation;
 - TDD config in `lane.jl`.
 
-## 8. Open questions for the user (6, each with a recommendation)
+## 8. Decided (user, 2026-10-26)
 
-1. **Topology:** (a) the coordinator dispatches the roles, or (b) package-rooted sessions?
-   (a) (§0.3).
-2. **An implementer edit to `test/**`: FAIL or flag?** FAIL (H3/H4, the hook, the commit guard).
-3. **New names: STUB commits, or accept `UndefVarError`?** STUB, with H5 descending into modules;
-   new methods need none (§3.2).
-4. **Backfill proof: a src mutation or a wrong expectation?** A src mutation run by a separate
-   mutator agent,
-   with `mutexp` as a justified fallback (§5.2).
-5. **The mutation cost cap?** 2 h per lane; split or accept, never sample (§5.2).
-6. **Raise `coverage.floor` after backfill?** Yes, to the measured value minus 1 point, set by
-   you.
+The user answered the six open questions on 2026-10-26, relayed by the lead. Each answer is final
+for 0.3.0 and is recorded in ADR-0015.
 
-Decided without asking:
+1. **Topology: (a).** The coordinator dispatches the roles (§0.3).
+2. **An implementer edit to `test/**` FAILS** the lane: H3/H4, the hook and the commit guard.
+3. **New names get STUB commits.** H5 descends into modules; new methods need no stub (§3.2).
+4. **The backfill proof is a src mutation run by a separate mutator agent.** `mutexp` is a
+   fallback, justified each time it is used (§5.2).
+5. **Mutation cost is capped at 2 h per backfill lane.** Above the cap, split the lane or accept
+   the cost; never sample (§5.2).
+6. **The coverage floor is set by the user** after each backfill, to the measured value minus 1
+   point (§5.1).
 
-- the 13th role (you asked for it);
+Decided earlier, without a question:
+
+- the 13th role (the user asked for it);
 - 0.3.0 (the CHANGELOG rule);
 - subagent-only lanes until the probe passes;
 - the read guard as an allowlist (the lead's ruling).
@@ -710,6 +711,10 @@ Decided without asking:
 The factory CHANGELOG rule: "a breaking change (… a stricter guard) bumps the minor version while
 below 1.0". This release has stricter guards (dod `tdd`, `tdd_boundary`), a narrowed implementer and
 a new seeded edit.
+
+**It builds on 0.2.8.** The dispatch_limit fix (§13) ships first, separately, as factory 0.2.8, and
+0.3.0 starts from the 0.2.8 template. Each repo takes 0.2.8 before 0.3.0. Plan Task 1 starts only
+after 0.2.8 is merged in `factory/`.
 
 ### 9.2 What each repo needs
 
@@ -724,7 +729,9 @@ coordinator's.
 
 ### 9.3 Approvals (plan Task 0)
 
-1. ADR-0015, accepted before Task 1.
+1. ADR-0015 (drafted as Proposed in this lane, `adr/0015-test-writer-role-and-test-first-lanes.md`),
+   accepted by the user at this branch's merge, before Task 1. The §8 answers are already recorded,
+   so Task 0's question step is complete.
 2. `FACTORY_ALLOW_T3=1`:
    - for the probe in Task 0, which adds a temporary probe agent and logging hook to the coordinator;
    - for the coordinator sync and registry edit in Task 10.
@@ -866,5 +873,6 @@ Context separation became goal 1 (§0.1). It brought:
   - `dispatch_limit.sh` counts open lanes from SubagentStart events in the ledger, and none have
     been logged since 2026-10-20, so its open count is 0 and the `max_open` cap never applies.
   - The likely cause, UNVERIFIED, is that this lead's agents are in-process teammates.
-  - The lead files a separate request; this spec does not change dispatch_limit.
+  - **The fix ships first, separately, as factory 0.2.8** (the lead's decision, 2026-10-26). This
+    spec does not change dispatch_limit; 0.3.0 builds on 0.2.8 (§9.1).
   - The same cause is why the `tdd-commit` ledger lines (§0.5) do not rely on SubagentStart/Stop.
