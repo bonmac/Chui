@@ -28,7 +28,7 @@ separation.
 **Tech Stack:** Julia 1.13.2 and 1.10.12 (juliaup `julia`, `julia +lts`); TestItemRunner ≥ 1.3.2;
 POSIX sh + jq hooks; git trailers; the existing factory scripts.
 
-**Spec:** `docs/superpowers/specs/2026-10-26-factory-test-writer-design.md` (revision 5)
+**Spec:** `docs/superpowers/specs/2026-10-26-factory-test-writer-design.md` (revision 6)
 
 ## Global Constraints
 
@@ -140,6 +140,26 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 
 - [ ] **Step 1:** Copy `<root>/.lanes/scratch/tw-critic/TddScratch` into the fixture directory and add
   the four new cases.
+- [ ] **Step 1b: Parse-level fixtures**, used by named RED tests in Tasks 5 and 8. They are copied
+  verbatim; the critic measured each one on 1.13.2 and 1.10.12.
+  - **H5 pairs** into scripts/test/fixtures/tdd/h5/:
+    - `p2.jl`/`c2.jl` (`@compat public` grows), `p3.jl`/`c3.jl` and `p5.jl`/`c5.jl` (deletions),
+      `p4.jl`/`c4.jl` (stub above a documented method), `p6.jl`/`c6.jl` (stub above an
+      undocumented method), from `<root>/.lanes/scratch/tw-critic4/`;
+    - `parent.jl`/`child.jl` (exports inside the module block), from the same place;
+    - `names-p.jl`/`names-c.jl`. `names-p.jl` holds three verbatim lines of
+      `ChuiCore.jl/src/names.jl` (`@compat public neutral, curry, fmap, pure, ap, traverse, sequence`,
+      `@compat public Law, ExactEq, default_eq`,
+      `@compat public init, partial, combine, final, iscommutative, combineall, default_monoid`)
+      inside `module M … end`. `names-c.jl` is the same with `, newname` appended to the second
+      line and `function newname end` added.
+  - **Git scenarios** into scripts/test/fixtures/tdd/git/, as small shell scripts that build a
+    scratch repo, one per case:
+    - `amend.sh` (an implementer HEAD, then `git add test/t.jl && git commit --amend --no-edit`);
+    - `C-HEAD.sh` (`git commit -C HEAD`);
+    - `amend-author.sh` (`--amend --no-edit --author "test-writer <…>"`);
+    - `C-reset-author.sh` (`--allow-empty -C <green> --reset-author`, which prints the green
+      subject).
 - [ ] **Step 2:** Run each case on 1.13.2 and 1.10.12
   (`JULIA_PKG_OFFLINE=true julia --project=. -e 'using Pkg; Pkg.test(test_args=ARGS)' -- "item=<case>"`).
   Save the outputs.
@@ -273,12 +293,17 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `lane_commits(root, base)` (from `git rev-list --no-merges --reverse`; the author from `%an <%ae>`);
   - `trailers(msg)`;
   - `history_rules(commits; stub_ok::Function)::Vector{String}` for H1–H9 (pure);
-  - `stub_declares_only(root, sha)::Bool`. It applies `remove_linenums!` to both sides, descends
-    into `module`/`baremodule` bodies, and compares multisets. Allowed additions include
-    `@compat public`/`export` and `include` of an added declaration-only file. Removals are allowed
-    only when an export or public statement is replaced by a superset (spec §4.2 H5);
-  - `evidence_rules(root, commits; ledger)` for E1–E5. E5 reads `tdd-commit` and
-    `tdd-commit-violation` lines from `<main>/.lanes/ledger.jsonl`;
+  - `strip_lines!(ex)`, which applies `remove_linenums!` and also sets each macrocall's `args[2]` to
+    `nothing`;
+  - `is_compat_decl(ex)::Bool`, true for `macrocall(@compat | Compat.@compat, _, :public, Symbol | tuple of Symbol)`
+    and for `macrocall(@compat | Compat.@compat, _, Expr(:export, …))`;
+  - `stub_declares_only(root, sha)::Bool`. It runs `strip_lines!` on both sides, descends into
+    `module`/`baremodule` bodies, and compares multisets. Allowed additions: spec §4.2 H5,
+    `is_compat_decl` included. Removals are allowed only when an export or public statement is
+    replaced by a superset;
+  - `evidence_rules(root, commits; ledger::String)` for E1–E5. `ledger` is the TDD ledger
+    (spec §0.5), taken from `--ledger`. Its default is the outermost directory above `root` that holds
+    `.lanes/ledger.jsonl`;
   - `audit(root; base, io)::Int`.
 
 - [ ] **Step 1: Failing tests:**
@@ -296,11 +321,18 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
     parent.jl/child.jl pair)
   - `"stub adding include of a new declaration-only file passes H5"`
   - `"stub adding include of a file with a method fails H5"`
-  - **`"stub adding a name to @compat public passes H5"`** (NB3; parent and child modelled on
-    ChuiCore names.jl and the critic's p2/c2)
+  - **`"stub adding a name to @compat public passes H5"`**, on fixtures `h5/names-p.jl` →
+    `h5/names-c.jl` (the verbatim names.jl lines) and `h5/p2.jl` → `h5/c2.jl` (R4-B1). It must be
+    seen RED (H5 FAIL) against a single-argument `@compat` matcher before `is_compat_decl` is
+    written.
+  - `"is_compat_decl: public with one name, a tuple, and export; rejects @compat with any other payload"`
   - `"stub adding @compat export passes H5"`
-  - `"stub inserted above an existing method passes H5"` (R3-M1, line numbers stripped)
-  - `"stub that deletes a method fails H5"` (the critic's p3/c3)
+  - **`"stub inserted above a documented method passes H5"`**, on `h5/p4.jl` → `h5/c4.jl` (R4-M1).
+    It must be seen RED with `remove_linenums!` alone.
+  - `"stub inserted above an undocumented method passes H5"` (`h5/p6.jl` → `h5/c6.jl`)
+  - `"stub adding export + function-end inside the module block passes H5"` (`h5/parent.jl` →
+    `h5/child.jl`)
+  - `"stub that deletes a method fails H5"` (`h5/p3.jl` → `h5/c3.jl` and `h5/p5.jl` → `h5/c5.jl`)
   - `"stub replacing an export by a superset passes; by a subset fails"`
   - `"stub before its red passes H6; red before any stub with a later stub fails H6"`
   - `"red touching Project.toml fails H3"`
@@ -325,6 +357,9 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `"killed evidence fails E4"`
   - `"green without green evidence fails E2"`
   - `"role commit without tdd-commit record fails E5"`
+  - `"E5 default ledger is the outermost .lanes/ledger.jsonl above the lane"` (a coordinator-style
+    root holding a nested package with its own `.lanes`)
+  - `"lead-authored non-phase commit to test/runtests.jl passes H4; to test/foo_tests.jl fails"` (R4-m4)
   - `"tdd-commit record with another agent_type fails E5"`
   - `"tdd-commit-violation for the lane fails E5"`
 
@@ -408,7 +443,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - .claude/hooks/tdd_commit_post.sh, the PostToolUse(Bash) commit check.
 - Modify `.claude/settings.json`: PreToolUse matchers
   `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash` and `Agent|Task` with the fail-closed
-  wrapper; PostToolUse `Bash` for tdd_commit_post.sh.
+  wrapper; tdd_commit_post.sh on **both** PostToolUse `Bash` and PostToolUseFailure `Bash`.
 - Modify `.agents/checks.toml`: the `tdd` and `tdd_boundary` rows (spec §4.6, verbatim).
 - Test: scripts/test/test_hooks_tdd.jl (new).
 
@@ -417,9 +452,13 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 - Produces:
   - **PreToolUse:** exit 0 (allow), or exit 2 with the rule and spec §0.5/§0.6 named on stderr
     (deny). Each denial writes `tdd-boundary-denied {agent_type, tool, rule}` to the ledger. Before
-    each `git commit` the guard records the checkout's HEAD in `.lanes/tdd-pending/<tool_use_id>`.
-  - **PostToolUse:** for every new commit since that HEAD, or the replaced sha after `--amend`, it
-    writes `tdd-commit {agent_id, agent_type, checkout, sha}`. On a violation it writes
+    each `git commit` the guard records the checkout's HEAD in
+    `<session root>/.lanes/tdd-pending/<tool_use_id>`.
+  - **PostToolUse and PostToolUseFailure:** for every new commit since that HEAD
+    (`git rev-list <before>..HEAD`), it writes `tdd-commit {agent_id, agent_type, checkout, sha}`
+    to the TDD ledger, `<session root>/.lanes/ledger.jsonl` (`_lib.sh`'s `ledger`).
+  - **Sweep:** every Pre and post call first processes stale `tdd-pending` entries, records their
+    commits with `late: true`, and deletes them. On a violation it writes
     `tdd-commit-violation {…, rule}` and prints it.
   - **Dispatch:** prompts are saved to `<main>/.lanes/briefs/<lane>/dispatched/`.
 - **Checkout resolution:** take the nearest ancestor of the target with a `.git` entry, at or under
@@ -451,9 +490,19 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
     - `"commit by test-writer with implementer author denied"`
     - `"lead commit with env role author denied"`
     - `"lead commit after git config role identity denied"`
-    - `"amend keeps source author: implementer amending a test-writer commit denied"` (R3-M2)
-    - `"-C HEAD denied"`
-    - `"amend --reset-author takes caller identity"`
+    - `"amend keeps source author: implementer amending a test-writer commit denied"` (fixture
+      `git/amend.sh`; R3-M2)
+    - `"-C HEAD denied"` (fixture `git/C-HEAD.sh`)
+    - `"amend --author role denied at Pre"` (fixture `git/amend-author.sh`; R4-m1 precedence)
+    - `"amend --reset-author and -C --reset-author take caller identity"`
+    - `"test-writer -C/-c/--reuse-message/--reedit-message/--fixup/--squash denied"` (fixture
+      `git/C-reset-author.sh`; R4-m2)
+    - `"test-writer --amend on an implementer HEAD denied; on its own HEAD allowed"`
+    - `"commit followed by a failing command is recorded"` (a PostToolUseFailure payload; R4-M3)
+    - `"run_in_background with git commit denied"`
+    - `"stale tdd-pending entry swept and recorded late"`
+    - `"session root differs from checkout: record lands in the session ledger and audit finds it"`
+      (topology (a) layout; R4-M2)
     - `"git add test/x && git commit compound: commit checked"`
     - `"general-purpose caller with lead identity denied"` (R3-m1)
     - `"role commit with TDD-Mode trailer denied"`
@@ -461,6 +510,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
     - `"post-commit violation recorded"` (a commit made with the Pre half stubbed out)
     - `"tdd-commit record carries the resulting sha"`
   - Dispatch:
+    - `"general-purpose dispatch of test-writer denied"` (R4-m3)
     - `"dispatch with stale head= denied"`
     - `"dispatch on a dirty checkout denied"`
     - `"two repos with the same lane name: checkout= picks the right one"` (R3-M5)
@@ -498,7 +548,8 @@ and the reviewer checks them (spec §4.5):
 - `.claude/skills/lane-lifecycle/`: the two brief templates (spec §0.4); dispatch rules (fresh
   `subagent_type`, never a fork, subagents only, a clean lane); merge, never rebase; the mode on a
   lead-authored commit.
-- `.claude/commands/change-review.md`: run `tdd.jl audit` and `dod.jl`, and read the saved prompts.
+- `.claude/commands/change-review.md`: run `tdd.jl audit --ledger <root>/.lanes/ledger.jsonl` and
+  `dod.jl`, and read the saved prompts.
 - `CLAUDE.md` (seeded): the `tdd.jl` lines.
 - `factory/VERSION` → `0.3.0`; `factory/CHANGELOG.md` (the spec §9.2 migration list);
   `factory/README.md` (13 roles; the tdd scripts and hook).

@@ -1,6 +1,8 @@
 # Factory 0.3.0: a `test-writer` role and test-first lanes with separate contexts
 
-- **Date:** 2026-10-26, revision 5. The history is in §12:
+- **Date:** 2026-10-26, revision 6. Revision 6 fixes critic round 4: the `@compat` parse,
+  macrocall line nodes, the ledger path, failed or background commits, and precedence. The history
+  is in §12:
   - revision 2 answered the critic's round 1;
   - revision 3 made context separation the goal;
   - revision 4 answered critic round 2: the real topology, the H5 fix, and the cut list;
@@ -177,28 +179,53 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
   any caller, in any checkout under the session root. A compound line (`git add … && git commit …`,
   `;`, `||`) is split with bash_guard's parser. Each `git commit` in it is checked, and its checkout
   comes from the `cd`/`-C` that precedes it.
-- **PreToolUse: the effective author, as it will be recorded (R3-M2).**
-  - With `--amend` (without `--reset-author`), `-C`/`-c`/`--reuse-message`/`--reedit-message` and
-    `<commit>`, the author comes from that **source commit**: `git log -1 --format='%an <%ae>'`.
-  - Otherwise it comes from `--author`, or from `git -C <checkout> var GIT_AUTHOR_IDENT` with the
-    command's env assignments and `-c` options applied. A `git config user.*` set earlier is covered,
-    because `git var` reads it.
+- **PreToolUse: the effective author, as it will be recorded (R3-M2, R4-m1).** The first rule that
+  applies wins, as measured:
+  1. `--author` given: that identity. It beats the source commit, even under `--amend`.
+  2. `--reset-author` with `--amend` or `-C`/`-c`: the caller's identity, from step 4.
+  3. `--amend`, `-C`/`-c`/`--reuse-message`/`--reedit-message <commit>`: the **source commit's**
+     author (`git log -1 --format='%an <%ae>'`). Env vars are ignored there, measured.
+  4. Otherwise `git -C <checkout> var GIT_AUTHOR_IDENT`, with the command's env assignments and
+     `-c` options applied. A `git config user.*` set earlier is covered, because `git var` reads it.
 
   Then:
   - a role caller must commit as exactly its role;
   - no caller may produce a role identity that is not its own, or the lead identity if it has an
     `agent_type`;
   - a role caller may not write a `TDD-Mode:` trailer.
-- **PostToolUse: the authoritative check, on the resulting commit (R3-M2).** The PreToolUse half
-  records each checkout's HEAD under the call's `tool_use_id` in `.lanes/tdd-pending/`. The
-  PostToolUse half takes every new commit since then (`git rev-list <before>..HEAD`, or the replaced
-  sha after an amend). For each one it checks:
+
+  For the **test-writer** (R4-m2), the guard also denies `-C`, `-c`, `--reuse-message`,
+  `--reedit-message`, `--fixup` and `--squash`: they print or reuse another commit's message. It
+  denies `--amend` unless HEAD is already authored `test-writer`.
+- **No background commits (R4-M3).** A Bash call with `run_in_background: true` whose command
+  contains `git commit` is denied for every caller: the post check would run before the commit
+  exists.
+- **PostToolUse and PostToolUseFailure: the authoritative check, on the resulting commit (R3-M2,
+  R4-M3).**
+  - **Why both events.** `tdd_commit_post.sh` is registered on **both** events. A Bash call that
+    commits and then fails (`git commit … && julia scripts/ci.jl test` on a red test exits 1) fires
+    only PostToolUseFailure, per the docs.
+  - **The pending record.** The PreToolUse half records each checkout's HEAD under the call's
+    `tool_use_id` in `<session root>/.lanes/tdd-pending/`.
+  - **The check.** The post half takes every new commit since then:
+    `git rev-list <before>..HEAD`, which after an amend yields the amended commit.
+  - **Sweep.** Every Pre and post call first sweeps stale `tdd-pending` entries, older than the
+    call or left by a cancelled call, which fires neither event. Their new commits are checked and
+    recorded the same way, marked `late: true`, and the entry is deleted.
+
+  For each commit it checks:
   - author against caller;
   - the trailer phase against the caller's role;
   - the changed paths against the role (the test-writer changes only `test/**`, outside the seeded
     runners; the implementer changes no `test/**`).
 
-  It appends `{ev: "tdd-commit", agent_id, agent_type, checkout, sha}` with the **resulting sha**.
+  It appends `{ev: "tdd-commit", agent_id, agent_type, checkout, sha}` with the **resulting sha** to
+  **the TDD ledger**. The TDD ledger is defined once, here (R4-M2): it is the session's ledger,
+  `<session root>/.lanes/ledger.jsonl`, the file `_lib.sh` already writes (`$ROOT/.lanes/ledger.jsonl`).
+  In topology (a) that is the coordinator's. `tdd.jl audit` and `dod.jl` read it through `--ledger
+  PATH`. The default is the outermost directory above the lane checkout that holds
+  `.lanes/ledger.jsonl`, which in (a) is `<root>`. `/change-review` passes
+  `--ledger <root>/.lanes/ledger.jsonl` explicitly.
   PostToolUse cannot undo a commit. A violation is written as `tdd-commit-violation` and printed to
   the caller, and audit rule E5 fails on it.
 - **Audit rule E5 (§4.3)** requires every role-authored commit in the lane to have a `tdd-commit`
@@ -222,7 +249,8 @@ machine and one user still set both authors:
     `settings.json` with PreToolUse matchers `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash`
     and `Agent|Task` (the latter as dispatch_limit, M-G).
   - .claude/hooks/_tdd_commit_guard.sh, sourced by tdd_boundary.sh for `git commit`.
-  - .claude/hooks/tdd_commit_post.sh, at PostToolUse `Bash`.
+  - .claude/hooks/tdd_commit_post.sh, at PostToolUse `Bash` **and** PostToolUseFailure `Bash`
+    (R4-M3).
 
   The PreToolUse hooks run through the same fail-closed `sh -c '… exit 2'` wrapper as the other
   guards.
@@ -243,7 +271,7 @@ machine and one user still set both authors:
 | implementer | Edit, Write, MultiEdit, NotebookEdit | deny `test/**` of any checkout (M-B) |
 | implementer | Bash | bash_guard's modelled write targets under `test/**` are denied. Unmodelled writes are caught at commit by the staged-path check and H3/H4. |
 | any | `git commit` | the commit guard (§0.5), PreToolUse and PostToolUse |
-| any non-role caller | Agent/Task with `subagent_type` test-writer or implementer | The prompt starts with a `tdd-brief` header for that role. Its `checkout=` is a lane worktree under the session root (R3-M5), its `head=` equals that checkout's HEAD, and the checkout is clean (M-B). The prompt is saved to `<main>/.lanes/briefs/<lane>/dispatched/`. |
+| the lead only: a caller with **no `agent_type`** (R4-m3); any caller with an `agent_type`, the mutator and other general-purpose agents included, is denied | Agent/Task with `subagent_type` test-writer or implementer | The prompt starts with a `tdd-brief` header for that role. Its `checkout=` is a lane worktree under the session root (R3-M5), its `head=` equals that checkout's HEAD, and the checkout is clean (M-B). The prompt is saved to `<main>/.lanes/briefs/<lane>/dispatched/`. |
 
 **Fails closed:** a payload the hook cannot parse, a missing library or a missing jq means deny. For
 the Read, Grep, Glob and Bash matchers that applies to **every caller**, the lead included. That is
@@ -450,7 +478,7 @@ Failure headers, the same on 1.10.12 and 1.13.2:
 
 ## 4. Enforcement (D4)
 
-### 4.1 Files (4 scripts plus 1 hook; all managed, T3)
+### 4.1 Files (4 scripts plus 3 hook files; all managed, T3)
 
 ```
 julia scripts/tdd.jl red    [--root DIR] [--rev REV]   classify a RED/TEST-FIX commit's items
@@ -483,8 +511,8 @@ be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and 
 | H1 | No commit changes code: PASS, and H2–H8 do not apply (H9 still does). Otherwise every code-changing commit has a phase trailer. |
 | H2 | Mode `required`: at least one `red`. |
 | H3 | `stub`, `green` and `refactor` change no `test/**`. `red`, `test-fix`, `test-refactor` and `backfill` change no code, `Project.toml` or `changelog.d/`. **No phase commit changes the seeded runners `test/runtests.jl` or `test/Project.toml`** (m3); only a non-phase, lead-authored commit may, such as a sync. |
-| H4 | No commit outside a test-writer phase touches `test/**` (H3 seen from the other side, for the register). |
-| H5 | A `stub` only declares (NB2, NB3, R3-M1). For each changed src/ext file:<br>1. Parse the parent and the commit (`Meta.parseall`).<br>2. Apply `Base.remove_linenums!` to both, so a stub inserted above an existing method leaves that method's expression unchanged.<br>3. Descend into `module`/`baremodule` bodies.<br>4. Compare the statements as multisets.<br>**Added** statements may only be: `function NAME end`; a field-only `struct`/`mutable struct`; `abstract type`; `primitive type`; `export`/`public`; **a `@compat` macrocall (`@compat` or `Compat.@compat`) whose single argument is a `public` or `export` statement**, the form every package uses because `public` does not parse on 1.10; a docstring (`Core.@doc` or a string before a decl) wrapping one of these; `using`/`import`; `include("f.jl")` of a file the commit **adds**, whose own statements pass the same rule.<br>**Removed** statements are not allowed, except an `export`/`public`/`@compat public` statement replaced in the same commit by one naming a superset of its names. Deleting a method or any other statement fails.<br>Anything else fails, `Base.@kwdef` and inner constructors included. |
+| H4 | No commit outside a test-writer phase touches `test/**` (H3 seen from the other side, for the register). **The one exemption (R4-m4):** a non-phase commit authored `lead <lead@factory.invalid>` may change the two seeded runners `test/runtests.jl` and `test/Project.toml`, and nothing else under `test/`. |
+| H5 | A `stub` only declares (NB2, NB3, R3-M1, R4-B1, R4-M1). For each changed src/ext file:<br>1. Parse the parent and the commit (`Meta.parseall`).<br>2. Strip **every** `LineNumberNode`: run `Base.remove_linenums!`, and also replace each macrocall's own line slot (`args[2]`), which `remove_linenums!` keeps (measured), with `nothing`. A stub inserted above an existing method, **documented or not**, then leaves that statement unchanged.<br>3. Descend into `module`/`baremodule` bodies.<br>4. Compare the statements as multisets.<br>**Added** statements may only be: `function NAME end`; a field-only `struct`/`mutable struct`; `abstract type`; `primitive type`; `export`/`public`; **a `@compat` statement as it actually parses (measured on 1.13.2 and 1.10.12):** a macrocall whose name is `@compat` or `Compat.@compat`, followed after its line slot by **either** the bare symbol `:public` and then one name or a tuple of names (`@compat public a, h` → `macrocall(@compat, LNN, :public, (a, h))`), **or** exactly one `export` Expr (`@compat export g`). That is the form every package uses, because `public` does not parse on 1.10. Also: a docstring (`Core.@doc` or a string before a decl) wrapping one of these; `using`/`import`; `include("f.jl")` of a file the commit **adds**, whose own statements pass the same rule.<br>**Removed** statements are not allowed, except an `export`/`public`/`@compat public` statement replaced in the same commit by one naming a superset of its names. Deleting a method or any other statement fails.<br>Anything else fails, `Base.@kwdef` and inner constructors included. |
 | H6 | Order: a `stub` comes before its `red`; one `green` per `red`/`test-fix`; `refactor`/`test-refactor` only after a `green`. |
 | H7 | The lane does not end on a red. |
 | H8 | Mode `refactor`: no red, green or stub; no `test/**` change. Mode `skip`: dod's `tdd` **FAILS** unless the mode commit is lead-authored and carries a reason (M-A). |
@@ -498,7 +526,7 @@ be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and 
 | E2 | Each `green`/`refactor`/`test-refactor` has a passing `green-<sha7>`. In mode `refactor`, the merge base also needs one. |
 | E3 | Each item a `backfill` adds has a passing `mutate-<slug>` or `mutexp-<slug>`. Items whose only assertions are `@test_broken` are listed, not proved. |
 | E4 | No evidence file is dirty or killed. |
-| E5 | Every role-authored lane commit has a `tdd-commit` ledger record with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
+| E5 | Every role-authored lane commit has a `tdd-commit` record in **the TDD ledger** (§0.5: `<session root>/.lanes/ledger.jsonl`, passed as `--ledger`; R4-M2) with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
 
 ### 4.4 Where it runs; merges and rebases
 
@@ -548,7 +576,7 @@ blind_spots = [
 id = "tdd_boundary"
 rule = "A test-writer reads and writes only allowlisted paths (test/, docs/, evidence, its briefs; never src/ext, transcripts, the depot or the mutate copy) and runs only allowlisted Bash; an implementer never writes test/**; every git commit's effective author is a role only when the caller is that role, and its staged paths fit the role; the lead dispatches a role only on a clean lane with a current tdd-brief, and the prompt is saved"
 prevented_by = ".claude/hooks/tdd_boundary.sh (with _tdd_commit_guard.sh) and .claude/hooks/tdd_commit_post.sh"
-runs_in = ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)", "hook PreToolUse(Agent|Task)", "hook PostToolUse(Bash)"]
+runs_in = ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)", "hook PreToolUse(Agent|Task)", "hook PostToolUse(Bash) and PostToolUseFailure(Bash)"]
 test = "scripts/test/test_hooks_tdd.jl"
 blind_spots = [
   "the role comes from agent_type, documented for subagents only; teammates and a missing agent_type leave reads unguarded (TDD lanes are subagent-only)",
@@ -557,6 +585,7 @@ blind_spots = [
   "run output names src files and lines, and show() can expose fields",
   "the lead's paraphrase in a brief passes; only review of the saved prompts catches it",
   "PostToolUse cannot undo a commit: a violating commit exists until audit E5 fails the lane",
+  "a cancelled Bash call fires no post event: its commit is recorded only by the next call's sweep of .lanes/tdd-pending (marked late), so a session that ends right after a cancelled commit leaves it unrecorded and E5 fails the lane",
   "E5 needs the local ledger: a fresh clone or CI sees H9 only, and a forged ledger line passes",
   "fails closed on every Read/Grep/Glob/Bash call, the lead's included, when jq or a library is missing (availability cost)",
   "two instances of one model share priors; other harnesses (.codex) run no hooks"
@@ -815,6 +844,21 @@ Context separation became goal 1 (§0.1). It brought:
 | R3-m4: rules without tests | Every stated rule has a plan test; plan "Left to review" lists the rest |
 | R3-m5: one hook too big | Split into tdd_boundary.sh, _tdd_commit_guard.sh and tdd_commit_post.sh, each ≤ 150 lines |
 | R3-m6: dispatch_limit | Out of scope; §13 "Related" |
+
+### Revision 6 (critic round 4; the lead checks this delta, with no further critic round)
+
+| Finding | Change |
+|---|---|
+| R4-B1: the `@compat` clause did not match the parse | H5 matches `macrocall(@compat \| Compat.@compat, LNN, :public, name\|tuple)` or one `export` Expr. The Task 5 test uses verbatim names.jl lines and the critic's p2/c2 |
+| R4-M1: macrocall line nodes survived | Each macrocall's `args[2]` is stripped as well as `remove_linenums!`. Task 5 test: a stub above a **documented** method (the critic's p4/c4) |
+| R4-M2: E5 read a ledger the hooks never write | One TDD ledger, defined once in §0.5: `<session root>/.lanes/ledger.jsonl`, passed to audit and dod as `--ledger`. Task 8 test where the session root ≠ the checkout |
+| R4-M3: a failed or background Bash call left no record | The post hook also runs on PostToolUseFailure; `run_in_background` with `git commit` is denied; stale `tdd-pending` entries are swept (marked late); a new blind spot for a cancelled final call. Tests |
+| R4-m1: precedence | `--author` > `--reset-author` > source commit > `git var`. "Or the replaced sha" deleted. Test: amend `--author` with a role is denied at Pre |
+| R4-m2: the test-writer could print another commit's subject | `-C/-c/--reuse-message/--reedit-message/--fixup/--squash` denied for the test-writer; `--amend` only on a test-writer HEAD. Test |
+| R4-m3: the dispatch rule admitted the mutator | Dispatch requires **no** `agent_type`. Test: a general-purpose dispatch of a test-writer is denied |
+| R4-m4: H3 contradicted H4 | H4 exempts lead-authored, non-phase commits to the two seeded runners only |
+| R4-m5: the §4.1 heading | Now "4 scripts plus 3 hook files" |
+| The lead: prove parse-level rules by RED tests | The critic's probe pairs become named fixtures (plan Task 1: `h5/p2…c6`, `parent/child`; `git/amend`, `git/C-HEAD`, `git/amend-author`, `git/C-reset-author`), each used by a named Task 5 or Task 8 test that must be seen RED before its rule is implemented |
 
 ## 13. Related (outside this spec)
 
