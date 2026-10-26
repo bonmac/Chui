@@ -396,3 +396,5 @@ end
 end
 
 include("test_tdd_cli.jl")   # tdd.jl red, green, api, brief (plan Task 4)
+include("test_tdd_history.jl")    # history rules H1-H9, pure (plan Task 5)
+include("test_tdd_history2.jl")   # H5 on git, lane_commits, E1-E5, audit (plan Task 5)
