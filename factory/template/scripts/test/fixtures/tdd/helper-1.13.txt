@@ -46,9 +46,9 @@
   [3f19e933] p7zip_jll v17.8.3+0
      Testing Running tests...
 ERROR: LoadError: Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.
-in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/runtests.jl:2
+in expression starting at <PKG>/test/runtests.jl:2
 
-helper: Error During Test at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/items_tests.jl:25
+helper: Error During Test at <PKG>/test/items_tests.jl:25
   Test threw exception
   Expression: helper_check(1) == 1
   AssertionError: helper

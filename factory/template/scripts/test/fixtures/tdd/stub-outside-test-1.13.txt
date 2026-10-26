@@ -46,9 +46,9 @@
   [3f19e933] p7zip_jll v17.8.3+0
      Testing Running tests...
 ERROR: LoadError: Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.
-in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/runtests.jl:2
+in expression starting at <PKG>/test/runtests.jl:2
 
-stub outside test: Error During Test at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/items_tests.jl:10
+stub outside test: Error During Test at <PKG>/test/items_tests.jl:10
   Got exception outside of a @test
   LoadError: MethodError: no method matching f(::Int64)
   The function `f` exists, but no method is defined for this combination of argument types.
@@ -115,7 +115,7 @@ stub outside test: Error During Test at /Users/bonmac/personal-projects/julia-da
       @ Base ./client.jl:310
    [31] _start()
       @ Base ./client.jl:577
-  in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/items_tests.jl:10
+  in expression starting at <PKG>/test/items_tests.jl:10
 Test Summary:         | Error  Total  Time
 TddScratch            |     1      1  1.3s
   test/items_tests.jl |     1      1  1.2s

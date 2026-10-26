@@ -51,7 +51,7 @@ const TDD_READY = isdefined(TC, :classify) && isdefined(TC, :ItemSpan)
 
 const TDD_FIX = joinpath(@__DIR__, "fixtures", "tdd")
 const TDD_PKG = joinpath(TDD_FIX, "scratchpkg")
-const TDD_RECORDED = "/Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg"
+const TDD_RECORDED = "<PKG>"   # the masked package root in the recorded outputs (fixtures/tdd/README.md)
 const TDD_VERSIONS = ("1.13", "1.10")
 const WR = Symbol("WRONG-REASON")
 const NR = Symbol("NOT-RUN")

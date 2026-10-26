@@ -48,11 +48,11 @@
   [3f19e933] p7zip_jll v17.6.1+0
      Testing Running tests...
 ERROR: LoadError: Some tests did not pass: 0 passed, 0 failed, 1 errored, 0 broken.
-in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/runtests.jl:2
-parse error: Error During Test at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/parse_tests.jl:2
+in expression starting at <PKG>/test/runtests.jl:2
+parse error: Error During Test at <PKG>/test/parse_tests.jl:2
   Got exception outside of a @test
   LoadError: ParseError:
-  # Error @ /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/parse_tests.jl:2:16
+  # Error @ <PKG>/test/parse_tests.jl:2:16
   
       @test (1 + ) == 2
   #              ╙ ── unexpected `)`
@@ -105,7 +105,7 @@ parse error: Error During Test at /Users/bonmac/personal-projects/julia-data-ana
       @ Base.MainInclude ./client.jl:487
    [24] top-level scope
       @ none:6
-  in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/parse_tests.jl:2
+  in expression starting at <PKG>/test/parse_tests.jl:2
 Test Summary:         | Error  Total  Time
 TddScratch            |     1      1  0.9s
   test/parse_tests.jl |     1      1  0.9s

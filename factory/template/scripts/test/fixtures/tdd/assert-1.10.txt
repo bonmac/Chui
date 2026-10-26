@@ -51,8 +51,8 @@ Precompiling packages...
   [3f19e933] p7zip_jll v17.6.1+0
      Testing Running tests...
 ERROR: LoadError: Some tests did not pass: 0 passed, 1 failed, 0 errored, 0 broken.
-in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/runtests.jl:2
-assert: Test Failed at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/items_tests.jl:2
+in expression starting at <PKG>/test/runtests.jl:2
+assert: Test Failed at <PKG>/test/items_tests.jl:2
   Expression: g(1) == 3
    Evaluated: 2 == 3
 

@@ -76,16 +76,15 @@ The output has no failure header and no `Test Summary:`. A classifier that only 
 therefore detects this case by the missing `Test Summary:` (spec §3.3), not by `termsignal ≠ 0`.
 `termsignal ≠ 0` applies when the process tdd.jl itself starts is signalled.
 
-**Absolute paths in the outputs.** The headers and stacktraces carry the path the package had when the files
-were made:
+**Paths in the outputs are masked.** The headers and stacktraces carried the absolute path the package had
+when the files were made (a machine-local worktree path; for `precompile fail`, the scratch copy's path).
+That prefix is replaced by the placeholder `<PKG>` (the package root, i.e. `scratchpkg`), and the
+home-directory prefix of `.julia/compiled/...` by `~/`, so a header reads
+`assert: Test Failed at <PKG>/test/items_tests.jl:2`. Nothing else in the files was changed.
 
-```
-/Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg
-```
-
-The parts the classifier needs are the path suffixes (`.../scratchpkg/test/<file>.jl:<line>`). A test
-that maps headers to `@testitem` spans should replace that prefix with the fixture's current
-`scratchpkg` path, or match on the suffix after `scratchpkg/`. Other absolute paths (`~/.julia/...`,
+The parts the classifier needs are the path suffixes (`<PKG>/test/<file>.jl:<line>`). A test that maps
+headers to `@testitem` spans replaces `<PKG>` with the fixture's current `scratchpkg` path
+(`TDD_RECORDED` in `test_tdd.jl`), or matches on the suffix after it. Other absolute paths (`~/.julia/...`,
 `/private/var/folders/.../jl_*`) are incidental and differ per run.
 
 **Measured facts the classifier relies on** (both versions, every file):

@@ -50,7 +50,7 @@
      Testing Running tests...
 
 [22338] signal (15): Terminated: 15
-in expression starting at /Users/bonmac/personal-projects/julia-data-analysis/.worktrees/tw-030/factory/template/scripts/test/fixtures/tdd/scratchpkg/test/killed_tests.jl:4
+in expression starting at <PKG>/test/killed_tests.jl:4
 kevent at /usr/lib/system/libsystem_kernel.dylib (unknown line)
 unknown function (ip: 0x0)
 Allocations: 1867918 (Pool: 1865425; Big: 2493); GC: 3
