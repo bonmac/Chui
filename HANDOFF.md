@@ -66,6 +66,16 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
   - coordinator: eco-amend, adr-0011-amend, frames-reqs, requests-p4p3, sync-027.
 
   Two fixes: rewrite those fragments as list items, and (factory 0.3.x) make `dod.jl`'s changelog requirement run the same heading check, so this is caught at lane time.
+- tw-030 (test-writer Tasks 1–7): green on both versions (2216 tests on 1.13, 2211 on lts). Reviewer FINAL: REQUEST CHANGES, with three blockers where a guard falsely says OK:
+  - **B1:** a typo inside a `@testset let` reads as BEHAVIOUR;
+  - **B2:** `red --rev` evidence is keyed to HEAD;
+  - **B3:** dod `tdd` passes with 0 commits;
+  - plus majors M1–M3. Being fixed TDD-style, then re-review.
+- The lead's rulings on tw-030:
+  - **H6:** several consecutive reds may be closed by one green when every item passes. Written into spec §4.2 as a dated note.
+  - **Renamed red item:** must not deadlock. The way out is a `TDD: test-fix` commit with fresh red evidence. Required before the 0.3.0 VERSION bump (Task 9).
+  - **Scope:** owns extended to the spec and plan files.
+- Needs the user: remove the stray gitignored worktree `.worktrees/tw-030-verify` (detached at e9b3249). Its only diff is an older, superseded `_tdd_backfill.jl` variant, so nothing is lost. bash_guard blocks `git worktree remove --force` from the agents. Command: `! git worktree remove --force .worktrees/tw-030-verify`.
 - Process deviation (frames p4-bench): the lane made one python3 heredoc edit on new, uncommitted benchmark/compare files, against the Edit/Write rule. The reviewer checks the committed content. The p4-perf brief restates the rule.
 - ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
