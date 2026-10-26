@@ -550,6 +550,12 @@ and the reviewer checks them (spec §4.5):
 
 ### Task 9: Registry, bodies, skill, docs; VERSION 0.3.0
 
+**Required before the VERSION bump (lead ruling, 2026-10-26, tw-030 review):** a renamed red item
+must not deadlock `green`. Today a red item that a later commit renames or deletes is NOT-RUN
+("gone at HEAD") for good. The way out is a `TDD: test-fix` commit by the test-writer that renames
+the item and records fresh red evidence under the new name, after which `green` proceeds. This
+needs a test and an implementation before 0.3.0.
+
 **Files:**
 - `.agents/agent-registry.toml` (seeded): the spec §2.1 `test_writer` entry with `tools` and
   `disallowed_tools`; the implementer's role, `file_scope`, `tools`, `disallowed_tools` and
