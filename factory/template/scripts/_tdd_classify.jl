@@ -39,6 +39,7 @@ const REJECTED = (
     r"^ArgumentError: Package\b",
     r"^Failed to precompile \S+ \[",
     r"^The following \d+ .*failed to precompile",
+    r"^Unexpected Pass$",   # review M1: a `@test_broken` that now holds is no red (or kill)
 )
 
 rejected(s::AbstractString) = any(re -> occursin(re, s), REJECTED)
@@ -115,7 +116,8 @@ function module_names(text::AbstractString)
     ]
 end
 
-"`name => expression without line numbers` for each item (`@testitem`) or module in `text`."
+"`name => expression without line numbers` (`strip_lines!`, _common.jl: macrocall line slots too, so
+an item that only moved is unchanged) for each item (`@testitem`) or module in `text`."
 function _defs(text, file, modules::Bool)
     d = Dict{String, Any}()
     top = _toplevel(text, file)
@@ -123,7 +125,7 @@ function _defs(text, file, modules::Bool)
     for (_, ex) in top
         is = modules ? (_is_macro(ex, "@testmodule") || _is_macro(ex, "@testsnippet")) : _is_macro(ex, "@testitem")
         is && length(ex.args) >= 3 || continue
-        d[string(ex.args[3])] = Base.remove_linenums!(deepcopy(Expr(:block, ex.args[3:end]...)))
+        d[string(ex.args[3])] = strip_lines!(deepcopy(Expr(:block, ex.args[3:end]...)))
     end
     return d
 end
@@ -212,12 +214,15 @@ function _blocks(output::AbstractString)
             startswith(lines[j], "Test Summary:") && (stop = j - 1; break)
         end
         block = [strip(l) for l in lines[(i + 1):stop]]
-        # exception line: the first after the markers (`Test threw exception`, `Expression:`, ...)
+        # exception line: the first after the markers (`Test threw exception`, `Expression:`, ...),
+        # skipping `Expression:` and `Context:` (1.13 prints `Context: v = 1` inside `@testset let`)
         exc = ""
-        mi = findfirst(l -> l in EXC_MARKERS || startswith(l, "Expression:"), block)
-        if mi !== nothing
+        skip(l) = isempty(l) || startswith(l, "Expression:") || startswith(l, "Context:")
+        if !isempty(block) && block[1] == "Unexpected Pass"
+            exc = "Unexpected Pass"                    # a `@test_broken` that holds (review M1)
+        elseif (mi = findfirst(l -> l in EXC_MARKERS || startswith(l, "Expression:"), block)) !== nothing
             j = mi + 1
-            while j <= length(block) && (isempty(block[j]) || startswith(block[j], "Expression:"))
+            while j <= length(block) && skip(block[j])
                 j += 1
             end
             j <= length(block) && (exc = String(block[j]))

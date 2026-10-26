@@ -53,7 +53,7 @@ module DoD
 
     Pure core: `changed` is the list of changed paths, `text` the PR body plus commit messages.
     `commits` is the lane's `LaneCommit`s (oldest first) and `stub_ok(sha)` decides H5; with
-    `commits === nothing` a src/ext change reports `tdd` as :info (not checked).
+    `commits === nothing` (or an empty list) a src/ext change fails `tdd`: it was not checked.
     `results` is a vector of (requirement, status, detail) with status :pass, :fail or :info.
     """
     function evaluate(
@@ -114,8 +114,10 @@ module DoD
 
     "Requirement `tdd`: H9 applies to every lane, H2-H8 only when code changed (spec §4.2 H1)."
     function tdd_result(commits, src_changed, stub_ok)
+        # review B3 / minor 5: code changed and no history to check is a failure, never a pass or info
         commits === nothing &&
-            return src_changed ? (:info, "not checked: no lane history given") : (:pass, "no src/ext change")
+            return src_changed ? (:fail, "not checked: no lane history given") : (:pass, "no src/ext change")
+        src_changed && isempty(commits) && return (:fail, "src/ or ext/ changed but no lane commits were found")
         problems = history_rules(commits; stub_ok)
         isempty(problems) || return (:fail, first(problems))
         src_changed || return (:pass, "no src/ext change")
@@ -150,8 +152,8 @@ module DoD
         added = filter(f -> !is_fragment(f) || !isempty(strip(something(git(root, "show", "$head:$f"), ""))), names("--diff-filter=A"))
         msgs = something(git(root, "log", "--format=%B", "$mb..$head"), "")
         risk = TOML.parsefile(joinpath(root, "risk.toml"))
-        # lane_commits reads base..HEAD (not --head); an empty list when the merge base vanished
-        commits = something(lane_commits(root, base), LaneCommit[])
+        # lane_commits reads base..head (review B3); an empty list (tdd fails on a src change) when none
+        commits = something(lane_commits(root, base, head), LaneCommit[])
         tier, results = evaluate(
             risk, changed, labels, body * "\n" * msgs; kept, added,
             adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root),

@@ -42,11 +42,11 @@ parse_mode(v) = (p = split(v, " — "; limit = 2); (String(strip(p[1])), length(
 changed(root, sha) = [(String(first(l, 1)), String(split(l, '\t')[end])) for l in
     split(something(git(root, "diff-tree", "--root", "--no-commit-id", "-r", "--no-renames", "--name-status", sha), ""), '\n'; keepempty = false)]
 
-"The non-merge commits of `base..HEAD` (from the merge base), oldest first; `nothing` without a merge base."
-function lane_commits(root, base)
-    mb = merge_base(root, base)
+"The non-merge commits of `base..head` (from the merge base), oldest first; `nothing` without a merge base."
+function lane_commits(root, base, head = "HEAD")
+    mb = merge_base(root, base, head)
     mb === nothing && return nothing
-    shas = split(something(git(root, "rev-list", "--no-merges", "--reverse", "$mb..HEAD"), ""), '\n'; keepempty = false)
+    shas = split(something(git(root, "rev-list", "--no-merges", "--reverse", "$mb..$head"), ""), '\n'; keepempty = false)
     return map(shas) do s
         info = something(git(root, "log", "-1", "--format=%an <%ae>%x00%B", s), "\0")
         author, msg = split(info, '\0'; limit = 2)
@@ -141,19 +141,7 @@ end
 
 # ---- H5: a stub only declares
 
-"""`Base.remove_linenums!`, then each macrocall's own line slot (`args[2]`) set to `nothing` and the
-`:toplevel` LineNumberNodes dropped: `remove_linenums!` keeps both (measured on 1.13.2 and 1.10.12)."""
-function strip_lines!(ex)
-    Base.remove_linenums!(ex)
-    function walk(x)
-        x isa Expr || return
-        x.head === :macrocall && length(x.args) >= 2 && (x.args[2] = nothing)
-        x.head === :toplevel && filter!(a -> !(a isa LineNumberNode), x.args)
-        foreach(walk, x.args)
-    end
-    walk(ex)
-    return ex
-end
+# `strip_lines!` (line-stripped statements) is in _common.jl: _tdd_classify.jl's `requested` uses it too.
 is_compat_name(n) = n === Symbol("@compat") || n == Expr(:., :Compat, QuoteNode(Symbol("@compat")))
 is_names(x) = x isa Symbol || (x isa Expr && x.head === :tuple && !isempty(x.args) && all(a -> a isa Symbol, x.args))
 is_export(x) = x isa Expr && x.head in (:export, :public) && all(a -> a isa Symbol, x.args)
@@ -274,8 +262,10 @@ clean(ev) = get(ev.h, "dirty", "") == "false" && get(ev.h, "termsignal", "") == 
 const NOT_RED = r"\b(WRONG[-_]REASON|PASSED|NOT[-_]RUN|COLLATERAL)\b"
 red_pass(ev, sha) = ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha &&
     occursin(r"\b(ASSERTION|BEHAVIOUR)\b", ev.tdd) && !occursin(NOT_RED, ev.tdd)
-green_pass(ev, sha) = ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha && get(ev.h, "exit", "") == "0"
-mutate_pass(ev) = ev !== nothing && clean(ev) && get(ev.h, "exit", "") == "0"
+# M3: an `exit: 0` alone is no verdict (`evidence.jl green -- true` writes one); tdd.jl's must be there too
+green_pass(ev, sha) = ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha && get(ev.h, "exit", "") == "0" &&
+    occursin(r"(?m)^green default suite: OK\b", ev.tdd)
+mutate_pass(ev) = ev !== nothing && clean(ev) && get(ev.h, "exit", "") == "0" && occursin(r"(?m)^KILLED\b", ev.tdd)
 
 "The evidence kind's slug for item `name` (spec §5.2): at most 33 characters."
 evidence_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" * bytes2hex(sha1(name))[1:8]

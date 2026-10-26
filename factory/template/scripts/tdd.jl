@@ -110,6 +110,9 @@ module Tdd
         refuse_dirty(root, io, "red") && return 2
         sha = git(root, "rev-parse", "--verify", "--quiet", "$rev^{commit}")
         sha === nothing && (println(io, "tdd.jl red: `$rev` is not a commit in $root (exit 2)."); return 2)
+        # review B2: the run is of the tree at HEAD and its evidence is red-<HEAD sha7>, so `rev` must be HEAD
+        sha == Evidence.head_sha(root) ||
+            (println(io, "tdd.jl red: `$rev` ($(first(sha, 7))) is not HEAD; check it out (detached) and run red there (exit 2)."); return 2)
         p = phase(root, sha)
         p in RED_PHASES || (println(io, "tdd.jl red: $(first(sha, 7)) has trailer `TDD: $p`, not red or test-fix (exit 2)."); return 2)
         req = requested(root, sha)
@@ -120,8 +123,7 @@ module Tdd
         result = classify(r.output, req.red, req.must_pass, r.matched; termsignal = r.termsignal)
         ok = red_ok(result)
         buf = IOBuffer()
-        rev_note = sha == Evidence.head_sha(root) ? "" : " (items of $(first(sha, 7)), run at HEAD)"
-        println(buf, "red $(first(sha, 7))$rev_note: ", ok ? "OK" : "NOT OK", " (run exit $(r.code))")
+        println(buf, "red $(first(sha, 7)): ", ok ? "OK" : "NOT OK", " (run exit $(r.code))")
         report(buf, result, headers(r.output))
         append_tdd(r.path, String(take!(buf)); io)
         return ok ? 0 : 1

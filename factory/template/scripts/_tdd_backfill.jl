@@ -43,11 +43,14 @@ function mutated(text, n, from, to)
     return join(lines, '\n')
 end
 
-"Rewrite evidence `path` as kind `kind` with `exit:` set to mutate's verdict; append `extra`."
-function seal_evidence(src, path, kind, verdict, extra)
+"""Rewrite evidence `path` as kind `kind` with `exit:` set to mutate's verdict; append `extra`. A
+`dirty` Bool replaces the `dirty:` line: the mutant run's file says `true` (the scratch holds the
+mutation), so a survivor's evidence takes the real tree's state instead (review minor 2)."""
+function seal_evidence(src, path, kind, verdict, extra; dirty = nothing)
     t = read(src, String)
     i = findfirst("\n--- output ---\n", t)
-    head = replace(replace(t[1:first(i)], r"(?m)^kind: .*$" => "kind: $kind"), r"(?m)^exit: .*$" => "exit: $verdict")
+    head = replace(t[1:first(i)], r"(?m)^kind: .*$" => "kind: $kind", r"(?m)^exit: .*$" => "exit: $verdict")
+    dirty === nothing || (head = replace(head, r"(?m)^dirty: .*$" => "dirty: $dirty"))
     write(path, head * t[(first(i) + 1):end] * extra)
     return path
 end
@@ -63,12 +66,9 @@ function item_run(dir, name, spans; io)
     tt = Evidence.test_totals(r.output)
     total = tt === nothing ? 0 : tt["total"]
     name in r.matched || return (NOT_RUN, r, Pair{String, Symbol}[name => NOT_RUN])
+    # an `Unexpected Pass` is WRONG-REASON in `classify` itself (review M1), as for red and green
     result = classify(r.output, spans, ItemSpan[], r.matched; termsignal = r.termsignal)
     own = [p.second for p in result if p.first == name]
-    # A wrong reason the classifier does not see (a package that fails to precompile it does see,
-    # REJECTED): a `@test_broken` that now passes ("Unexpected Pass") is not a kill on a non-broken
-    # assertion (spec §5.2).
-    occursin("Unexpected Pass", r.output) && (result = Pair{String, Symbol}[name => WRONG_REASON])
     class = any(p -> p.second === WRONG_REASON, result) ? WRONG_REASON :
         (isempty(own) || total < 1) ? NOT_RUN : first(own)
     return (class, r, result)
@@ -90,6 +90,10 @@ function mutate(root; item, src = nothing, expect = nothing, from, to, io = stdo
     fl = file_line(something(src, expect))
     fl === nothing && (println(io, "tdd.jl mutate: `$(something(src, expect))` is not F:LINE (exit 2)."); return 2)
     file, n = fl
+    # review minor 1: a mutation goes in src/ or ext/ (--src), or in test/ (--expect), nowhere else
+    np = normpath(file)
+    src === nothing || is_code_path(np) || (println(io, "tdd.jl mutate: --src $file is not under src/ or ext/ (exit 2)."); return 2)
+    expect === nothing || is_test_path(np) || (println(io, "tdd.jl mutate: --expect $file is not under test/ (exit 2)."); return 2)
     sha = Evidence.head_sha(root)
     text = git(root, "show", "$sha:$file")
     text === nothing && (println(io, "tdd.jl mutate: $file is not in HEAD $(first(sha, 7)) (exit 2)."); return 2)
@@ -128,7 +132,8 @@ function mutate(root; item, src = nothing, expect = nothing, from, to, io = stdo
     report_text = String(take!(buf))
     out = joinpath(Evidence.evidence_dir(root), "$kind-$(first(sha, 7)).txt")
     mkpath(dirname(out))
-    seal_evidence(base, out, kind, verdict, "--- mutant output ---\n" * m.output * "--- tdd ---\n" * report_text)
+    seal_evidence(base, out, kind, verdict, "--- mutant output ---\n" * m.output * "--- tdd ---\n" * report_text;
+        dirty = base == m.path ? is_dirty(root) : nothing)
     base == out || base == m.path || rm(base; force = true)
     print(io, "--- tdd ---\n", report_text)
     println(io, "tdd.jl mutate: wrote ", out)
