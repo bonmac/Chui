@@ -57,6 +57,14 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
   - **ADR-0022 rule 1 draft note:** committed on feat/phase4 as f87784e. At the phase-4 ★, ask the user to accept both parts: the `_FORCE_JOIN`/`_FORCE_KERNEL` switches, and the SUITE building dictionary-encoded *inputs* with the internal `ChuiFrames.DictColumn`/`column`. The measured calls stay public.
   - **p4-perf started** from 1aa7bc2, which was green first: tests 14542/14542, t4 14543/14543, bench-check 138/138.
   - **p4-perf scope:** widened to `verbs_bind.jl` and `verbs_groups.jl`, which have the same `init` vcat pattern, plus memory rows.
+- p4-perf is merged into frames feat/phase4 as b30cea3 (reviewer FINAL APPROVE WITH CONDITIONS, conditions fixed in 12ea449). Final reviewer preview on main...feat/phase4: one BLOCKER.
+  - **B1 (CF-008):** a collected join side keeps unobserved dictionary levels, so `group_by(...; drop=false)` above a join shows n=0 groups that eager doesn't.
+  - Fix lane p4-levels was approved by the lead. After it merges, the FULL gate set plus `dod.jl --base main` run at the new head, and the quiet window waits until then.
+- Follow-up (lead-owned, before any ChuiFrames release): `scripts/changelog.jl fold` rejects fragments that hold Markdown headings, and that rule is by design. Fragments with `###` headings:
+  - ChuiFrames: phase1-research, phase2-eager, phase2b-tidyr, phase2c-perf, phase3-lazy, and the phase-4 fragments;
+  - coordinator: eco-amend, adr-0011-amend, frames-reqs, requests-p4p3, sync-027.
+
+  Two fixes: rewrite those fragments as list items, and (factory 0.3.x) make `dod.jl`'s changelog requirement run the same heading check, so this is caught at lane time.
 - Process deviation (frames p4-bench): the lane made one python3 heredoc edit on new, uncommitted benchmark/compare files, against the Edit/Write rule. The reviewer checks the committed content. The p4-perf brief restates the rule.
 - ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
