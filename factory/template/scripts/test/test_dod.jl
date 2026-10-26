@@ -114,6 +114,48 @@
             !any(l -> occursin(DoD.FRAGMENT_HEADING, l), ["- # x", "    # code", "#tag", "- feat"])
     end
 
+    # 0.3.0 (tw-031): the fold reads every fragment in changelog.d/, so a fragment already on the base
+    # that the lane edits to hold a heading breaks the fold just as an added one does
+    @testset "changelog fails on a MODIFIED fragment that now holds a heading" begin
+        d = tmp_repo(
+            Dict(
+                "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n",
+                "changelog.d/old.md" => "- old\n"
+            )
+        )
+        sh(`git -C $d checkout -q -b feat/m`)
+        commit!(
+            d, Dict(
+                "docs/x.md" => "y\n", "changelog.d/lane-m.md" => "- feat: X\n",
+                "changelog.d/old.md" => "## Changed\n\n- old, edited\n"
+            ),
+            "docs: X\n\nPlan: docs/superpowers/plans/2026-10-27-m.md"
+        )
+        rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
+        @test rc == 1 && fails(out) == ["changelog"] || (print(out); false)
+        @test occursin(r"\[FAIL\] changelog +changelog\.d/old\.md contains a Markdown heading.*changelog\.jl fold", out) ||
+            (print(out); false)
+    end
+
+    @testset "changelog passes on a modified fragment with list items only" begin
+        d = tmp_repo(
+            Dict(
+                "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n",
+                "changelog.d/old.md" => "- old\n"
+            )
+        )
+        sh(`git -C $d checkout -q -b feat/n`)
+        commit!(
+            d, Dict(
+                "docs/x.md" => "y\n", "changelog.d/lane-n.md" => "- feat: X\n",
+                "changelog.d/old.md" => "- **Changed:**\n  - old, edited (# not a heading)\n"
+            ),
+            "docs: X\n\nPlan: docs/superpowers/plans/2026-10-27-n.md"
+        )
+        rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
+        @test rc == 0 || (print(out); false)
+    end
+
     @testset "CLI on a real branch" begin
         d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
