@@ -28,6 +28,14 @@ The critic's `TddScratch` (`<root>/.lanes/scratch/tw-critic/TddScratch`), with `
 | `killed` (new) | `killed_tests.jl` | the test process gets SIGTERM while the item sleeps |
 | `precompile fail` (new; run as `item=assert`) | `items_tests.jl` | made in a scratch copy of scratchpkg with its `scripts/test/fixtures/tdd/scratchpkg/src/TddScratch.jl` line 4 changed to `g(x) = x + 1)`, run with `item=assert`: the package fails to precompile, so `assert` errors with `Got exception outside of a @test` and 1.13's `The following 1 package failed to precompile:` or 1.10's `Failed to precompile TddScratch [...]` (outputs `precompile-fail-1.13.txt`, `precompile-fail-1.10.txt`) |
 
+| `unexpected pass` (review) | `review_tests.jl` | `@test_broken 1 == 1` holds: `Error During Test` with `Unexpected Pass` |
+| `letctx` (review) | `review_tests.jl` | `undefined_fnn(v)` inside `@testset let v = 1`: UndefVarError; 1.13 prints `Context: v = 1` between `Expression:` and the exception, 1.10 does not |
+
+The review cases were added to the committed scratchpkg as their own file, `review_tests.jl`, on
+2026-10-26 (Julia 1.13.2 and 1.10.12, the commands below). A new file moves no line of the other
+files, and every other output was made with an `item=` filter that does not select these items, so
+the other fixtures stay valid.
+
 The `stub outside test` and `typo outside` cases do not break the package or the file: each fails only
 its own item, with `Got exception outside of a @test` and a `LoadError: ` prefix. One source tree serves
 every case, so there are no variant directories or env switches. The new cases live in their own files
