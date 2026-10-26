@@ -133,18 +133,50 @@ module Tdd
     # green
 
     """
+        renamed_by(root, commits, name) -> sha or nothing
+
+    The test-fix that frees red item `name`, gone at HEAD (plan Task 9 ruling): a commit after the
+    last red/test-fix requesting `name`, with trailer `TDD: test-fix`, authored by the test-writer,
+    that removes `name`, has red items of its own (the new name) and passing red evidence (E1's
+    `red_pass` plus `red <sha7>: OK`). Anything else (another author or phase, no evidence, a
+    deletion with no replacement) frees nothing.
+    """
+    function renamed_by(root, commits, name)
+        i = findlast(c -> c.phase in RED_PHASES && any(s -> s.name == name, requested(root, c.sha).red), commits)
+        i === nothing && return nothing
+        for c in commits[(i + 1):end]
+            (c.phase == "test-fix" && c.author == role_author("test-writer")) || continue
+            isempty(spans_at(root, "$(c.sha)^", [name])) && continue   # not the commit that removed it
+            isempty(spans_at(root, c.sha, [name])) || continue
+            isempty(requested(root, c.sha).red) && continue            # no replacement
+            ev = evidence_file(joinpath(Evidence.evidence_dir(root), "red-$(sha7(c.sha)).txt"))
+            red_pass(ev, c.sha) && occursin(Regex("(?m)^red $(sha7(c.sha)): OK\\b"), ev.tdd) && return c.sha
+        end
+        return nothing
+    end
+
+    """
         green(root; base = "main", io) -> exit code
 
     The items of every `red`/`test-fix` commit in `base..HEAD` must all be selected and pass, with a
     `Test Summary:` total of at least their count; then the default suite must pass. Evidence `green`.
+    An item gone at HEAD is NOT-RUN unless a test-writer test-fix renamed it (`renamed_by`); then
+    it is dropped and reported as `RENAMED`.
     """
     function green(root; base = "main", io = stdout)
         refuse_dirty(root, io, "green") && return 2
-        reds = lane_shas(root, base, RED_PHASES)
-        reds === nothing && (println(io, "tdd.jl green: no merge base with `$base` in $root (exit 2)."); return 2)
+        commits = lane_commits(root, base)
+        commits === nothing && (println(io, "tdd.jl green: no merge base with `$base` in $root (exit 2)."); return 2)
         have_ci(root, io, "green") || return 2
-        names = unique!([s.name for c in reds for s in requested(root, c).red])
+        names = unique!([s.name for c in commits if c.phase in RED_PHASES for s in requested(root, c.sha).red])
         buf = IOBuffer()
+        present = Set(s.name for s in spans_at(root, "HEAD", names))
+        for n in filter(!in(present), names)
+            fix = renamed_by(root, commits, n)
+            fix === nothing && continue
+            println(buf, "RENAMED  $n (test-fix $(sha7(fix)))")
+            filter!(!=(n), names)
+        end
         if !isempty(names)
             spans = spans_at(root, "HEAD", names)
             r = run_items(root, "green", names; io)
