@@ -28,17 +28,23 @@ end
 @testset "factory 0.3.0: test-writer role" begin
     reg = TOML.parsefile(joinpath(ROOT, ".agents/agent-registry.toml"))
 
+    # The registry, AGENTS.md, CLAUDE.md and the rendered agents are seeded or generated from the
+    # seeded registry: in a synced repo (IN_FACTORY false) they are the repo's own, so the checks
+    # that pin template content run only in the factory. Managed files (bodies, skill, command) are
+    # checked everywhere.
     @testset "registry has 13 agents including test-writer" begin
-        @test length(reg["agents"]) == 13
         slugs = [a["slug"] for a in reg["agents"]]
-        @test "test_writer" in slugs
         @test allunique(slugs)
-        @test isfile(joinpath(ROOT, ".claude/agents/test-writer.md"))
-        @test isfile(joinpath(ROOT, ".codex/agents/test_writer.toml"))
         @test isfile(joinpath(ROOT, ".agents/bodies/test_writer.md"))
+        if IN_FACTORY
+            @test length(reg["agents"]) == 13
+            @test "test_writer" in slugs
+            @test isfile(joinpath(ROOT, ".claude/agents/test-writer.md"))
+            @test isfile(joinpath(ROOT, ".codex/agents/test_writer.toml"))
+        end
     end
 
-    @testset "test_writer registry entry is the spec §2.1 entry" begin
+    IN_FACTORY && @testset "test_writer registry entry is the spec §2.1 entry" begin
         # an absent entry reads as empty fields, so each assertion fails on its own
         tw = get(Dict(a["slug"] => a for a in reg["agents"]), "test_writer", Dict{String, Any}())
         f(k, d = "") = get(tw, k, d)
@@ -57,7 +63,7 @@ end
         @test occursin("tdd.jl red output", f("output_format"))
     end
 
-    @testset "implementer file_scope has no test/**" begin
+    IN_FACTORY && @testset "implementer file_scope has no test/**" begin
         im = registry_agent(reg, "implementer")
         @test im["file_scope"] == ["src/**", "ext/**", "changelog.d/**"]
         @test !any(g -> startswith(g, "test"), im["file_scope"])
@@ -66,12 +72,14 @@ end
         @test im["role"] == "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged."
         @test any(s -> occursin("tdd.jl audit OK", s), im["scorecard"])
         @test !any(s -> occursin("failing test written first", s), im["scorecard"])
-        # the rendered agent says so too
+        # the rendered file scope says so too (gen.jl's `File scope:` line; the body, copied
+        # verbatim, legitimately says "Never touch `test/**`")
         md = readroot(".claude/agents/implementer.md")
-        @test !occursin("`test/**`", md)
+        @test occursin(r"(?m)^Mode: `write`\. File scope: [^\n]*`src/\*\*`", md)
+        @test !occursin(r"File scope:[^\n]*`test/\*\*`", md)
     end
 
-    @testset "test-writer tools frontmatter rendered without Agent/SendMessage" begin
+    IN_FACTORY && @testset "test-writer tools frontmatter rendered without Agent/SendMessage" begin
         p = joinpath(ROOT, ".claude/agents/test-writer.md")
         @test isfile(p)
         fm = isfile(p) ? agent_frontmatter(p) : Dict{String, String}()
@@ -83,7 +91,7 @@ end
         @test occursin("File scope: `test/**`.", isfile(p) ? read(p, String) : "")
     end
 
-    @testset "implementer frontmatter: tools without Agent/Task/SendMessage, and those disallowed" begin
+    IN_FACTORY && @testset "implementer frontmatter: tools without Agent/Task/SendMessage, and those disallowed" begin
         fm = agent_frontmatter(joinpath(ROOT, ".claude/agents/implementer.md"))
         tools = fm_list(fm, "tools")
         @test !isempty(tools)                                  # an allowlist now, not "inherit all"
@@ -91,7 +99,7 @@ end
         @test issubset(["Agent", "Task", "SendMessage"], fm_list(fm, "disallowedTools"))
     end
 
-    @testset "registry header says 13 roles and cites ADR-0015; AGENTS.md roster lists test-writer" begin
+    IN_FACTORY && @testset "registry header says 13 roles and cites ADR-0015; AGENTS.md roster lists test-writer" begin
         txt = readroot(".agents/agent-registry.toml")
         header = join(filter(l -> startswith(l, "#"), split(split(txt, "\nversion = ")[1], '\n')), '\n')
         @test occursin(r"\b13\b|13th|thirteen"i, header)
@@ -173,7 +181,7 @@ end
         @test occursin(".lanes/briefs/", c)
     end
 
-    @testset "CLAUDE.md has the tdd.jl lines" begin
+    IN_FACTORY && @testset "CLAUDE.md has the tdd.jl lines" begin
         c = readroot("CLAUDE.md")
         @test occursin("scripts/tdd.jl", c)
         @test occursin("tdd.jl audit", c)
