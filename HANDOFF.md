@@ -64,6 +64,8 @@ The critic on the phase-4 spec found that the join design departs from user-acce
 2. **ADR-0003 rules 4 and 11:** always build the hash table on y, and radix-partition only y. x probes per morsel in parallel, which keeps dplyr's row order without a sort. The accepted text has the cost stage choose the build side and partitions both sides. Recommend accepting this as a dated amendment, recorded in ADR-0023, with the thresholds checked in p4-bench. The alternative builds on the smaller side and restores the order with a sort.
 3. **Parity:** ship `cross_join` and equality-only `join_by(:a => :b)` in phase 4. Defer `nest_join` and inequality/rolling joins, and update the parity-matrix rows. Also add the DataAPI `innerjoin`/`leftjoin`/… methods (ADR-0007, not a deviation). Recommend yes.
 
+**Answered 2026-10-26 (user):** (1) `by =`, with a dated ADR-0002 rule 16 amendment. (2) **Keep ADR-0003** as written: build on the smaller side, partition both sides above the broadcast limit, and restore dplyr's order with a stable sort. (3) **The full matrix:** `nest_join`, `cross_join` and equality `join_by` in phase 4, plus the DataAPI methods. Inequality/rolling joins stay deferred because no design exists. Sent to frames-p4; p4-join starts after group-by tasks 1–2 merge.
+
 **Lesson (2026-10-20):** a spawned agent's write_guard root is the lead's cwd when it is spawned. `cd` into the target repo or worktree before spawning a lane (the memory dir is outside the root, so this note lives here).
 
 **Merged 2026-10-20 (afternoon), all with a final reviewer approval:**
