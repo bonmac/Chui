@@ -68,5 +68,6 @@ end
     include("test_evidence.jl")
     include("test_sync_factory.jl")
     include("test_runtests_template.jl")
+    include("test_tdd.jl")
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end
