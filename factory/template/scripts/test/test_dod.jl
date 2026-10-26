@@ -64,9 +64,12 @@
             )
         )
         sh(`git -C $d checkout -q -b feat/f`)
-        commit!(
-            d, Dict("src/A.jl" => "y\n", "test/a.jl" => "t\n", "changelog.d/old.md" => "- edited\n"),
-            "feat: A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md"
+        # 0.3.0: a valid TDD lane (red by the test writer, green by the implementer), so `tdd` passes
+        tc!(files, author, msg) = (commit!(d, files, msg); sh(`git -C $d commit -q --amend --no-edit --author=$author`))
+        tc!(Dict("test/a.jl" => "t\n"), "test-writer <test-writer@factory.invalid>", "test: A red\n\nTDD: red")
+        tc!(
+            Dict("src/A.jl" => "y\n", "changelog.d/old.md" => "- edited\n"), "implementer <implementer@factory.invalid>",
+            "feat: A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md\nTDD: green"
         )
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 1 && fails(out) == ["changelog"]                           # editing an old fragment is not evidence
@@ -81,13 +84,20 @@
     @testset "CLI on a real branch" begin
         d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
-        commit!(d, Dict("src/A.jl" => "y\n"), "feat: change A")
+        # 0.3.0: a valid TDD lane, so `tdd` passes: the red is empty (no test/ yet, so `tests` still fails),
+        # the green changes A, and the tests come as a backfill (no order rule; the test writer's phase)
+        TW, IMPL = "test-writer <test-writer@factory.invalid>", "implementer <implementer@factory.invalid>"
+        red = "test: A red\n\nTDD: red"
+        sh(`git -C $d commit -q --allow-empty --author=$TW -m $red`)
+        commit!(d, Dict("src/A.jl" => "y\n"), "feat: change A\n\nTDD: green")
+        sh(`git -C $d commit -q --amend --no-edit --author=$IMPL`)
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 1 && occursin("NOT DONE", out) && fails(out) == ["ref", "tests", "changelog"]
         commit!(
             d, Dict("test/a.jl" => "t\n", "CHANGELOG.md" => "- A\n"),
-            "test: cover A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md"
+            "test: cover A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md\nTDD: backfill"
         )
+        sh(`git -C $d commit -q --amend --no-edit --author=$TW`)
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 0 && occursin("dod.jl: DONE", out) && isempty(fails(out))
         @test capture(() -> DoD.main(["--root", d, "--base", "nope"]))[1] == 2
