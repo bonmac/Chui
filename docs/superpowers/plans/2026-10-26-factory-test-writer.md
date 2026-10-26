@@ -155,7 +155,7 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
   `agent_type`" as the lead's identity.
 - **SubagentStart/SubagentStop:** 0 events for either dispatch, so they are not usable here. Reported per
   spec §13; nothing relies on them.
-- **Step 6 checks:** `ls .claude/agents/tw-probe.md` gave "No such file or directory"; the grep printed
+- **Step 6 checks:** the `ls` of the rendered tw-probe agent file gave "No such file or directory"; the grep printed
   nothing (exit 1); `gen.jl --check` was OK (26 files); the probe lane and branch were deleted.
 - **Evidence:** the log is kept at `<root>/.lanes/archive/tw-task0/probe.jsonl`.
 - **Follow-up found on the way (0.3.0 item):** the factory hook tests inherit `FACTORY_ALLOW_T3` from
