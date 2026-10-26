@@ -1,9 +1,11 @@
 # Factory 0.3.0: a `test-writer` role and test-first lanes with separate contexts
 
-- **Date:** 2026-10-26, revision 4. The history is in §12:
+- **Date:** 2026-10-26, revision 5. The history is in §12:
   - revision 2 answered the critic's round 1;
   - revision 3 made context separation the goal;
-  - revision 4 answers critic round 2: the real topology, the H5 fix, and the cut list.
+  - revision 4 answered critic round 2: the real topology, the H5 fix, and the cut list;
+  - revision 5 answers critic round 3: `@compat public`, amend and `-C`, the git allowlist, and the
+    lead as the dispatcher.
 - **Lane:** testwriter-spec (coordinator; this spec and its plan only).
 - **Asked by the user:** "plan the test-writer role. It should follow proper TDD principles. Write
   any missing tests once done." Clarified purpose (relayed by the lead): "separate the tester
@@ -77,17 +79,38 @@ A design keyed on package-local agents and hooks would never engage.
 ecosystem. The plan's Task 0 probe runs in topology (a): the lead's coordinator session dispatches a
 probe subagent that works in a package worktree.
 
+**In topology (a) the dispatcher is the lead (R3-M4).** Wherever a step below says "the lead
+dispatches", "relays" or "passes on", that is the lead session. No general-purpose sub-lead is
+interposed. The lead sees both sides, as it must to review, so the rule is not "the dispatcher saw
+nothing". The rule is:
+
+**The brief is the only channel.**
+
+- The dispatcher never relays src, a diff beyond the stub diffs, or the other side's reasoning.
+- The saved dispatch prompts (§0.6) are the evidence, and the reviewer reads them.
+- `tdd.jl mutate` reads src, so it runs in its **own general-purpose `mutator` subagent**,
+  dispatched by the lead. The mutator's report never goes into a test-writer brief (§5.2).
+
 **Instances:**
 
-- **Two separate agents per task, each spawned fresh.** One is `subagent_type: test-writer`, named
-  `tw-<lane>-<task>`; the other is `subagent_type: implementer`, named `impl-<lane>-<task>`.
+- **Two separate agents per task, each spawned fresh:** one with `subagent_type: test-writer`, one
+  with `subagent_type: implementer`.
+- **The exact dispatch form (R3-M6)** is an Agent tool call with that `subagent_type`, the brief as
+  `prompt`, no `team_name`, and no `fork`.
+  - A `name` (`tw-<lane>-<task>` / `impl-<lane>-<task>`) is used only if the Task 0 probe shows that
+    a named dispatch still carries PreToolUse `agent_type`.
+  - Otherwise dispatches are unnamed, and the agent is continued by its agent id.
+- **This lead's agents run as in-process teammates today.** The ledger since 2026-10-25 shows
+  `idle-reported`/`idle-blocked` events, 0 SubagentStart, and every SubagentStop with
+  `agent_type "-"`. The memory note says the same: under `--bg`, teammates are in-process.
+  Whether a plain Agent call from this lead yields a subagent whose PreToolUse carries
+  `agent_type` is exactly what Task 0 measures.
 - **What is never allowed:**
   - one agent switching roles;
-  - a `fork` (it inherits its parent's context);
-  - a role agent dispatched by an agent that saw the other side;
-  - an agent resumed with the other's transcript.
-- **Continuing an agent** with SendMessage is allowed only within its own task. A new task gets
-  fresh instances.
+  - a `fork`;
+  - an agent resumed with the other's transcript;
+  - relaying outside the brief.
+- **Continuing an agent** is allowed only within its own task. A new task gets fresh instances.
 - **Tools come from the registry frontmatter (§2.1).** Neither role has `Agent`, `Task` or
   `SendMessage`, so neither can dispatch or message the other. The test-writer also has no
   `WebFetch`/`WebSearch`, which could fetch pushed src. That frontmatter replaces revision 3's hook
@@ -105,9 +128,9 @@ probe subagent that works in a package worktree.
 | test-writer | the plan task text (which may name src *paths*; a path is not content); the spec; the public API (`docs/src/`, and docstrings of public names rendered by `tdd.jl api`); the lane's STUB diffs, which H5 checks as declarations only; its own tests and red/green evidence; written test-fix requests | the content of `src/`/`ext/` beyond the STUB diffs; GREEN or REFACTOR diffs; the implementer's messages, reports or reasoning; the lane's changelog fragment, HANDOFF, `.lanes/reports/`; transcripts |
 | implementer | the plan task text; the spec; the red test files (it reads them itself); the red evidence | the test-writer's messages, reports or reasoning |
 
-**Disputes go in writing, through the sub-lead.** The implementer writes a test-fix request: the
-item, what is wrong *relative to the spec* (citing the line), and the proposed expected behaviour.
-It holds no source code. The sub-lead passes it on unchanged. The two agents never talk; the
+**Disputes go in writing, through the lead.** The implementer writes a test-fix request: the item,
+what is wrong *relative to the spec* (citing the line), and the proposed expected behaviour. It
+holds no source code. The lead passes it on unchanged, inside the next test-writer brief. The two agents never talk; the
 frontmatter has no SendMessage for either.
 
 **Brief templates.** These are documented in the lane-lifecycle skill; the reviewer checks them.
@@ -115,7 +138,7 @@ frontmatter has no SendMessage for either.
 - **test-writer:**
 
   ```
-  <!-- tdd-brief role=test-writer lane=<lane> head=<sha> -->
+  <!-- tdd-brief role=test-writer lane=<lane> checkout=<abs path of the lane worktree> head=<sha> -->
   ## Task    (the plan task text)
   ## Spec    (the path)
   ## Public API   (tdd.jl api output; docs/src pages)
@@ -130,8 +153,10 @@ frontmatter has no SendMessage for either.
   test-writer's report and messages.
 
 `tdd.jl brief --role R --lane DIR` prints the header (exit 2 on a dirty lane, M-B), the `## Public
-API` section and the stub-diff section, and saves the brief under `.lanes/briefs/<lane>/`. The
-sub-lead adds the task text and the rest by hand. A lint of brief contents was cut (§11).
+API` section and the stub-diff section. It saves the brief under `<main>/.lanes/briefs/<lane>/`,
+where `<main>` is the **main checkout of the repo that owns the lane** (R3-M5). Lane names repeat
+across repos, so the `checkout=` field in the header, not the lane name, identifies the lane. The
+lead adds the task text and the rest by hand. A lint of brief contents was cut (§11).
 
 ### 0.5 Identity: a git author per role, and the commit guard
 
@@ -142,36 +167,68 @@ sub-lead adds the task text and the rest by hand. A lint of brief contents was c
 
   The committer is the machine's user.
 - **H9 (§4.2):** each phase commit's author is its phase's role.
-- **The commit guard** (`tdd_boundary`, every `git commit` by any caller, in any checkout under the
-  session root). It computes the **effective author** with
-  `git -C <checkout> var GIT_AUTHOR_IDENT`, applying the command's own env assignments, `-c` options
-  and `--author` (M-C). Then:
-  - a caller whose `agent_type` is a role must commit as exactly that role;
-  - a caller that is not that role (the lead, `general-purpose`, a missing `agent_type`) may not
-    produce a role identity, whether by `--author`, env, `-c` or `git config user.*`;
-  - a role caller may not write a `TDD-Mode:` trailer (M-A);
-  - staged paths (`git diff --cached --name-only`) must fit the role:
-    - the test-writer stages only `test/**`;
-    - the implementer stages no `test/**`.
-- **The hook records each role commit** in the ledger as
-  `{ev: "tdd-commit", agent_id, agent_type, checkout, parent: <HEAD before>}`. This is the
-  reviewer's evidence of who committed, and it does not depend on SubagentStart/Stop (M-G).
+- **The lead's identity is explicit (R3-m1).** "Lead-authored" means authored exactly
+  `lead <lead@factory.invalid>`, set with `--author` by the main session. The main session is the
+  caller with no `agent_type`. The commit guard denies that identity to every caller that has an
+  `agent_type`, `general-purpose` included. Today's general-purpose package lanes therefore cannot
+  make a lead-authored commit.
+- **The commit guard has two halves** (split from the boundary hook, m5): `_tdd_commit_guard.sh`
+  runs at PreToolUse, and `tdd_commit_post.sh` at PostToolUse. Both apply to every `git commit` by
+  any caller, in any checkout under the session root. A compound line (`git add … && git commit …`,
+  `;`, `||`) is split with bash_guard's parser. Each `git commit` in it is checked, and its checkout
+  comes from the `cd`/`-C` that precedes it.
+- **PreToolUse: the effective author, as it will be recorded (R3-M2).**
+  - With `--amend` (without `--reset-author`), `-C`/`-c`/`--reuse-message`/`--reedit-message` and
+    `<commit>`, the author comes from that **source commit**: `git log -1 --format='%an <%ae>'`.
+  - Otherwise it comes from `--author`, or from `git -C <checkout> var GIT_AUTHOR_IDENT` with the
+    command's env assignments and `-c` options applied. A `git config user.*` set earlier is covered,
+    because `git var` reads it.
 
-**What this proves, and what it does not.** A commit that passes H9 was made through a modelled
-`git commit` by a process the harness reported as that role. That partly closes the "one git
-identity" blind spot, because one machine and one user still set both authors:
+  Then:
+  - a role caller must commit as exactly its role;
+  - no caller may produce a role identity that is not its own, or the lead identity if it has an
+    `agent_type`;
+  - a role caller may not write a `TDD-Mode:` trailer.
+- **PostToolUse: the authoritative check, on the resulting commit (R3-M2).** The PreToolUse half
+  records each checkout's HEAD under the call's `tool_use_id` in `.lanes/tdd-pending/`. The
+  PostToolUse half takes every new commit since then (`git rev-list <before>..HEAD`, or the replaced
+  sha after an amend). For each one it checks:
+  - author against caller;
+  - the trailer phase against the caller's role;
+  - the changed paths against the role (the test-writer changes only `test/**`, outside the seeded
+    runners; the implementer changes no `test/**`).
 
-- a commit made through a form bash_guard does not model gets past the guard: julia or `sh -c`
-  code, `git commit-tree`, a script, or a session without the hooks;
+  It appends `{ev: "tdd-commit", agent_id, agent_type, checkout, sha}` with the **resulting sha**.
+  PostToolUse cannot undo a commit. A violation is written as `tdd-commit-violation` and printed to
+  the caller, and audit rule E5 fails on it.
+- **Audit rule E5 (§4.3)** requires every role-authored commit in the lane to have a `tdd-commit`
+  record with the same sha and a matching `agent_type`, and no `tdd-commit-violation`. On the
+  machine that holds the ledger, this also detects the unmodelled forms (`git commit-tree`, julia
+  code), because they leave no record.
+
+**What this proves, and what it does not.** A commit that passes H9 and E5 was made through a
+`git commit` that the hooks saw, by a process the harness reported as that role. The commit itself
+was checked after it was made. That partly closes the "one git identity" blind spot, because one
+machine and one user still set both authors:
+
+- E5 needs the local ledger, so a fresh clone or CI sees H9 only;
+- a commit made with the hooks off and then given a forged ledger line passes;
 - the author says which role committed, not what that agent had read. §0.6 covers what it read.
 
 ### 0.6 The `tdd_boundary` hook: paths and Bash
 
-- **One managed hook.** .claude/hooks/tdd_boundary.sh (new, ≤ 150 lines) is registered in
-  `settings.json` with PreToolUse matchers `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash`
-  and `Agent|Task`, the latter matching dispatch_limit (M-G). It runs through the same fail-closed
-  `sh -c '… exit 2'` wrapper as the other guards.
-- **Paths.** Each target path is resolved to its checkout and to the path relative to it (§0.3a).
+- **Three managed files, each ≤ 150 lines (m5):**
+  - .claude/hooks/tdd_boundary.sh, for paths, the Bash allowlist and dispatch. It is registered in
+    `settings.json` with PreToolUse matchers `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash`
+    and `Agent|Task` (the latter as dispatch_limit, M-G).
+  - .claude/hooks/_tdd_commit_guard.sh, sourced by tdd_boundary.sh for `git commit`.
+  - .claude/hooks/tdd_commit_post.sh, at PostToolUse `Bash`.
+
+  The PreToolUse hooks run through the same fail-closed `sh -c '… exit 2'` wrapper as the other
+  guards.
+- **Paths.** Each target path is resolved **with symlinks followed** (`cd -P`/`pwd -P` on its
+  directory; m2) to its checkout, and to the path relative to it (§0.3a). A `test/` symlink to
+  `../src` therefore resolves to `src/` and is denied.
 - **Who it applies to.** It applies when `agent_type` is `test-writer` or `implementer`, to every
   caller's `git commit`, and to the lead's dispatches of a role.
 - **Feasible with the current hooks:** PreToolUse input carries `agent_type` inside a subagent
@@ -181,12 +238,12 @@ identity" blind spot, because one machine and one user still set both authors:
 | Caller | Tool | Rule |
 |---|---|---|
 | test-writer | Read, Grep, Glob | **Allowlist (M-D).** In any checkout: `test/**`, `docs/**` (spec, plan, docs/src), `Project.toml`, `.lanes/evidence/red-*` and `green-*`, `.lanes/briefs/<lane>/test-writer-*` (m-c). In the coordinator: `docs/superpowers/**`, `contracts/**`, `adr/**`. Grep and Glob must give a `path` inside that list. Everything else is denied, including transcripts (`~/.claude/projects/…`), the depot (`~/.julia/packages/…`), `.lanes/scratch/` (the mutate copy), `src/`, `ext/`, `.lanes/reports/`, `changelog.d/` and HANDOFF. |
-| test-writer | Edit, Write, MultiEdit, NotebookEdit | allow only `test/**` of a checkout (M-B) |
-| test-writer | Bash | **Allowlist (M-E).** `cd <checkout>`; `julia [<checkout>/]scripts/tdd.jl red\|green\|api …`; `julia [<checkout>/]scripts/ci.jl test …`; `git [-C <checkout>]` limited to `status`, `add <test/ paths>`, `commit` (the guard) and `diff`/`log`/`show` with a pathspec under `test/`, or `--stat`/`--name-only` only; `ls`/`cat`/`head`/`tail`/`wc`/`grep`/`rg` with explicit allowlisted paths. Everything else is denied: `julia -e`, `sh -c`, `scripts/evidence.jl` called directly (it runs any command), `tdd.jl mutate` (m-a), `git show <sha>` without a pathspec, `git blame`. |
+| test-writer | Edit, Write, MultiEdit, NotebookEdit | allow only `test/**` of a checkout, except the seeded runners `test/runtests.jl` and `test/Project.toml`, which hold `item=`/`TDD_MATCHED`, the NOT-RUN oracle (m3) |
+| test-writer | Bash | **Allowlist (M-E).** `cd <checkout>`; `julia [<checkout>/]scripts/tdd.jl red\|green\|api …`; `julia [<checkout>/]scripts/ci.jl test …`; `git [-C <checkout>]` with **only** `status`, `add <test/ paths>`, `commit` (the guard) and `diff [--cached] -- <paths>`, where every pathspec is under `test/` (R3-M3); `ls`/`cat`/`head`/`tail`/`wc`/`grep`/`rg` with explicit allowlisted paths. Everything else is denied, including `git log` (commit messages carry the implementer's reasoning), `git show`, any `<rev>:<path>` argument (it ignores the pathspec; measured: `git show HEAD:src/a.jl -- test/` printed src), `git blame`, `julia -e`, `sh -c`, `scripts/evidence.jl` called directly (it runs any command) and `tdd.jl mutate`. |
 | implementer | Edit, Write, MultiEdit, NotebookEdit | deny `test/**` of any checkout (M-B) |
 | implementer | Bash | bash_guard's modelled write targets under `test/**` are denied. Unmodelled writes are caught at commit by the staged-path check and H3/H4. |
-| any | `git commit` | the commit guard (§0.5) |
-| lead (no role) | Agent/Task with `subagent_type` test-writer or implementer | the prompt starts with a `tdd-brief` header for that role. Its `head=` equals the named lane's HEAD, and the lane is clean (M-B: no uncommitted edits cross the handoff). The prompt is saved to `.lanes/briefs/<lane>/dispatched/`. |
+| any | `git commit` | the commit guard (§0.5), PreToolUse and PostToolUse |
+| any non-role caller | Agent/Task with `subagent_type` test-writer or implementer | The prompt starts with a `tdd-brief` header for that role. Its `checkout=` is a lane worktree under the session root (R3-M5), its `head=` equals that checkout's HEAD, and the checkout is clean (M-B). The prompt is saved to `<main>/.lanes/briefs/<lane>/dispatched/`. |
 
 **Fails closed:** a payload the hook cannot parse, a missing library or a missing jq means deny. For
 the Read, Grep, Glob and Bash matchers that applies to **every caller**, the lead included. That is
@@ -203,7 +260,7 @@ and the lead-dispatch rule apply: the reads are unguarded. That is why TDD lanes
 | Run output: stacktraces name src files and lines, and `show` of a value can expose fields | Accepted: no source text is printed | yes |
 | `docs/src` and docstrings written by the implementer | By design: they are the public API | a docstring that describes internals |
 | Plan task text names src paths | Accepted: paths, not content (M-F) | — |
-| The sub-lead relays the implementation in a brief, a request or a paraphrase | Brief templates; saved dispatch prompts; the reviewer reads them | a paraphrase passes every mechanical check |
+| The lead relays the implementation in a brief, a request or a paraphrase, or puts the mutator's report into a test-writer brief | Brief templates; saved dispatch prompts; the reviewer reads them | a paraphrase passes every mechanical check |
 | The lead's own context holds both sides | The lead never writes tests or code | yes |
 | Two instances of one model share priors | Tests cite the spec; review | separate contexts, not independent judges (§11) |
 | Teammates, or a missing `agent_type` | TDD lanes are subagent-only (§0.3) | until the probe passes |
@@ -217,8 +274,8 @@ and the lead-dispatch rule apply: the reads are unguarded. That is why TDD lanes
 | D1 | The role | A 13th template role `test_writer` / `test-writer` (unit and example tests), asked for by the user. The implementer loses `test/**`, and H3/H4, the hook and the commit guard enforce that. |
 | D2 | TDD protocol | Per behaviour: STUB (new names only) → RED → GREEN → REFACTOR, plus `test-fix`/`test-refactor`. Each commit carries a `TDD:` trailer and must follow the order in §3.1. |
 | D3 | Right-reason red | `tdd.jl red` classifies the failure *headers* only. An assertion failure counts as red, and so does any in-item exception, `MethodError` included. Rejected: `UndefVarError`, parse or load errors (also under `@test_throws`), no summary, a pass, an unmatched item. |
-| D4 | Enforcement | History rules H1–H9 run in `tdd.jl audit` and in `dod.jl`'s `tdd`. Evidence rules E1–E4 run in audit only. The lead runs both locally before every merge. The mode is a `TDD-Mode:` trailer on a lead-authored commit, and `skip` fails dod unless it is lead-authored with a reason. Lanes merge, never rebase. |
-| D5 | Backfill | Characterization items, committed first; then the **sub-lead** runs `tdd.jl mutate` per item (evidence `mutate-<slug>`/`mutexp-<slug>`). `gaps` lists public names with no test. Order: ChuiCore, ChuiTypes, ChuiFrames. Bugs found become `@test_broken` and are reported. A 2 h cap. |
+| D4 | Enforcement | History rules H1–H9 run in `tdd.jl audit` and in `dod.jl`'s `tdd`. Evidence rules E1–E5 run in audit only. The lead runs both locally before every merge. The mode is a `TDD-Mode:` trailer on a commit authored `lead <lead@factory.invalid>`. `skip` fails dod unless it is lead-authored with a reason. A PostToolUse commit check and E5 tie role commits to ledger records. Lanes merge, never rebase. |
+| D5 | Backfill | Characterization items, committed first; then a separate **`mutator` subagent** dispatched by the lead runs `tdd.jl mutate` per item (evidence `mutate-<slug>`/`mutexp-<slug>`). `gaps` lists public names with no test. Order: ChuiCore, ChuiTypes, ChuiFrames. Bugs found become `@test_broken` and are reported. A 2 h cap. |
 | D6 | Version | 0.3.0, a minor bump: stricter guards and a narrowed role. |
 | D7 | Coordinator | **Reversed (NB1):** the coordinator registry gains `test_writer` and `implementer`, for package lanes. Coordinator-own work (no `src/`) does not use TDD. |
 | D8 | Cost and skips | 2–4 more handoffs per task. The lead picks the mode, and records it on a lead-authored commit. A lane with no `src/`/`ext/` change needs no mode. |
@@ -286,7 +343,8 @@ critic and the reviewer are read-only. The user asked for this one, and ADR-0015
 6. **Disputes arrive as a written test-fix request in a new brief.** Answer with a `TDD: test-fix`
    commit (checked by `tdd.jl red`), or with a reason in your report.
 7. **`test-refactor`:** after a green only. Remove or weaken no assertion; run `tdd.jl green`.
-8. **Backfill:** commit items with `TDD: backfill`. The sub-lead runs `mutate` against your commit.
+8. **Backfill:** commit items with `TDD: backfill`. A separate mutator agent runs `mutate` against
+   your commit; you never see its sites.
    A bug becomes `@test_broken` plus a report line; never fix it.
 9. **Shared rules:** Edit/Write only; report changed files and the checks not run.
 
@@ -294,7 +352,7 @@ critic and the reviewer are read-only. The user asked for this one, and ADR-0015
 
 | Role | Change |
 |---|---|
-| implementer | Role line: "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged." Rules: work from your tdd-brief; commit with `--author "implementer <implementer@factory.invalid>"`; never touch `test/**`; disputes go to the sub-lead as a written test-fix request with no source code; you write the lane's changelog fragment; STUB declares only (H5); GREEN is minimal; REFACTOR comes only after a green. Scorecard: "failing test written first" becomes "tdd.jl audit OK". |
+| implementer | Role line: "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged." Rules: work from your tdd-brief; commit with `--author "implementer <implementer@factory.invalid>"`; never touch `test/**`; disputes go to the lead as a written test-fix request with no source code; you write the lane's changelog fragment; STUB declares only (H5); GREEN is minimal; REFACTOR comes only after a green. Scorecard: "failing test written first" becomes "tdd.jl audit OK". |
 | law-tester, property-tester, differential-tester | One line: "In a test-first lane, commit new items with `TDD: red` before the code." |
 | reviewer | The §4.5 checklist. |
 
@@ -397,10 +455,10 @@ Failure headers, the same on 1.10.12 and 1.13.2:
 ```
 julia scripts/tdd.jl red    [--root DIR] [--rev REV]   classify a RED/TEST-FIX commit's items
 julia scripts/tdd.jl green  [--root DIR]               the lane's red items pass, then the default suite
-julia scripts/tdd.jl audit  [--root DIR] [--base B]    history rules H1-H9 + evidence rules E1-E4
+julia scripts/tdd.jl audit  [--root DIR] [--base B]    history rules H1-H9 + evidence rules E1-E5
 julia scripts/tdd.jl api    [--root DIR]               docstrings of exported/public names (Julia >= 1.11)
 julia scripts/tdd.jl brief  --role R [--root DIR]      header + api + stub diffs; refuses a dirty tree; saves it
-julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S   (sub-lead)
+julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S   (mutator agent)
 julia scripts/tdd.jl gaps   [--root DIR]               public names with no test (Julia >= 1.11)
 ```
 
@@ -410,21 +468,23 @@ The work splits into these files, each ≤ 400 lines:
 - scripts/_tdd_classify.jl;
 - scripts/_tdd_history.jl, which dod.jl includes too;
 - scripts/_tdd_backfill.jl, holding mutate and gaps;
-- the hook .claude/hooks/tdd_boundary.sh (§0.6), which sources `_bash_guard_lib.sh` and must stay
+- the hooks .claude/hooks/tdd_boundary.sh, .claude/hooks/_tdd_commit_guard.sh and
+  .claude/hooks/tdd_commit_post.sh (§0.5, §0.6). They source `_bash_guard_lib.sh`, and each is
   ≤ 150 lines.
 
 ### 4.2 History rules (`git rev-list --no-merges --reverse <mb>..HEAD`; *code* = `src/**`, `ext/**`)
 
-The mode comes from the `TDD-Mode:` trailer of the oldest commit that carries one, and that commit
-must not have a role author. With no such trailer the mode is `required`.
+The mode comes from the `TDD-Mode:` trailer of the oldest commit that carries one. That commit must
+be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and the mode is
+`required`. With no such trailer the mode is `required`.
 
 | Rule | Check |
 |---|---|
 | H1 | No commit changes code: PASS, and H2–H8 do not apply (H9 still does). Otherwise every code-changing commit has a phase trailer. |
 | H2 | Mode `required`: at least one `red`. |
-| H3 | `stub`, `green` and `refactor` change no `test/**`. `red`, `test-fix`, `test-refactor` and `backfill` change no code, `Project.toml` or `changelog.d/`. |
+| H3 | `stub`, `green` and `refactor` change no `test/**`. `red`, `test-fix`, `test-refactor` and `backfill` change no code, `Project.toml` or `changelog.d/`. **No phase commit changes the seeded runners `test/runtests.jl` or `test/Project.toml`** (m3); only a non-phase, lead-authored commit may, such as a sync. |
 | H4 | No commit outside a test-writer phase touches `test/**` (H3 seen from the other side, for the register). |
-| H5 | A `stub` only declares (NB2). For each changed src/ext file, parse the parent and the commit (`Meta.parseall`), **descend into `module`/`baremodule` bodies**, and compare the statements as multisets. The new statements may only be: `function NAME end`; a field-only `struct`/`mutable struct`; `abstract type`; `primitive type`; `export`/`public`; a docstring (`Core.@doc` or a string before a decl) wrapping one of these; `using`/`import`; `include("f.jl")` of a file the commit **adds**, whose own top-level statements pass the same rule. Anything else fails, `Base.@kwdef` and inner constructors included. |
+| H5 | A `stub` only declares (NB2, NB3, R3-M1). For each changed src/ext file:<br>1. Parse the parent and the commit (`Meta.parseall`).<br>2. Apply `Base.remove_linenums!` to both, so a stub inserted above an existing method leaves that method's expression unchanged.<br>3. Descend into `module`/`baremodule` bodies.<br>4. Compare the statements as multisets.<br>**Added** statements may only be: `function NAME end`; a field-only `struct`/`mutable struct`; `abstract type`; `primitive type`; `export`/`public`; **a `@compat` macrocall (`@compat` or `Compat.@compat`) whose single argument is a `public` or `export` statement**, the form every package uses because `public` does not parse on 1.10; a docstring (`Core.@doc` or a string before a decl) wrapping one of these; `using`/`import`; `include("f.jl")` of a file the commit **adds**, whose own statements pass the same rule.<br>**Removed** statements are not allowed, except an `export`/`public`/`@compat public` statement replaced in the same commit by one naming a superset of its names. Deleting a method or any other statement fails.<br>Anything else fails, `Base.@kwdef` and inner constructors included. |
 | H6 | Order: a `stub` comes before its `red`; one `green` per `red`/`test-fix`; `refactor`/`test-refactor` only after a `green`. |
 | H7 | The lane does not end on a red. |
 | H8 | Mode `refactor`: no red, green or stub; no `test/**` change. Mode `skip`: dod's `tdd` **FAILS** unless the mode commit is lead-authored and carries a reason (M-A). |
@@ -438,6 +498,7 @@ must not have a role author. With no such trailer the mode is `required`.
 | E2 | Each `green`/`refactor`/`test-refactor` has a passing `green-<sha7>`. In mode `refactor`, the merge base also needs one. |
 | E3 | Each item a `backfill` adds has a passing `mutate-<slug>` or `mutexp-<slug>`. Items whose only assertions are `@test_broken` are listed, not proved. |
 | E4 | No evidence file is dirty or killed. |
+| E5 | Every role-authored lane commit has a `tdd-commit` ledger record with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
 
 ### 4.4 Where it runs; merges and rebases
 
@@ -473,7 +534,7 @@ runs_in = ["local /change-review: tdd.jl audit (history + evidence) and dod.jl `
 test = "scripts/test/test_tdd.jl"
 blind_spots = [
   "authorship ties a phase to a role only through the tdd_boundary commit guard: one machine and one user set both authors; a commit made outside the modelled forms (julia/sh -c code, git commit-tree, a script, a hook-less session) can carry any author and trailer",
-  "evidence is gitignored: E1-E4 run only on the machine that made it; dod checks history only",
+  "evidence and the ledger are gitignored: E1-E5 run only on the machine that made them; dod checks history only",
   "that a test comes from the spec and asserts behaviour, that GREEN is minimal, that a refactor-mode lane adds no behaviour",
   "a MethodError from wrong arguments is BEHAVIOUR (the reviewer checks the signature)",
   "exceptions caught inside property or law kits or a try/catch are ASSERTION until `green` fails",
@@ -486,15 +547,17 @@ blind_spots = [
 [[checks]]
 id = "tdd_boundary"
 rule = "A test-writer reads and writes only allowlisted paths (test/, docs/, evidence, its briefs; never src/ext, transcripts, the depot or the mutate copy) and runs only allowlisted Bash; an implementer never writes test/**; every git commit's effective author is a role only when the caller is that role, and its staged paths fit the role; the lead dispatches a role only on a clean lane with a current tdd-brief, and the prompt is saved"
-prevented_by = ".claude/hooks/tdd_boundary.sh"
-runs_in = ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)", "hook PreToolUse(Agent|Task)"]
+prevented_by = ".claude/hooks/tdd_boundary.sh (with _tdd_commit_guard.sh) and .claude/hooks/tdd_commit_post.sh"
+runs_in = ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)", "hook PreToolUse(Agent|Task)", "hook PostToolUse(Bash)"]
 test = "scripts/test/test_hooks_tdd.jl"
 blind_spots = [
   "the role comes from agent_type, documented for subagents only; teammates and a missing agent_type leave reads unguarded (TDD lanes are subagent-only)",
   "the Bash allowlist relies on bash_guard's parser; unparsed forms are denied, not modelled",
   "test code that reads src at run time is detected after the fact by review, never prevented; an uncommitted read leaves no trace",
   "run output names src files and lines, and show() can expose fields",
-  "a sub-lead's paraphrase in a brief passes; only review of the saved prompts catches it",
+  "the lead's paraphrase in a brief passes; only review of the saved prompts catches it",
+  "PostToolUse cannot undo a commit: a violating commit exists until audit E5 fails the lane",
+  "E5 needs the local ledger: a fresh clone or CI sees H9 only, and a forged ledger line passes",
   "fails closed on every Read/Grep/Glob/Bash call, the lead's included, when jq or a library is missing (availability cost)",
   "two instances of one model share priors; other harnesses (.codex) run no hooks"
 ]
@@ -515,13 +578,17 @@ Uncovered lines (`--lcov`) are deferred (§11). After a package's backfill merge
 the measured coverage, and the lead proposes a `coverage.floor` 1 point below it to the user (T3).
 Every package's floor is `0.0` today.
 
-### 5.2 The proof: `tdd.jl mutate`, run by the sub-lead (m-a)
+### 5.2 The proof: `tdd.jl mutate`, run by a separate mutator agent (m-a, R3-M4)
 
 1. **The test-writer commits a few items** with `TDD: backfill` and reports their names and the
    behaviour each one claims.
-2. **The sub-lead picks one mutation per item,** reading src as only it may. It runs `tdd.jl mutate`
-   against that committed HEAD (a dirty tree is exit 2). The test-writer never sees the mutation
-   site.
+2. **The lead dispatches a fresh general-purpose `mutator` subagent** with the item names and
+   claims, the lane checkout and the sha. The mutator reads src, picks one mutation per item and
+   runs `tdd.jl mutate` against that committed HEAD (a dirty tree is exit 2). It reports to the lead.
+   Its report, and the `mutate-*` evidence that records the mutation, never go into a test-writer
+   brief; the test-writer's read allowlist covers only `red-*`/`green-*` evidence. A surviving
+   mutant goes back to the test-writer as "item X did not detect a change to the behaviour it
+   claims", without the site.
 3. **mutate itself:**
    - It uses one persistent scratch worktree, `.lanes/scratch/mutate/` (`git worktree add
      --detach`, then `git checkout --detach <sha>` per run), with `Manifest.toml` and
@@ -551,7 +618,8 @@ Every package's floor is `0.0` today.
 ### 5.4 Lanes and order
 
 One backfill lane per package, dispatched by the lead (topology (a)). The test-writer gets a brief
-with the gaps list, `tdd.jl api` and the docs. The sub-lead runs mutate and writes the fragment.
+with the gaps list, `tdd.jl api` and the docs. A mutator subagent runs mutate (§5.2), and the lead
+writes the fragment.
 
 | Order | Package | When |
 |---|---|---|
@@ -565,8 +633,9 @@ with the gaps list, `tdd.jl api` and the docs. The sub-lead runs mutate and writ
   2–4 more handoffs per task, in sequence. That is about 1.5–2× the wall-clock, an estimate that plan
   Task 9 measures.
 - **Modes.** The lead decides the mode and records it as a `TDD-Mode: <mode> — <reason>` trailer
-  on a lead-authored commit, for example an empty first commit. The commit guard denies that
-  trailer from role agents.
+  on a commit authored `lead <lead@factory.invalid>`, for example an empty first commit
+  (`git commit --allow-empty --author "lead <lead@factory.invalid>"`). The commit guard denies that
+  trailer from role agents, and denies the lead identity to any caller with an `agent_type`.
 
 | Case | Mode |
 |---|---|
@@ -591,7 +660,8 @@ with the gaps list, `tdd.jl api` and the docs. The sub-lead runs mutate and writ
 2. **An implementer edit to `test/**`: FAIL or flag?** FAIL (H3/H4, the hook, the commit guard).
 3. **New names: STUB commits, or accept `UndefVarError`?** STUB, with H5 descending into modules;
    new methods need none (§3.2).
-4. **Backfill proof: a src mutation or a wrong expectation?** A src mutation run by the sub-lead,
+4. **Backfill proof: a src mutation or a wrong expectation?** A src mutation run by a separate
+   mutator agent,
    with `mutexp` as a justified fallback (§5.2).
 5. **The mutation cost cap?** 2 h per lane; split or accept, never sample (§5.2).
 6. **Raise `coverage.floor` after backfill?** Yes, to the measured value minus 1 point, set by
@@ -637,11 +707,13 @@ coordinator's.
   - the classifier on the measured fixtures, every class, on both versions;
   - H1–H9, including **"stub adding export + function-end inside the module block passes H5"** (NB2)
     and "include of a new declaration-only file passes H5";
-  - E1–E4;
+  - E1–E5;
   - mutate: kill, survive, load-breaking, dirty, unmatched, restored after a throw, two items at one
     sha;
   - gaps; api; brief (refuses a dirty tree).
-- **scripts/test/test_hooks_tdd.jl:** about 15 payload cases (plan Task 8).
+- **scripts/test/test_hooks_tdd.jl:** payload cases for every rule in §0.5–0.6, about 25 (plan
+  Task 8). Plan Tasks 5 and 8 list the tests rule by rule, and also name the few rules left to
+  review (m4).
 - **`test_dod.jl`:** `tdd`, including skip without a lead-authored mode commit, which FAILS.
 - **`test_gen.jl`:** 13 agents; the implementer has no `test/**`; the test-writer's `tools` render.
 - **`test_runtests_template.jl`:** `item=`, `:contract`, the stable-only exclusion, `TDD_MATCHED`.
@@ -653,11 +725,11 @@ the factory's own lane. Plan Tasks 2–8 separate the contexts by hand, and the 
 
 | Plan task | Spec |
 |---|---|
-| 0: ADR-0015, the user's answers, the `agent_type` probe in topology (a) | §0.3, §8, §9.3 |
+| 0: ADR-0015, the user's answers, the `agent_type` probe in topology (a): unnamed and named dispatches | §0.3, §8, §9.3 |
 | 1–2: fixtures; `item=` and `TDD_MATCHED` | §3.3, §3.4 |
 | 3–4: the classifier; `red`, `green`, `api`, `brief` | §3, §0.4 |
-| 5: history rules H1–H9 and audit E1–E4 | §4.2, §4.3 |
-| 6: `mutate` (sub-lead) and `gaps` | §5 |
+| 5: history rules H1–H9 and audit E1–E5 | §4.2, §4.3 |
+| 6: `mutate` (the mutator agent) and `gaps` | §5 |
 | 7: dod `tdd` and the seeded `risk.toml` | §4.2, §6 |
 | 8: the `tdd_boundary` hook | §0.5, §0.6 |
 | 9: registry, bodies, register, skill, VERSION; the dogfood measurement | §2, §4.6, §6 |
@@ -718,10 +790,37 @@ Context separation became goal 1 (§0.1). It brought:
 | M-E: the Bash allowlist was too tight and too loose | `cd`/`git -C` into a checkout allowed; `evidence.jl` only through `tdd.jl`; `mutate` not for the test-writer; run-time reads stated as detected, never prevented (§0.7) |
 | M-F: brief-check rejected the normal path | `brief-check` deferred and the copied-line rule cut (§11); plan task paths allowed (§0.4) |
 | M-G: the agent_type claim was overstated | Restated: documented for subagents only; teammates not allowed; the Task 0 probe records SubagentStart/Stop too; the hook records `tdd-commit` ledger lines; matcher `Agent\|Task` |
-| m-a: mutate leaked src to the test-writer | mutate is the sub-lead's tool |
+| m-a: mutate leaked src to the test-writer | mutate is not the test-writer's tool (revision 5: a separate mutator agent runs it) |
 | m-b: cache interaction | measured in Task 6 |
 | m-c: the hook could not know "its own" brief | the allowlist uses `test-writer-*` briefs |
 | m-d: fail-closed availability cost | a blind spot in the register |
 | m-e: no tools frontmatter | `tools`/`disallowed_tools` set for both roles (§2.1) |
 | Cut list | cut: the 30-character rule and E5; deferred: brief-check, _tdd_brief.jl, the BOUNDARY lint and `gaps --lcov`; the Agent/SendMessage hook rows replaced by frontmatter; 4 scripts; 6 open questions; §11 Later |
 | Stale text (spec :466, plan :35, :54, :101) | the usage block now says H1–H9 + E1–E4; the plan header says revision 4; the class list is current (BOUNDARY deferred); Task 0 says "the 6 questions" |
+
+### Revision 5 (critic round 3 and the lead's rulings)
+
+| Finding | Change |
+|---|---|
+| NB3: `@compat public` rejected | H5 allows a `@compat`/`Compat.@compat` macrocall whose argument is `public`/`export`. Task 5 test with ChuiCore names.jl-style files |
+| R3-M1: line numbers; deletions | `remove_linenums!` on both sides; removals forbidden except `export`/`public` replaced by a superset. Tests: stub above a method passes; deleting a method fails; narrowing an export fails |
+| R3-M2: amend and `-C` | The author comes from the source commit for `--amend`/`-C`/`-c`/reuse; the PostToolUse check runs on the resulting commit; `tdd-commit` records the resulting sha; new E5: every role commit has a matching record (the round-2 E5, the brief re-check, stays cut); compound `add && commit` is split |
+| R3-M3: git output leaked | git for the test-writer is only `status`, `add`, `commit` and `diff [--cached] -- test/…`; `log`, `show` and `<rev>:<path>` are denied |
+| R3-M4: the sub-lead was undefined | In (a) the dispatcher is the lead. "The brief is the only channel" replaces "not dispatched by an agent that saw the other side". mutate runs in its own `mutator` subagent, whose report never reaches a test-writer brief |
+| R3-M5: lane names repeat across repos | The header carries `checkout=<abs path>`; briefs go to the owning repo's main `.lanes/briefs/<lane>/`. Task 8 test with two repos that share a lane name |
+| R3-M6: dispatch form; teammates | The exact form is stated (an Agent call, no `team_name`, no fork; named only if the probe allows). The spec says this lead's agents run as in-process teammates today. Task 0 probes an unnamed and a named dispatch and passes on PreToolUse `agent_type` alone; a missing SubagentStart is reported, not fatal |
+| R3-m1: "lead-authored" was too loose | It now means `lead <lead@factory.invalid>`, denied to any caller with an `agent_type`. A mode trailer on any other commit is ignored. skip fails dod unless lead-authored with a reason |
+| R3-m2: symlinks | Paths are resolved with `pwd -P` before the allowlist check; Task 8 test |
+| R3-m3: the runner was writable | `test/runtests.jl` and `test/Project.toml` are denied to the test-writer (hook) and to every phase commit (H3) |
+| R3-m4: rules without tests | Every stated rule has a plan test; plan "Left to review" lists the rest |
+| R3-m5: one hook too big | Split into tdd_boundary.sh, _tdd_commit_guard.sh and tdd_commit_post.sh, each ≤ 150 lines |
+| R3-m6: dispatch_limit | Out of scope; §13 "Related" |
+
+## 13. Related (outside this spec)
+
+- **dispatch_limit does not bind (critic round 3, m6; measured).**
+  - `dispatch_limit.sh` counts open lanes from SubagentStart events in the ledger, and none have
+    been logged since 2026-10-20, so its open count is 0 and the `max_open` cap never applies.
+  - The likely cause, UNVERIFIED, is that this lead's agents are in-process teammates.
+  - The lead files a separate request; this spec does not change dispatch_limit.
+  - The same cause is why the `tdd-commit` ledger lines (§0.5) do not rely on SubagentStart/Stop.

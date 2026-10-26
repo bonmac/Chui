@@ -28,7 +28,7 @@ separation.
 **Tech Stack:** Julia 1.13.2 and 1.10.12 (juliaup `julia`, `julia +lts`); TestItemRunner ≥ 1.3.2;
 POSIX sh + jq hooks; git trailers; the existing factory scripts.
 
-**Spec:** `docs/superpowers/specs/2026-10-26-factory-test-writer-design.md` (revision 4)
+**Spec:** `docs/superpowers/specs/2026-10-26-factory-test-writer-design.md` (revision 5)
 
 ## Global Constraints
 
@@ -40,9 +40,19 @@ POSIX sh + jq hooks; git trailers; the existing factory scripts.
 - Phases are `stub | red | green | refactor | test-fix | test-refactor | backfill`, written as the
   trailer `TDD: <phase>`. The mode trailer `TDD-Mode: required|refactor|skip — <reason>` goes only
   on a lead-authored commit.
-- Authors: `test-writer <test-writer@factory.invalid>` and `implementer <implementer@factory.invalid>`.
-- Agent names: `tw-<lane>-<task>` and `impl-<lane>-<task>`. The brief header is
-  `<!-- tdd-brief role=<role> lane=<lane> head=<sha> -->`.
+- Authors:
+  - `test-writer <test-writer@factory.invalid>`;
+  - `implementer <implementer@factory.invalid>`;
+  - `lead <lead@factory.invalid>`: only the main session, the caller with no `agent_type`, may use
+    it.
+- **The dispatcher is the lead.** "The brief is the only channel." `mutate` runs in a separate
+  general-purpose `mutator` subagent.
+- **Dispatch form:** an Agent call with `subagent_type` test-writer or implementer, no `team_name`
+  and no fork. A `name` (`tw-<lane>-<task>`/`impl-<lane>-<task>`) is added only if Task 0 allows
+  it.
+- **Brief header:**
+  `<!-- tdd-brief role=<role> lane=<lane> checkout=<abs path> head=<sha> -->`. Briefs are saved
+  under the owning repo's main `.lanes/briefs/<lane>/`.
 - Evidence kinds: `red`, `green`, `mutate-<slug>` and `mutexp-<slug>`. The slug is the lowercased
   name with runs of non-`[a-z0-9]` replaced by `-`, cut to 24 characters, then `-` and 8 hex digits
   of the name's SHA-1.
@@ -71,8 +81,14 @@ POSIX sh + jq hooks; git trailers; the existing factory scripts.
    `"test-writer Read ~/.claude/projects transcript denied"`, `"test-writer Read ~/.julia/packages denied"`.
 4. **A vacuous run** (a misspelt `item=`; `Total 0`) must fail green and mutate. Tasks 2 and 4:
    `"TDD_MATCHED records selected names"`, `"green with an unmatched name is NOT-RUN"`.
-5. **A skip-mode lane** must fail dod unless its mode commit is lead-authored with a reason. Task 7:
-   `"skip by a role-authored mode commit fails"`.
+5. **A skip-mode lane** must fail dod unless its mode commit is authored `lead <lead@factory.invalid>`
+   and has a reason. Task 7: `"skip by a role-authored mode commit fails"` and
+   `"skip by a general-purpose-authored mode commit fails"`.
+6. **`git add test/x && git commit --amend --no-edit` by the implementer or the lead** must not
+   yield a test-writer commit that passes. Task 8: `"amend keeps source author: denied"`, `"-C HEAD denied"`,
+   `"post-commit violation recorded"`. Task 5: `"role commit without tdd-commit record fails E5"`.
+7. **A stub that adds a name to `@compat public …`** must pass H5. Task 5:
+   `"stub adding a name to @compat public passes H5"`.
 
 ---
 
@@ -92,15 +108,21 @@ step 6): a probe agent .claude/agents/tw-probe.md and a logging hook entry in th
   - Add the temporary `tw-probe` agent (tools: Read, Bash) and a PreToolUse hook on
     `Read|Bash|Agent|Task`, plus SubagentStart and SubagentStop hooks, that append their JSON input
     to `.lanes/scratch/probe.jsonl`.
-  - From the lead's coordinator session, dispatch `subagent_type: tw-probe` with a brief telling it
-    to `Read` `<root>/ChuiCore.jl/.worktrees/<probe-lane>/test/runtests.jl` and run
+  - From the lead's coordinator session, which today runs its agents as in-process teammates,
+    dispatch **twice**, each with a brief telling the agent to `Read`
+    `<root>/ChuiCore.jl/.worktrees/<probe-lane>/test/runtests.jl` and run
     `git -C <that worktree> status`. Create the probe lane with ChuiCore's `scripts/lane new probe`.
-- [ ] **Step 5:** Paste the log lines. Pass criteria:
-  - the PreToolUse payloads carry `agent_type: "tw-probe"` and an `agent_id`;
-  - `tool_input.file_path` is the worktree path;
-  - SubagentStart and SubagentStop show the same `agent_id`.
-
-  If `agent_type` is absent, stop at a ★: Task 8 needs another source for the role.
+    1. an **unnamed** Agent call: `subagent_type: tw-probe`, no `name`, no `team_name`;
+    2. a **named** Agent call: the same, with `name: tw-probe-named`.
+- [ ] **Step 5:** Paste the log lines and record, for each dispatch, whether its PreToolUse
+  payloads carry `agent_type: "tw-probe"` and an `agent_id`.
+  - **Pass** when the unnamed dispatch carries `agent_type: "tw-probe"` and `tool_input.file_path`
+    is the worktree path. This rests on PreToolUse alone.
+  - The named result decides whether TDD dispatches may use `name`: only if it carries
+    `agent_type` too.
+  - Report missing or mismatched SubagentStart/Stop events, but do not stop on them (spec §13).
+  - If the unnamed dispatch lacks `agent_type`, stop at a ★: Task 8 needs another source for the
+    role.
 - [ ] **Step 6:** Remove the probe agent and the hook entries, and delete the probe lane.
   `julia scripts/gen.jl --check` must be OK.
 
@@ -210,11 +232,14 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `api(root; io)::Int`. Julia ≥ 1.11, else exit 2 with `NOT RUN`. For each exported or `public`
     name it prints `## name` and its docstring, with no method bodies, from a subprocess in the
     test environment.
-  - `brief(root; role, io)::Int`. Exit 2 on a dirty tree. It prints the header with `head=` and the
-    lane's name. For a test-writer it adds the `## Public API` section (`api`) and the
-    `## Stub diffs` (only if H5 passes for each stub, else exit 1 naming it). For an implementer it
-    adds `## Red tests` and `## Red evidence`. It saves the result to
-    `.lanes/briefs/<lane>/<role>-<n>.md` and prints the path.
+  - `brief(root; role, io)::Int`. Exit 2 on a dirty tree. It prints the header with `lane=`,
+    `checkout=<abspath(root)>` and `head=`.
+    - For a test-writer it adds the `## Public API` section (`api`) and the `## Stub diffs` (only if
+      H5 passes for each stub, else exit 1 naming it).
+    - For an implementer it adds `## Red tests` and `## Red evidence`.
+
+    It saves the result to `<main>/.lanes/briefs/<lane>/<role>-<n>.md`, where `<main>` is the
+    owning repo's main checkout, found from the worktree's `.git` file. It prints the path.
 
 - [ ] **Step 1: Failing tests:**
   - `"red on a clean red commit exits 0 and writes red-<sha7>"`
@@ -231,6 +256,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `"brief refuses a dirty tree"`
   - `"brief test-writer has header, api and stub diffs"`
   - `"brief refuses a stub that fails H5"`
+  - `"brief header carries checkout= and saves under the owning repo's main .lanes"`
 - [ ] **Step 2:** STUB, then see the tests fail.
 - [ ] **Step 3:** Implement with `_common.jl`. `brief` needs `stub_declares_only` from Task 5, so
   write its test now and land `brief` after Task 5, or stub it.
@@ -247,9 +273,12 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `lane_commits(root, base)` (from `git rev-list --no-merges --reverse`; the author from `%an <%ae>`);
   - `trailers(msg)`;
   - `history_rules(commits; stub_ok::Function)::Vector{String}` for H1–H9 (pure);
-  - `stub_declares_only(root, sha)::Bool`. It descends into `module`/`baremodule` bodies, compares
-    multisets, and allows `include` of an added declaration-only file (spec §4.2 H5);
-  - `evidence_rules(root, commits)` for E1–E4;
+  - `stub_declares_only(root, sha)::Bool`. It applies `remove_linenums!` to both sides, descends
+    into `module`/`baremodule` bodies, and compares multisets. Allowed additions include
+    `@compat public`/`export` and `include` of an added declaration-only file. Removals are allowed
+    only when an export or public statement is replaced by a superset (spec §4.2 H5);
+  - `evidence_rules(root, commits; ledger)` for E1–E5. E5 reads `tdd-commit` and
+    `tdd-commit-violation` lines from `<main>/.lanes/ledger.jsonl`;
   - `audit(root; base, io)::Int`.
 
 - [ ] **Step 1: Failing tests:**
@@ -267,6 +296,17 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
     parent.jl/child.jl pair)
   - `"stub adding include of a new declaration-only file passes H5"`
   - `"stub adding include of a file with a method fails H5"`
+  - **`"stub adding a name to @compat public passes H5"`** (NB3; parent and child modelled on
+    ChuiCore names.jl and the critic's p2/c2)
+  - `"stub adding @compat export passes H5"`
+  - `"stub inserted above an existing method passes H5"` (R3-M1, line numbers stripped)
+  - `"stub that deletes a method fails H5"` (the critic's p3/c3)
+  - `"stub replacing an export by a superset passes; by a subset fails"`
+  - `"stub before its red passes H6; red before any stub with a later stub fails H6"`
+  - `"red touching Project.toml fails H3"`
+  - `"red touching test/runtests.jl fails H3"`
+  - `"refactor mode: test/** change fails H8"`
+  - `"mode trailer on a non-lead-authored commit is ignored (mode required)"`
   - `"green before red fails H6"`
   - `"two greens for one red fail H6"`
   - `"refactor before any green fails H6"`
@@ -282,6 +322,11 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `"backfill item without mutate evidence fails E3"`
   - `"@test_broken-only item exempt from E3"`
   - `"dirty evidence fails E4"`
+  - `"killed evidence fails E4"`
+  - `"green without green evidence fails E2"`
+  - `"role commit without tdd-commit record fails E5"`
+  - `"tdd-commit record with another agent_type fails E5"`
+  - `"tdd-commit-violation for the lane fails E5"`
 
   The H5 cases run on a scratch git repo.
 - [ ] **Step 2:** STUB, then see the tests fail.
@@ -289,7 +334,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 - [ ] **Step 4:** Green on both versions.
 - [ ] **Step 5:** Commit: `feat(factory): tdd history rules and audit`.
 
-### Task 6: `mutate` (the sub-lead's tool) and `gaps`
+### Task 6: `mutate` (run by the mutator agent) and `gaps`
 
 **Files:** Create scripts/_tdd_backfill.jl. Modify scripts/tdd.jl. Test: scripts/test/test_tdd.jl.
 
@@ -345,6 +390,8 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `"tdd fails on green editing a test"`
   - `"tdd reads mode from the lead-authored trailer"`
   - `"skip by a role-authored mode commit fails"`
+  - `"skip by a general-purpose-authored mode commit fails"`
+  - `"skip by lead <lead@factory.invalid> with reason passes"`
   - `"unknown requirement still fails"`
 - [ ] **Step 2:** See the tests fail.
 - [ ] **Step 3:** Implement. `evaluate` stays pure.
@@ -352,46 +399,92 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   paste the output.
 - [ ] **Step 5:** Commit: `feat(factory): dod tdd requirement`.
 
-### Task 8: The `tdd_boundary` hook
+### Task 8: The boundary hook and the commit guard
 
 **Files:**
-- Create .claude/hooks/tdd_boundary.sh (≤ 150 lines; it sources `_lib.sh` and
-  `_bash_guard_lib.sh`).
+- Create, each ≤ 150 lines, all sourcing `_lib.sh` and `_bash_guard_lib.sh`:
+  - .claude/hooks/tdd_boundary.sh, for paths, the Bash allowlist and dispatch;
+  - .claude/hooks/_tdd_commit_guard.sh, the PreToolUse commit guard, sourced by tdd_boundary.sh;
+  - .claude/hooks/tdd_commit_post.sh, the PostToolUse(Bash) commit check.
 - Modify `.claude/settings.json`: PreToolUse matchers
-  `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash` and `Agent|Task`, with the fail-closed
-  wrapper.
+  `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash` and `Agent|Task` with the fail-closed
+  wrapper; PostToolUse `Bash` for tdd_commit_post.sh.
 - Modify `.agents/checks.toml`: the `tdd` and `tdd_boundary` rows (spec §4.6, verbatim).
 - Test: scripts/test/test_hooks_tdd.jl (new).
 
 **Interfaces:**
 - Consumes `field`, `ledger`, `ROOT` and `MAIN`, and bash_guard's word splitter.
-- Produces exit 0 (allow), or exit 2 with the rule and spec §0.6 named on stderr (deny). The ledger
-  gets `tdd-boundary-denied {agent_type, tool, rule}` for each denial and
-  `tdd-commit {agent_id, agent_type, checkout, parent}` for each allowed role commit. Dispatch
-  prompts are saved to `.lanes/briefs/<lane>/dispatched/`.
-- Checkout resolution: the nearest ancestor of the target path with a `.git` entry, at or under
-  the session root.
+- Produces:
+  - **PreToolUse:** exit 0 (allow), or exit 2 with the rule and spec §0.5/§0.6 named on stderr
+    (deny). Each denial writes `tdd-boundary-denied {agent_type, tool, rule}` to the ledger. Before
+    each `git commit` the guard records the checkout's HEAD in `.lanes/tdd-pending/<tool_use_id>`.
+  - **PostToolUse:** for every new commit since that HEAD, or the replaced sha after `--amend`, it
+    writes `tdd-commit {agent_id, agent_type, checkout, sha}`. On a violation it writes
+    `tdd-commit-violation {…, rule}` and prints it.
+  - **Dispatch:** prompts are saved to `<main>/.lanes/briefs/<lane>/dispatched/`.
+- **Checkout resolution:** take the nearest ancestor of the target with a `.git` entry, at or under
+  the session root, after resolving symlinks (`cd -P`/`pwd -P`).
 
-- [ ] **Step 1: Failing tests** (about 15 payloads):
-  - `"test-writer Read lane test/ allowed"`
-  - `"test-writer Read src denied"`
-  - `"test-writer Read ~/.claude/projects transcript denied"`
-  - `"test-writer Read ~/.julia/packages denied"`
-  - `"test-writer Grep without path denied"`
-  - `"test-writer Write src denied; Write test allowed"`
-  - `"implementer Write test denied"`
-  - `"cd <lane> && julia tdd.jl red allowed"` (the command `cd <lane> && julia scripts/` + `tdd.jl red`)
-  - `"evidence.jl direct denied; git show without test pathspec denied"`
-  - `"commit by test-writer with implementer author denied"`
-  - `"lead commit with env role author denied"`
-  - `"lead commit after git config role identity denied"`
-  - `"test-writer commit with staged src denied; role commit with TDD-Mode denied"`
-  - `"lead dispatch of test-writer on a dirty lane or stale head= denied; clean dispatch saved"`
-  - `"malformed payload and missing library fail closed"`
+- [ ] **Step 1: Failing tests** (one per rule in spec §0.5 and §0.6):
+  - Reads:
+    - `"test-writer Read lane test/ allowed"`
+    - `"test-writer Read src denied"`
+    - `"test-writer Read via test/ symlink to ../src denied"` (m2)
+    - `"test-writer Read ~/.claude/projects transcript denied"`
+    - `"test-writer Read ~/.julia/packages denied"`
+    - `"test-writer Read .lanes/scratch/mutate denied"`
+    - `"test-writer Read mutate-* evidence denied; red-* allowed"`
+    - `"test-writer Grep without path denied"`
+  - Writes:
+    - `"test-writer Write src denied; Write test allowed"`
+    - `"test-writer Write test/runtests.jl denied"` (m3)
+    - `"test-writer NotebookEdit outside test denied"`
+    - `"implementer Write test denied"`
+    - `"implementer Bash redirect into test/ denied"`
+  - Bash and git:
+    - `"cd <lane> && julia tdd.jl red allowed"` (the command `cd <lane> && julia scripts/` + `tdd.jl red`)
+    - `"julia -e denied; sh -c denied"`
+    - `"evidence.jl direct denied; tdd.jl mutate denied"`
+    - `"git log denied; git show denied; git show HEAD:src/a.jl -- test/ denied"` (R3-M3)
+    - `"git diff -- test/ allowed; git diff -- src/ denied"`
+  - Commit guard:
+    - `"commit by test-writer with implementer author denied"`
+    - `"lead commit with env role author denied"`
+    - `"lead commit after git config role identity denied"`
+    - `"amend keeps source author: implementer amending a test-writer commit denied"` (R3-M2)
+    - `"-C HEAD denied"`
+    - `"amend --reset-author takes caller identity"`
+    - `"git add test/x && git commit compound: commit checked"`
+    - `"general-purpose caller with lead identity denied"` (R3-m1)
+    - `"role commit with TDD-Mode trailer denied"`
+    - `"test-writer commit with staged src denied"`
+    - `"post-commit violation recorded"` (a commit made with the Pre half stubbed out)
+    - `"tdd-commit record carries the resulting sha"`
+  - Dispatch:
+    - `"dispatch with stale head= denied"`
+    - `"dispatch on a dirty checkout denied"`
+    - `"two repos with the same lane name: checkout= picks the right one"` (R3-M5)
+    - `"clean dispatch saved under the owning repo's main .lanes"`
+  - Fail closed:
+    - `"malformed payload fails closed"`
+    - `"missing library fails closed"`
 - [ ] **Step 2:** A skeleton that allows everything, then see the deny cases fail.
 - [ ] **Step 3:** Implement.
-- [ ] **Step 4:** Green on both versions. Time the hook per call (target under 30 ms) and paste it.
-- [ ] **Step 5:** Commit: `feat(factory): tdd_boundary context guard`.
+- [ ] **Step 4:** Green on both versions. Time each hook per call (target under 30 ms) and paste the
+  timings. Check that each file is ≤ 150 lines.
+- [ ] **Step 5:** Commit: `feat(factory): tdd boundary hook and commit guard`.
+
+**Left to review on purpose (m4).** These rules are stated in the spec but have no mechanical test,
+and the reviewer checks them (spec §4.5):
+
+- that a test comes from the spec;
+- that GREEN is minimal;
+- that a refactor-mode lane adds no behaviour;
+- that a test-refactor weakens nothing;
+- that a brief carries no paraphrase of the implementation;
+- that a mutation is meaningful;
+- the `HELPER` flags;
+- test edits made while resolving a merge conflict.
 
 ### Task 9: Registry, bodies, skill, docs; VERSION 0.3.0
 
@@ -456,16 +549,22 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 ### Task 12: Backfill missing tests (the user's second request)
 
 One lane per package, in this order: ChuiCore.jl, ChuiTypes.jl, ChuiFrames.jl, each after its
-Task 11 lane merges. The lead dispatches a fresh `tw-backfill-<pkg>` subagent with a `tdd.jl brief`
-(gaps list, `api`, docs). The sub-lead runs `mutate` and writes the changelog fragment. No
-`TDD-Mode:` is needed (no code change); E3 applies.
+Task 11 lane merges.
+
+- The lead dispatches a fresh test-writer subagent (the form from Task 0) with a `tdd.jl brief`:
+  the gaps list, `api` and the docs.
+- A separate general-purpose `mutator` subagent, also dispatched by the lead, runs `mutate`. Its
+  report never goes into a test-writer brief.
+- The lead writes the changelog fragment.
+- No `TDD-Mode:` is needed (no code change); E3 applies.
 
 - [ ] **Step 1:** Run `tdd.jl gaps` on 1.13 and paste it, ranked per spec §5.1.
 - [ ] **Step 2: Measure first.** The test-writer commits about 10 items (`TDD: backfill`), and the
-  sub-lead mutates each one against that commit and times it. If the projection is over 2 h, stop
+  mutator mutates each one against that commit and times it. If the projection is over 2 h, stop
   at a ★: split into area lanes, or the user accepts the cost.
-- [ ] **Step 3:** For the rest: the test-writer commits a few items at a time, and the sub-lead
-  mutates each one (`--src` by default; `--expect` only with a reason).
+- [ ] **Step 3:** For the rest: the test-writer commits a few items at a time, and the mutator
+  mutates each one. A survivor goes back to the test-writer as "item X missed a change to its
+  claimed behaviour", without the site (`--src` by default; `--expect` only with a reason).
 - [ ] **Step 4:** Where the docs and the behaviour disagree: `@test_broken` with a `BUG:` comment,
   and a report line.
 - [ ] **Step 5:** Run `tdd.jl audit --base main` and the full suite on both versions, and report the
