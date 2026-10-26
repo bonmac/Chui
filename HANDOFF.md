@@ -215,7 +215,12 @@ Open factory notes for the user: the CHANGELOG rule suggests 0.3.0 for stricter 
    - Task 11, the package syncs;
    - Task 12, backfill lanes: ChuiTypes first, ChuiFrames next, ChuiCore after its tag.
 2. **User:** run `bash private/release-chuicore-001.sh` and say "released". Remove `.worktrees/tw-030-verify` (`git worktree remove --force`).
-3. Lead: the changelog `###` fragment fix (ChuiFrames and coordinator), and the factory dod heading check.
+3. ~~Lead: the changelog `###` fragment fix~~ DONE 2026-10-27:
+   - **ChuiFrames:** main 86bd9c3 (T0; the lead reviewed it: ignoring whitespace, only heading lines changed; fold accepts all 21 fragments).
+   - **Coordinator:** main 8de730c (fragments rewritten, and factory template `dod.jl` now rejects added headed fragments; reviewer APPROVE FINAL; the lead re-ran 2289/2291).
+   - **Spec:** `docs/superpowers/specs/2026-10-27-cl-headings-design.md`.
+   - **0.3.0 item (reviewer minor):** dod should also check modified fragments, not only added ones.
+   - **The coordinator's own `scripts/dod.jl`** gets the rule when it syncs to 0.3.0.
 
 1. **User:** run the ChuiCore 0.0.1 release script (it also pushes every repo's main). Then the lead adds releases.md, runs integration, fills compat-matrix, and syncs 0.2.7 into ChuiCore.
 2. Lead: merge sync-027-types and sync-027-frames2 after their final reviews; land requests-p4p3 through a coordinator-rooted agent. The user copies the contract drafts (`scratchpad/contracts-p3p4/`) into `contracts/` (T3).
