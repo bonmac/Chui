@@ -22,8 +22,9 @@ separation.
 - scripts/_tdd_backfill.jl holds `mutate` and `gaps`.
 - scripts/tdd.jl wires the subcommands, plus `api` and `brief`.
 - The seeded runner gains `item=` selection and a `TDD_MATCHED` record.
-- One managed hook, .claude/hooks/tdd_boundary.sh, enforces the boundary for subagents in package
-  worktrees under the coordinator session (topology (a)).
+- Three managed hook files (.claude/hooks/tdd_boundary.sh, .claude/hooks/_tdd_commit_guard.sh and
+  .claude/hooks/tdd_commit_post.sh) enforce the boundary for subagents in package worktrees under
+  the coordinator session (topology (a)).
 
 **Tech Stack:** Julia 1.13.2 and 1.10.12 (juliaup `julia`, `julia +lts`); TestItemRunner ≥ 1.3.2;
 POSIX sh + jq hooks; git trailers; the existing factory scripts.
@@ -95,8 +96,10 @@ POSIX sh + jq hooks; git trailers; the existing factory scripts.
 ### Task 0: ADR-0015, the user's answers, and the `agent_type` probe in topology (a)
 
 **Files:** `adr/0015-test-writer-role-and-test-first-lanes.md`, drafted as Proposed in the spec
-lane. Temporary (removed in step 6): a probe agent .claude/agents/tw-probe.md and a logging hook
-entry in the coordinator's `.claude/settings.json`. Both are T3.
+lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent-registry.toml`
+(with its body `<root>/.agents/bodies/tw_probe.md`), the `<root>/.claude/agents/tw-probe.md` that
+`julia scripts/gen.jl` renders from it (never hand-written: CLAUDE.md), and a logging hook entry in
+`<root>/.claude/settings.json`. All are T3.
 
 **Prerequisite:** factory 0.2.8 (the dispatch_limit fix, spec §13) is merged in `factory/`.
 
@@ -106,9 +109,12 @@ entry in the coordinator's `.claude/settings.json`. Both are T3.
 - [ ] **Step 3:** ★ The user accepts ADR-0015 at the spec branch's merge, and sets
   `FACTORY_ALLOW_T3=1` for the probe and Task 10.
 - [ ] **Step 4: The probe, in the real topology.**
-  - Add the temporary `tw-probe` agent (tools: Read, Bash) and a PreToolUse hook on
-    `Read|Bash|Agent|Task`, plus SubagentStart and SubagentStop hooks, that append their JSON input
-    to `.lanes/scratch/probe.jsonl`.
+  - Add the temporary `tw-probe` agent (tools: Read, Bash) as an `[[agents]]` entry in
+    `<root>/.agents/agent-registry.toml` plus its body `<root>/.agents/bodies/tw_probe.md`, then
+    run `julia scripts/gen.jl` in `<root>` to render `<root>/.claude/agents/tw-probe.md`.
+  - Add to `<root>/.claude/settings.json` a PreToolUse hook on `Read|Bash|Agent|Task`, plus
+    SubagentStart and SubagentStop hooks, that append their JSON input to
+    `<root>/.lanes/scratch/probe.jsonl`.
   - From the lead's coordinator session, which today runs its agents as in-process teammates,
     dispatch **twice**, each with a brief telling the agent to `Read`
     `<root>/ChuiCore.jl/.worktrees/<probe-lane>/test/runtests.jl` and run
@@ -124,8 +130,15 @@ entry in the coordinator's `.claude/settings.json`. Both are T3.
   - Report missing or mismatched SubagentStart/Stop events, but do not stop on them (spec §13).
   - If the unnamed dispatch lacks `agent_type`, stop at a ★: Task 8 needs another source for the
     role.
-- [ ] **Step 6:** Remove the probe agent and the hook entries, and delete the probe lane.
-  `julia scripts/gen.jl --check` must be OK.
+- [ ] **Step 6:** Remove the `tw-probe` registry entry and its body, run `julia scripts/gen.jl` in
+  `<root>`, remove the hook entries from `<root>/.claude/settings.json`, and delete the probe lane.
+  Check, and paste the output of:
+  - `ls <root>/.claude/agents/tw-probe.md` must fail ("No such file or directory"). gen.jl's
+    orphan check flags only files carrying the GENERATED marker, so `gen.jl --check` alone does
+    not prove the cleanup;
+  - `grep -n tw.probe <root>/.agents/agent-registry.toml <root>/.claude/settings.json` must print
+    nothing;
+  - `julia scripts/gen.jl --check` in `<root>` must be OK.
 
 ### Task 1: Failure-output fixtures
 
@@ -319,7 +332,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - `"stub with inner constructor fails H5"`
   - `"stub with @kwdef fails H5"`
   - **`"stub adding export + function-end inside the module block passes H5"`** (NB2; the critic's
-    parent.jl/child.jl pair)
+    pair `h5/parent.jl` → `h5/child.jl`)
   - `"stub adding include of a new declaration-only file passes H5"`
   - `"stub adding include of a file with a method fails H5"`
   - **`"stub adding a name to @compat public passes H5"`**, on fixtures `h5/names-p.jl` →
@@ -331,8 +344,6 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   - **`"stub inserted above a documented method passes H5"`**, on `h5/p4.jl` → `h5/c4.jl` (R4-M1).
     It must be seen RED with `remove_linenums!` alone.
   - `"stub inserted above an undocumented method passes H5"` (`h5/p6.jl` → `h5/c6.jl`)
-  - `"stub adding export + function-end inside the module block passes H5"` (`h5/parent.jl` →
-    `h5/child.jl`)
   - `"stub that deletes a method fails H5"` (`h5/p3.jl` → `h5/c3.jl` and `h5/p5.jl` → `h5/c5.jl`)
   - `"stub replacing an export by a superset passes; by a subset fails"`
   - `"stub before its red passes H6; red before any stub with a later stub fails H6"`
@@ -441,7 +452,7 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 - Create, each ≤ 150 lines, all sourcing `_lib.sh` and `_bash_guard_lib.sh`:
   - .claude/hooks/tdd_boundary.sh, for paths, the Bash allowlist and dispatch;
   - .claude/hooks/_tdd_commit_guard.sh, the PreToolUse commit guard, sourced by tdd_boundary.sh;
-  - .claude/hooks/tdd_commit_post.sh, the PostToolUse(Bash) commit check.
+  - .claude/hooks/tdd_commit_post.sh, the PostToolUse(Bash) and PostToolUseFailure(Bash) commit check.
 - Modify `.claude/settings.json`: PreToolUse matchers
   `Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash` and `Agent|Task` with the fail-closed
   wrapper; tdd_commit_post.sh on **both** PostToolUse `Bash` and PostToolUseFailure `Bash`.

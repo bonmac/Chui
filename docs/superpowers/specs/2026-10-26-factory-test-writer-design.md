@@ -776,7 +776,7 @@ the factory's own lane. Plan Tasks 2–8 separate the contexts by hand, and the 
 | Item | Status | Trigger to revisit |
 |---|---|---|
 | `brief-check` lint (src paths, copied lines) and scripts/_tdd_brief.jl | deferred to 0.3.x | a reviewer finds a leak in a saved prompt that a mechanical check would have caught, or Task 9's dogfood numbers show hand-written briefs drifting from the template |
-| The 30-character copied-line rule and E5 | cut | only together with `brief-check`, excluding docstrings and the `## Public API` section (M-F) |
+| The 30-character copied-line rule and the round-2 brief re-check (formerly E5) | cut | only together with `brief-check`, excluding docstrings and the `## Public API` section (M-F) |
 | The `BOUNDARY` lint (test code reading src) | deferred | a reviewer finds a run-time source read in a red diff |
 | `gaps --lcov` (uncovered lines) | deferred | local coverage verified (CoverageTools in a scratch env), or PR CI with a coverage artifact |
 | Hook rows for Agent and SendMessage from role agents | replaced by `tools` frontmatter | a role is ever run where frontmatter is not honoured |

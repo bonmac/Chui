@@ -6,4 +6,4 @@
 - ADR-0015, "Test-writer role and test-first lanes", is drafted as Proposed:
   `adr/0015-test-writer-role-and-test-first-lanes.md`. The user accepts it at this branch's merge.
 - This is design only. The implementation needs the user's T3 approval, and it builds on factory
-  0.2.8, which carries the dispatch_limit fix.
+  0.2.8 (the dispatch_limit fix), which ships first.

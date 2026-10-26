@@ -12,6 +12,9 @@ The full design is `docs/superpowers/specs/2026-10-26-factory-test-writer-design
 The implementation plan is `docs/superpowers/plans/2026-10-26-factory-test-writer.md`. This ADR
 records only the decisions; the spec's section numbers are cited for detail.
 
+This ADR is longer than 120 lines because it records seven decisions, each with the user's answer
+and the hook or gate that enforces it.
+
 ## Context
 
 - **The user's request** (2026-10-26): "plan the test-writer role. It should follow proper TDD
@@ -59,12 +62,13 @@ records only the decisions; the spec's section numbers are cited for detail.
    - One set of coordinator hooks resolves each target path to its checkout (spec §0.3).
    - TDD lanes must use subagents, not teammates, until the probe shows `agent_type` for teammates.
 3. **The test-writer's view is limited mechanically** (spec §0.6).
-   - It may read only allowlisted paths: `test/`, `docs/`, red and green evidence, and its own
-     briefs. It may write only `test/**`, outside the seeded runners.
+   - It may read only allowlisted paths: in any checkout `test/`, `docs/`, `Project.toml`, red and
+     green evidence, and its own briefs; in the coordinator also `docs/superpowers/`, `contracts/`
+     and `adr/`. It may write only `test/**`, outside the seeded runners.
    - It may run only allowlisted Bash, and git only as `status`, `add`, `commit` and
      `diff -- test/`.
-   - Registry frontmatter removes `Agent`, `Task`, `SendMessage`, `WebFetch` and `WebSearch` from
-     it.
+   - Registry frontmatter removes `Agent`, `Task`, `SendMessage`, `WebFetch`, `WebSearch` and
+     `NotebookEdit` from it (spec §2.1).
    - The implementer must never write `test/**`. An implementer edit to a test FAILS the lane (user,
      2026-10-26).
 4. **Identity** (spec §0.5).
@@ -128,7 +132,9 @@ records only the decisions; the spec's section numbers are cited for detail.
 - **Measured by the critics** (gitignored scratch under `<root>/.lanes/scratch/tw-critic*/`):
   - TestItemRunner failure headers on both Julia versions;
   - `item=nosuch` → `Total 0`, exit 0;
-  - the `@compat public` parse (`macrocall(@compat, LNN, :public, tuple)`);
+  - the `@compat public` parse (`macrocall(@compat, LNN, :public, tuple)`). The related parse
+    facts are recorded in `research/ecosystem-verification.md` E-37: `public` is a ParseError on
+    1.10.12 and parses on 1.13.2, which is why packages write `@compat public`;
   - macrocall line slots surviving `remove_linenums!`;
   - `--amend`/`-C` keeping the source author, and `--author` overriding it;
   - `git show <rev>:<path> -- test/` printing src.
