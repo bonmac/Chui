@@ -60,6 +60,7 @@ end
     include("test_hooks.jl")
     include("test_env_isolation.jl")
     include("test_hooks_lifecycle.jl")
+    include("test_hooks_tdd.jl")   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
     include("test_bash_guard.jl")
     include("test_dod.jl")
     include("test_ratchet.jl")
