@@ -275,6 +275,12 @@ module Lane
     """
     function cmd_release(repo, key; io = stdout)
         k = replace(key, r"[^A-Za-z0-9_./:@-]" => "_")
+        try
+            ledger_path(repo)
+        catch # a registry that does not parse, or a `[lanes] ledger` that is not a string (re-review n4)
+            println(stderr, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); $k is NOT released")
+            return 1
+        end
         if !ledger_line(repo, "close"; session = "*", ref = k, why = "released")
             println(stderr, "lane: could not write the lane ledger $(ledger_path(repo)); $k is NOT released")
             return 1

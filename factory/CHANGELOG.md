@@ -39,11 +39,13 @@ the cap fix. That is consistent with the user keeping 0.2.x at L0.
     - The denial names this command.
     - It writes the ledger the hooks read (`[lanes] ledger`).
     - It starts a new line after a truncated last line.
-    - It exits 1, without claiming the release, when the write fails.
+    - It exits 1, without claiming the release, when the write fails or the registry does not
+      parse.
   - Read, count and append run under a lock, `.lanes/.dispatch.lock`, because parallel Agent
     calls passed the cap together.
     - The hook waits up to 5 s for the lock, then denies.
     - A lock older than one minute is moved aside, checked that it is still stale, then removed.
+      If another hook took a fresh lock in between, it is put back and the hook denies.
     - A stale lock that is a file or a non-empty directory is put back, and the hook denies at
       once. It used to spin until the hook timeout.
     - A `.lanes/` that cannot be created denies.

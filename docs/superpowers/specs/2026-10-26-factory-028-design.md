@@ -143,6 +143,12 @@ Changes:
 - **m3:** wording. A foreground call has no record until it returns, so the TTL can drop it while
   it runs; this is documented.
 - **n1, n2:** documented (a duplicate live name counts once; names that sanitise alike collide).
+- **Re-review m1′:** in the "changed hands" branch, the hook used to `rmdir` the live lock it had
+  moved aside, which let a third hook enter alongside the holder. It now puts the lock back if the
+  path is free, then denies. Tested with a `find` shim that makes the race deterministic.
+- **Re-review n3, n4:** n3 (a keyless JSON object is keyed `desc:` and counts once) is documented
+  as unreachable today. n4: `lane release` with a registry that does not parse prints one line
+  and exits 1.
 
 ## Blind spots (for CHECK_COVERAGE; revision 2 wording is in `.agents/checks.toml`)
 

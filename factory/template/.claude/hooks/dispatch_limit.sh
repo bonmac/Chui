@@ -24,14 +24,17 @@ mkdir -p "$(dirname "$LEDGER_FILE")" 2>/dev/null || deny "cannot create $(dirnam
 _n=0
 until mkdir "$lock" 2>/dev/null; do
     # A lock left by a killed hook (older than a minute; the hook timeout is 10 s) is broken by moving
-    # it aside, then checking that what moved is still the stale one (another hook may have broken it
-    # and taken a fresh lock in between: then deny, never enter alongside it), then removing it.
-    # Not an empty directory (a file, a non-empty dir): put it back and deny (reviewer B1: it spun).
+    # it aside, then checking that what moved is still the stale one. If another hook broke it and took
+    # a fresh lock in between, what moved is that LIVE lock: put it back and deny, never remove it
+    # (re-review m1′: removing it let a third hook enter alongside its holder). Not an empty
+    # directory (a file, a non-empty dir): put it back and deny (reviewer B1: it spun).
     if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
         _aside="$lock.stale.$$"
         if mv "$lock" "$_aside" 2>/dev/null; then
-            [ -n "$(find "$_aside" -maxdepth 0 -mmin +1 2>/dev/null)" ] ||
-                { rmdir "$_aside" 2>/dev/null; deny "the lane ledger lock changed hands while breaking a stale one; retry the dispatch."; }
+            [ -n "$(find "$_aside" -maxdepth 0 -mmin +1 2>/dev/null)" ] || {
+                [ -e "$lock" ] || mv "$_aside" "$lock" 2>/dev/null
+                deny "the lane ledger lock changed hands while breaking a stale one; retry the dispatch."
+            }
             rmdir "$_aside" 2>/dev/null && continue
             [ -e "$lock" ] || mv "$_aside" "$lock" 2>/dev/null
             deny "cannot break the stale lock $lock: it is not an empty directory. Inspect and remove it by hand."

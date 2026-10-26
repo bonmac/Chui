@@ -148,6 +148,14 @@
         r = tmp_repo(Dict(".agents/agent-registry.toml" => "[lanes]\nmax_open = 4\nledger = \"var/lanes.jsonl\"\n"))
         @test capture(() -> Lane.main(["release", "h3", "--repo", r]))[1] == 0
         @test occursin("\"ref\":\"h3\"", read(joinpath(r, "var/lanes.jsonl"), String)) && !isfile(led(r))
+        # re-review n4: a registry that does not parse is a one-line error, not a stacktrace, and nothing is released
+        r = tmp_repo(Dict(".agents/agent-registry.toml" => "[lanes\nledger = 5\n"))
+        errf = tempname()
+        rel = open(errf, "w") do io
+            redirect_stderr(() -> capture(() -> Lane.main(["release", "h4", "--repo", r])), io)
+        end
+        @test rel[1] == 1 && !occursin("released", rel[2])
+        @test occursin("agent-registry.toml", read(errf, String)) && !occursin("Stacktrace", read(errf, String))
         # M1: concurrent dispatches are serialised by a lock (6 at once, cap 2: exactly 2 pass)
         for trial in 1:3
             r = realpath(mktempdir())
@@ -180,6 +188,16 @@
             @test (done && p.exitcode == 2 && occursin("stale lock", String(take!(err)))) || (println("stale $kind lock: done=$done"); false)
             @test ispath(lk)                                                                   # left for a human, not deleted
         end
+        # re-review m1′: when the lock changed hands mid-break (B saw it stale; by B's mv, A held a fresh one),
+        # B puts A's live lock back and denies; it never removes it. A `find` shim makes the race deterministic.
+        shim = mktempdir()
+        write(joinpath(shim, "find"), "#!/bin/sh\ncase \"\$1\" in *.dispatch.lock) echo \"\$1\"; exit 0;; esac\nexec /usr/bin/find \"\$@\"\n")
+        chmod(joinpath(shim, "find"), 0o755)
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/.dispatch.lock"))                # A's fresh lock
+        rc, _, err = hook("dispatch_limit.sh", pre("b"), r; env = merge(cap(5), Dict("PATH" => shim * ":" * ENV["PATH"])))
+        @test rc == 2 && occursin("changed hands", err)
+        @test isdir(joinpath(r, ".lanes/.dispatch.lock"))                                      # A's lock intact
+        @test !any(startswith(".dispatch.lock.stale"), readdir(joinpath(r, ".lanes")))
         # reviewer B2: a payload that is not a JSON object is denied (0.2.7 recorded `desc:` and let all of them pass)
         r = realpath(mktempdir())
         @test all(_ -> denied("not json", r, 2), 1:4)
