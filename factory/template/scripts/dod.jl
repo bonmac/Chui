@@ -10,7 +10,8 @@
 #   tests      src/ or ext/ changed  =>  test/ changed
 #   changelog  CHANGELOG.md changed, or a changelog.d/<name>.md fragment ADDED (0.2.4): lanes in one
 #              repo then never share a file; the release manager folds the fragments into
-#              CHANGELOG.md with `julia scripts/changelog.jl fold`
+#              CHANGELOG.md with `julia scripts/changelog.jl fold`. An added fragment holding a
+#              Markdown heading fails it (0.3.0): the fold refuses it
 #   adr        an NNNN-*.md file in the ADR directory (not the template) changed, or the body cites
 #              ADR-NNNN. The directory is `adr_dir` in .factory-version (from the MANIFEST profile;
 #              `adr` for the coordinator), default docs/adr; --adr-dir overrides it.
@@ -43,6 +44,12 @@ module DoD
     "A changelog fragment: `changelog.d/<name>.md` (one level, not README.md, not a dotfile: what changelog.jl folds)."
     is_fragment(f) = occursin(r"^changelog\.d/[^/.][^/]*\.md$", f) && f != "changelog.d/README.md"
 
+    # 0.3.0: a Markdown heading line, which `changelog.jl fold` refuses in a fragment. A DUPLICATE of the
+    # regex in changelog.jl's `problems` (inline there, and `problems` reads the working tree, not
+    # `head`); test_dod.jl checks the two patterns stay identical.
+    const FRAGMENT_HEADING = r"^\s{0,3}#{1,6}(\s|$)"
+    has_heading(text) = any(l -> occursin(FRAGMENT_HEADING, l), split(strip(text), '\n'))
+
     label_tier(labels) = (
         ts = filter(l -> l in TIERS, [replace(l, r"^tier:" => "") for l in labels]);
         isempty(ts) ? nothing : TIERS[maximum(tierindex.(ts))]
@@ -59,7 +66,8 @@ module DoD
     function evaluate(
             risk, changed::Vector{<:AbstractString}, labels, text::AbstractString;
             kept::Vector{<:AbstractString} = changed, added::Vector{<:AbstractString} = kept,
-            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true
+            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true,
+            headed::Vector{<:AbstractString} = String[]   # added fragments with a heading (fold refuses them)
         )
         lt = label_tier(labels)
         pts = filter(!isnothing, [path_tier(risk, f) for f in changed])
@@ -87,7 +95,9 @@ module DoD
                     (:fail, "src/ or ext/ changed but nothing under test/ did")
             elseif req == "changelog"
                 frag = filter(is_fragment, added)
-                "CHANGELOG.md" in kept ? (:pass, "CHANGELOG.md changed") :
+                # checked first: the release fold would fail even when CHANGELOG.md changed too
+                !isempty(headed) ? (:fail, "$(first(headed)) contains a Markdown heading, which `julia scripts/changelog.jl fold` refuses; write list items only (a bold lead-in, not a heading)") :
+                    "CHANGELOG.md" in kept ? (:pass, "CHANGELOG.md changed") :
                     !isempty(frag) ? (:pass, "changelog fragment $(first(frag)) added") :
                     (:fail, "add a changelog.d/<lane>.md fragment (or a CHANGELOG.md entry under ## Unreleased)")
             elseif req == "adr"
@@ -149,7 +159,9 @@ module DoD
         changed = names()
         kept = names("--diff-filter=d")
         # an empty fragment would never reach CHANGELOG.md (changelog.jl fold refuses it): not evidence
-        added = filter(f -> !is_fragment(f) || !isempty(strip(something(git(root, "show", "$head:$f"), ""))), names("--diff-filter=A"))
+        frag_text(f) = something(git(root, "show", "$head:$f"), "")
+        added = filter(f -> !is_fragment(f) || !isempty(strip(frag_text(f))), names("--diff-filter=A"))
+        headed = filter(f -> is_fragment(f) && has_heading(frag_text(f)), added)   # 0.3.0: fold refuses these
         msgs = something(git(root, "log", "--format=%B", "$mb..$head"), "")
         risk = TOML.parsefile(joinpath(root, "risk.toml"))
         # lane_commits reads base..head (review B3); an empty list (tdd fails on a src change) when none
@@ -157,7 +169,7 @@ module DoD
         tier, results = evaluate(
             risk, changed, labels, body * "\n" * msgs; kept, added,
             adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root),
-            commits, stub_ok = s -> stub_declares_only(root, s)
+            commits, stub_ok = s -> stub_declares_only(root, s), headed
         )
         println("dod.jl: $(length(changed)) files changed since $(first(mb, 10)); tier $tier")
         for (req, st, detail) in results
