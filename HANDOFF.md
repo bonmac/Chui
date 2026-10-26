@@ -50,6 +50,10 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
   - A third issue is the per-row allocation of String keys in the hash-aggregate sink. That fired the ADR-0024 trigger.
   - Fixed in phase 4 by lane p4-perf, which runs after p4-bench merges because both own `benchmark/budgets.toml`. Allocation tests come first. No semantic change. Budgets are tightened only.
   - The partition-bits formula and parallel eager probes stay phase-5 follow-ups.
+- p4-bench is merged into frames feat/phase4 as 5956626 (reviewer APPROVE WITH CONDITIONS, FINAL). The lead's rulings:
+  - **dod waiver:** a lane-only waiver for a constant change without a test (`RADIX_SWITCH` 2^16 → 2^20). `dod.jl` at the final phase-4 head must pass with no waiver.
+  - **ADR-0022 rule 1 note:** a dated note allows internal `_FORCE_*` switches in the SUITE. It goes to the user at the phase-4 ★ together with ADRs 0023–0025.
+  - **p4-perf scope:** widened to `verbs_bind.jl` and `verbs_groups.jl`, which have the same `init` vcat pattern, plus memory rows.
 - Process deviation (frames p4-bench): the lane made one python3 heredoc edit on new, uncommitted benchmark/compare files, against the Edit/Write rule. The reviewer checks the committed content. The p4-perf brief restates the rule.
 - ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
