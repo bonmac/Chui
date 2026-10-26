@@ -44,6 +44,13 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 
 **Lead decisions, 2026-10-26 (no ★ in frames phase 4 or types phase 5):**
 - ~~Join keyword `by =`~~ RETRACTED the same day: ChuiFrames ADR-0002 rule 16 (user-accepted) says `on =`, so the keyword is a user ★ (below).
+- ChuiFrames p4-perf (approved): p4-bench found two quadratic `reduce(vcat, …)` concatenations. The allocation counts are load-independent.
+  - Lazy gather in `src/columns.jl`: 945 MiB against 30 MiB, and lazy joins run 5–7× slower than eager.
+  - Partitioned join in `src/engine/join_shapes.jl`: 8.6 GiB at p=8 for 4e6 rows.
+  - A third issue is the per-row allocation of String keys in the hash-aggregate sink. That fired the ADR-0024 trigger.
+  - Fixed in phase 4 by lane p4-perf, which runs after p4-bench merges because both own `benchmark/budgets.toml`. Allocation tests come first. No semantic change. Budgets are tightened only.
+  - The partition-bits formula and parallel eager probes stay phase-5 follow-ups.
+- Process deviation (frames p4-bench): the lane made one python3 heredoc edit on new, uncommitted benchmark/compare files, against the Edit/Write rule. The reviewer checks the committed content. The p4-perf brief restates the rule.
 - ChuiTypes TTFX: the dep-free guarded precompile workload, not PrecompileTools. No new dependency and no ADR-0005 change. Indicative numbers (loaded machine): 1.13.2 workload 1.69 s → 0.269 s; 1.10.12 1.23 s → 0.150 s.
 
 **2026-10-26, new lead session:** the previous session's lanes sync-027-types (`08e9468`), sync-027-frames2 (`bc8c97a`) and requests-p4p3 (`3ef6d64`) were already merged.
