@@ -5,6 +5,7 @@
 #   julia scripts/tdd.jl green  [--root DIR] [--base B]       the lane's red items pass, then the default suite
 #   julia scripts/tdd.jl api    [--root DIR]                  docstrings of exported/public names (Julia >= 1.11)
 #   julia scripts/tdd.jl brief  --role R [--root DIR] [--base B]   header + api + stub diffs; saves it
+#   julia scripts/tdd.jl audit  [--root DIR] [--base B] [--ledger PATH]   history H1-H9, evidence E1-E5
 #
 # Exit: 0 OK, 1 NOT OK, 2 could not evaluate (a dirty tree, a bad argument, a red commit with no
 # @testitem). Runs go through `julia scripts/ci.jl test -- item=<name> ...` in DIR, recorded by
@@ -218,9 +219,6 @@ module Tdd
     # -----------------------------------------------------------------------------------------
     # brief
 
-    # Task 5 replaces this with stub_declares_only
-    stub_ok(root, sha) = true
-
     "The next free `<dir>/<role>-<n>.md`."
     function next_brief(dir, role)
         taken = [something(tryparse(Int, m.captures[1]), 0) for f in (isdir(dir) ? readdir(dir) : String[])
@@ -251,7 +249,7 @@ module Tdd
         println(b, "## Task\n\n(the lead pastes the plan task text here)\n\n## Spec\n\n(the lead names the spec path here)\n")
         if role == "test-writer"
             stubs = filter(c -> phase(root, c) == "stub", commits)
-            bad = filter(c -> !stub_ok(root, c), stubs)
+            bad = filter(c -> !stub_declares_only(root, c), stubs)
             if !isempty(bad)
                 println(io, "tdd.jl brief: stub commit(s) fail H5 (declarations only): ", join(first.(bad, 7), ", "), ". Nothing saved (exit 1).")
                 return 1
@@ -302,11 +300,12 @@ module Tdd
     usage: julia scripts/tdd.jl red   [--root DIR] [--rev REV]
            julia scripts/tdd.jl green [--root DIR] [--base B]
            julia scripts/tdd.jl api   [--root DIR]
-           julia scripts/tdd.jl brief --role test-writer|implementer [--root DIR] [--base B]"""
+           julia scripts/tdd.jl brief --role test-writer|implementer [--root DIR] [--base B]
+           julia scripts/tdd.jl audit [--root DIR] [--base B] [--ledger PATH]"""
 
     function main(args; io = stdout)
         opts, pos = try
-            parse_args(args, (), ("--root", "--rev", "--base", "--role"))
+            parse_args(args, (), ("--root", "--rev", "--base", "--role", "--ledger"))
         catch e
             println(io, "tdd.jl: ", e isa ErrorException ? e.msg : e, "\n", USAGE)
             return 2
@@ -315,13 +314,14 @@ module Tdd
         root = abspath(get(opts, "--root", normpath(joinpath(@__DIR__, ".."))))
         base = get(opts, "--base", "main")
         cmd = only(pos)
-        allowed = Dict("red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"))
+        allowed = Dict("red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"), "audit" => ("--root", "--base", "--ledger"))
         haskey(allowed, cmd) || (println(io, "tdd.jl: unknown command `$cmd`\n", USAGE); return 2)
         extra = setdiff(keys(opts), allowed[cmd])
         isempty(extra) || (println(io, "tdd.jl $cmd: unexpected option(s) $(join(sort!(collect(extra)), ", "))\n", USAGE); return 2)
         cmd == "red" && return red(root; rev = get(opts, "--rev", "HEAD"), io)
         cmd == "green" && return green(root; base, io)
         cmd == "api" && return api(root; io)
+        cmd == "audit" && return audit(root; base, ledger = get(opts, "--ledger", nothing), io)
         haskey(opts, "--role") || (println(io, "tdd.jl brief: --role is required\n", USAGE); return 2)
         return brief(root; role = opts["--role"], base, io)
     end
