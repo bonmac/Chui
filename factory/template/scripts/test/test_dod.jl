@@ -1,6 +1,12 @@
 @testset "dod.jl" begin
     risk = TOML.parsefile(joinpath(ROOT, "risk.toml"))
-    ev(changed, labels = String[], text = "") = DoD.evaluate(risk, String.(changed), labels, text)
+    # 0.3.0: a valid TDD lane (red by the test writer, green by the implementer), so `tdd` passes and
+    # these cases test the other requirements; without `commits`, a src change fails `tdd` (review)
+    okl = [
+        DoD.LaneCommit("a"^40, "test-writer <test-writer@factory.invalid>", "red", nothing, ["test/a.jl"]),
+        DoD.LaneCommit("b"^40, "implementer <implementer@factory.invalid>", "green", nothing, ["src/A.jl"]),
+    ]
+    ev(changed, labels = String[], text = "") = DoD.evaluate(risk, String.(changed), labels, text; commits = okl)
     failed(results) = [r[1] for r in results if r[2] == :fail]
     # 0.2.4: CLI tests assert WHICH requirement failed, so a broken fixture cannot pass for the wrong reason
     fails(out) = [m.captures[1] for m in eachmatch(r"\[FAIL\] (\S+)", out)]
@@ -38,7 +44,7 @@
     # deleting the CHANGELOG or a test is not evidence
     tier, res = DoD.evaluate(
         risk, ["src/A.jl", "test/a.jl", "CHANGELOG.md"], ["T1"], "docs/superpowers/plans/x.md";
-        kept = ["src/A.jl"]
+        kept = ["src/A.jl"], commits = okl
     )
     @test failed(res) == ["tests", "changelog"]
     # default_tier = "T0" is honoured
@@ -47,7 +53,7 @@
 
     @testset "changelog fragments (0.2.4)" begin
         plan = "docs/superpowers/plans/x.md"
-        frag(changed; kw...) = failed(last(DoD.evaluate(risk, String.(changed), ["T1"], plan; kw...)))
+        frag(changed; kw...) = failed(last(DoD.evaluate(risk, String.(changed), ["T1"], plan; commits = okl, kw...)))
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/lane-a.md"]) == String[]
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/lane-a.md"]; added = ["test/a.jl"]) == ["changelog"]  # modified, not new
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/sub/x.md"]) == ["changelog"]

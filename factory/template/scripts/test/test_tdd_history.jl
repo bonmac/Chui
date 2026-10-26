@@ -31,8 +31,9 @@
 # - Evidence (E1-E4) is read from `<root>/.lanes/evidence/`, the files evidence.jl writes. A file
 #   is "passing" when its header `head` is the commit's full sha, `dirty: false`, `termsignal: 0`,
 #   and: for `red-<sha7>`, its `--- tdd ---` part names at least one ASSERTION/BEHAVIOUR item and no
-#   WRONG-REASON, PASSED, NOT-RUN or COLLATERAL; for `green-<sha7>`, `exit: 0`; for
-#   `mutate-<slug>`/`mutexp-<slug>` (any head), `exit: 0`. E4 fails on any evidence file of a lane
+#   WRONG-REASON, PASSED, NOT-RUN or COLLATERAL; for `green-<sha7>`, `exit: 0` and a `--- tdd ---`
+#   part with `green default suite: OK`; for `mutate-<slug>`/`mutexp-<slug>` (any head), `exit: 0`
+#   and a tdd part with `KILLED` (review M3). E4 fails on any evidence file of a lane
 #   commit with `dirty: true` or `termsignal` != 0. A backfill commit's items are the `@testitem`s it
 #   adds; an item whose only assertions are `@test_broken` is printed as listed, not an E3 failure.
 # - The TDD ledger is JSONL, one object per line, as _lib.sh's `ledger` writes it:

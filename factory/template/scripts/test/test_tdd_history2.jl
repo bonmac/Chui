@@ -74,6 +74,12 @@ function th_ev!(d, kind, sha; exit = 0, dirty = false, sig = 0, tdd = nothing)
     return p
 end
 th_red_ev!(d, sha; kw...) = th_ev!(d, "red", sha; exit = 1, tdd = "g doubles BEHAVIOUR", kw...)
+# The verdicts tdd.jl writes under `--- tdd ---` (tdd.jl green; _tdd_backfill.jl mutate): passing
+# green and mutate evidence carries them, not only `exit: 0` (review M3, test_tdd_review.jl).
+const TH_GREEN_TDD = "green items: OK (1 red item(s), run exit 0, total 1)\n  PASSED       g doubles\ngreen default suite: OK (exit 0)"
+const TH_KILLED_TDD = "mutant run (scratch x): ASSERTION\nreal run: PASSED (exit 0)\nKILLED: the item detects the mutation (exit 0)"
+"A passing green evidence file for `sha`: exit 0 and tdd.jl's verdict."
+th_green_ev!(d, sha; kw...) = th_ev!(d, "green", sha; tdd = TH_GREEN_TDD, kw...)
 th_rec(ev, type, d, sha) = """{"ts":"2026-10-26T00:00:00Z","ev":"$ev","session":"s1","agent_id":"a$(first(sha, 7))","agent_type":"$type","checkout":"$d","sha":"$sha"}"""
 function th_ledger!(path, lines)
     mkpath(dirname(path))
@@ -197,7 +203,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
 
     th_testset("missing red evidence fails E1", E...) do
         d, c = th_lane()
-        th_ev!(d, "green", c.green)
+        th_green_ev!(d, c.green)
         @test th_has(er(d, th_lane_recs(d, c)), "E1")
         th_red_ev!(d, c.red)
         @test isempty(er(d, th_lane_recs(d, c)))                           # the complete lane passes
@@ -219,10 +225,10 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         sh(`git -C $d checkout -q -b lane`)
         th_commit!(d, LEAD, Dict{String, String}(), "chore: mode\n\nTDD-Mode: refactor — rename internals")
         rf = th_commit!(d, IMPL, Dict("src/P.jl" => replace(P0, "x + 1" => "1 + x")), "refactor: swap\n\nTDD: refactor")
-        th_ev!(d, "green", rf)
+        th_green_ev!(d, rf)
         recs = [th_rec("tdd-commit", "implementer", d, rf)]
         @test th_has(er(d, recs), "E2")
-        th_ev!(d, "green", mb)
+        th_green_ev!(d, mb)
         @test !th_has(er(d, recs), "E2")
     end
 
@@ -234,9 +240,9 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         b = th_commit!(d, TW, Dict("test/f_tests.jl" => items), "test: backfill f\n\nTDD: backfill")
         recs = [th_rec("tdd-commit", "test-writer", d, b)]
         @test th_has(er(d, recs), "E3")
-        th_ev!(d, "mutate-$(th_slug("f adds one"))", b)
+        th_ev!(d, "mutate-$(th_slug("f adds one"))", b; tdd = TH_KILLED_TDD)
         @test th_has(er(d, recs), "E3")                                    # one item still unproved
-        th_ev!(d, "mutexp-$(th_slug("f: Int overflow!"))", b)
+        th_ev!(d, "mutexp-$(th_slug("f: Int overflow!"))", b; tdd = TH_KILLED_TDD)
         @test !th_has(er(d, recs), "E3")
         th_ev!(d, "mutate-$(th_slug("f adds one"))", b; exit = 1)          # a failed mutate proves nothing
         @test th_has(er(d, recs), "E3")
@@ -254,7 +260,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
     th_testset("dirty evidence fails E4", E...) do
         d, c = th_lane()
         th_red_ev!(d, c.red; dirty = true)
-        th_ev!(d, "green", c.green)
+        th_green_ev!(d, c.green)
         @test th_has(er(d, th_lane_recs(d, c)), "E4")
     end
 
@@ -269,7 +275,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         # Review Focus 6: an amended or `-C HEAD` commit leaves no record with its own sha
         d, c = th_lane()
         th_red_ev!(d, c.red)
-        th_ev!(d, "green", c.green)
+        th_green_ev!(d, c.green)
         recs = th_lane_recs(d, c)
         @test !th_has(er(d, recs), "E5")
         @test th_has(er(d, recs[1:2]), "E5")                               # green has no record
@@ -281,7 +287,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
     th_testset("tdd-commit record with another agent_type fails E5", E...) do
         d, c = th_lane()
         th_red_ev!(d, c.red)
-        th_ev!(d, "green", c.green)
+        th_green_ev!(d, c.green)
         for other in ("test-writer", "general-purpose", "")
             recs = th_lane_recs(d, c)
             recs[3] = th_rec("tdd-commit", other, d, c.green)
@@ -292,7 +298,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
     th_testset("tdd-commit-violation for the lane fails E5", E...) do
         d, c = th_lane()
         th_red_ev!(d, c.red)
-        th_ev!(d, "green", c.green)
+        th_green_ev!(d, c.green)
         recs = th_lane_recs(d, c)
         @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", d, c.green)]), "E5")
         @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", "/elsewhere", c.stub)]), "E5")
@@ -317,7 +323,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         sh(`git -C $pkg worktree add -q $(joinpath(pkg, ".worktrees", "lane")) lane`)
         lane = realpath(joinpath(pkg, ".worktrees", "lane"))
         th_red_ev!(lane, c.red)
-        th_ev!(lane, "green", c.green)
+        th_green_ev!(lane, c.green)
         outer, inner = joinpath(C, ".lanes", "ledger.jsonl"), joinpath(pkg, ".lanes", "ledger.jsonl")
         aud() = (io = IOBuffer(); code = th(:audit)(lane; base = "main", io); (code, String(take!(io))))
 
