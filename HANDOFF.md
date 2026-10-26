@@ -68,6 +68,8 @@ The critic on the phase-4 spec found that the join design departs from user-acce
 
 **K4, asked and answered 2026-10-26 (user):** mixed `Int64`/`Float64` join keys are **allowed, like dplyr**: compared as Float64, with the precision loss above 2^53 documented. Date/DateTime and Int64/UInt64 pairs stay rejected because they hash inconsistently.
 
+**nest_join name clash, asked and answered 2026-10-26 (user):** replace the clashing x column like dplyr, and emit a warning that can be silenced. (The spec had an ArgumentError.) Other architect decisions accepted by the lead: `name = :y` default; `join_by` equality pairs only (the dotted form is deferred with inequality/rolling); `nest_join` reuses `nest`'s representation.
+
 **ChuiTypes p5-perf (lead decisions, 2026-10-26; phase 5 has no ★):**
 - Q1: accept the missed spec time targets. S1 is 3.8× Base collect (target ≤ 2.5×) and S2 is 22× Base foldl (target ≤ 10×). Both improve on the recorded 5.5×/43×. ADR-0009 records them as the budget, with "fold runfold into the fused pipeline" as a follow-up. ADR-0003's "costs what an iterator does" gets a dated note that the claim is **not met**; its decision text is the user's and is unchanged.
 - Q2: `merge` over 4 Vector sources regressed by about 1.5×. One bounded fix attempt; otherwise a benchmark row and a known loss in ADR-0009.
