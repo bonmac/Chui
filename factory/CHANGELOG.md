@@ -5,6 +5,104 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.3.0 (2026-10-27)
+
+A `test-writer` role and test-first lanes with separate contexts (ADR-0015; spec
+`docs/superpowers/specs/2026-10-26-factory-test-writer-design.md`, plan
+`docs/superpowers/plans/2026-10-26-factory-test-writer.md`). The tests of a test-first lane come
+from the spec and the public API, written by an agent that never sees the implementation; a second,
+fresh agent writes the code. A minor bump: the guards are stricter (dod `tdd`, `tdd_boundary`, the
+commit guard), the implementer is narrowed, and there is a new seeded edit. Builds on 0.2.8.
+
+- **The 13th role, `test_writer`** (`.agents/agent-registry.toml`, seeded; new managed
+  `.agents/bodies/test_writer.md`). The spec §2.1 entry: `tools` Read, Grep, Glob, Bash, Edit,
+  Write; `disallowed_tools` Agent, Task, SendMessage, WebFetch, WebSearch, NotebookEdit;
+  `file_scope` `test/**`. The body: the context is the boundary (work only from the tdd-brief;
+  never read `src/`/`ext/`, their history, transcripts or the depot); author
+  `test-writer <test-writer@factory.invalid>`; `TDD: red` then `tdd.jl red`; `TDD: test-fix`,
+  `TDD: test-refactor`, `TDD: backfill`; a bug is `@test_broken`; it leaves law, property,
+  differential, contract and JET tests and the seeded runners alone. The registry header says
+  13 roles and cites ADR-0015.
+- **The `implementer` is narrowed.** `file_scope` `src/**`, `ext/**`, `changelog.d/**` (no
+  `test/**`); `tools` Read, Grep, Glob, Bash, Edit, Write, WebFetch, WebSearch; `disallowed_tools`
+  Agent, Task, SendMessage. Role: "Implements one planned task against the test-writer's red tests:
+  minimal code to green, then refactor with tests unchanged." Scorecard "failing test written
+  first" becomes "tdd.jl audit OK". The body: work from the tdd-brief, author
+  `implementer <implementer@factory.invalid>`, never touch `test/**`, disputes as a written
+  test-fix request with no source code, STUB declares only, GREEN is minimal, REFACTOR after a
+  green.
+- **Other bodies.** law-tester, property-tester, differential-tester: "In a test-first lane, commit
+  new items with `TDD: red` before the code." reviewer: the spec §4.5 checklist (boundary first:
+  saved dispatch prompts, separate `agent_id`s per role in the ledger's `tdd-commit` lines, H9
+  authors, every `tdd_boundary` denial a finding, the run-time source-read grep; `MethodError` reds
+  match the spec signature; `HELPER` flags; GREEN is minimal; `git show --cc` merges hold no test
+  edits; `mutexp` justified).
+- **`lane-lifecycle` skill: test-first lanes.** The two brief templates (`<!-- tdd-brief
+  role=test-writer|implementer lane= checkout= head= -->` and their sections); `tdd.jl brief`;
+  dispatch rules (a fresh `subagent_type` per role, never a fork, no `team_name`, subagents only,
+  a clean lane); the brief is the only channel; the `TDD-Mode:` trailer on a commit authored
+  `lead <lead@factory.invalid>`; merge, never rebase.
+- **`/change-review`** runs `tdd.jl audit --base main --ledger <root>/.lanes/ledger.jsonl` and
+  `dod.jl` for a test-first lane, and reads the saved prompts under `<main>/.lanes/briefs/<lane>/`.
+- **`CLAUDE.md`** (seeded): the `scripts/tdd.jl` red/green/audit lines, `tdd_boundary` in the hook
+  list, and one line on test-first lanes. The template's copy changes; a repo's own copy is a
+  hand edit (optional).
+- **What the Task 0 probe established** (2026-10-27, plan Task 0), and what the hooks rely on:
+  - TDD dispatches MAY use `name` (`tw-<lane>-<task>` / `impl-<lane>-<task>`): a named
+    teammate's payloads carry `agent_type`, but no `agent_id`. The hooks key the role on
+    `agent_type` only, never `agent_id`.
+  - The lead is the caller with no `agent_type`.
+  - SubagentStart/SubagentStop never fired for either dispatch; nothing relies on them.
+  - A new agent type added mid-session is not dispatchable until the session restarts: after
+    syncing 0.3.0 and adding the registry entries, **restart the session** before the first TDD
+    dispatch.
+- **Hooks (plan Task 8):** `.claude/hooks/tdd_boundary.sh` (PreToolUse: the test-writer's
+  Read/Grep/Glob and Bash allowlists and `test/**`-only writes, the implementer's `test/**` denial,
+  the lead-only dispatch of a role with a matching tdd-brief header, saved under
+  `<main>/.lanes/briefs/<lane>/dispatched/`), the sourced `_tdd_allow.sh` and `_tdd_commit_guard.sh`
+  (the effective author of every `git commit`, role identities and the lead identity, `TDD-Mode:`
+  denied to role callers, no background commits), and `tdd_commit_post.sh` (PostToolUse and
+  PostToolUseFailure `Bash`: the resulting commits' author, phase and paths; ledger `tdd-commit` /
+  `tdd-commit-violation`). `settings.json` gains the matchers; `checks.toml` the register rows.
+  **Deviation from the spec:** its single `tdd_boundary` register row is split into
+  `tdd_boundary` and `tdd_commit_post`, because every hook must be its own `prevented_by` file
+  (the `test_gen` register invariant).
+- **Tasks 1–7** (merged earlier as part 1): the failure-output fixtures for Julia 1.13.2 and
+  1.10.12; the seeded `test/runtests.jl` `item=` selection and the `TDD_MATCHED` record;
+  `scripts/_tdd_classify.jl` (ASSERTION, BEHAVIOUR, WRONG-REASON, PASSED, NOT-RUN, COLLATERAL,
+  HELPER); `scripts/tdd.jl` `red`, `green`, `api`, `brief`; `scripts/_tdd_history.jl` (H1–H9,
+  E1–E5) and `tdd.jl audit`; `scripts/_tdd_backfill.jl` (`mutate`, `gaps`); dod's `tdd`
+  requirement and the seeded `risk.toml` (`tdd` in T1–T3, the four tdd scripts in T3).
+- **Fixes in this release:**
+  - `tdd.jl green`: a red item renamed by a test-writer `TDD: test-fix` commit with passing red
+    evidence no longer deadlocks green; it is reported `RENAMED` (a26bf04).
+  - dod `changelog`: the heading check covers modified fragments too, not only added ones (281686e).
+  - The factory test runner unsets `FACTORY_ALLOW_T3`, `FACTORY_ALLOW_PUSH` and
+    `FACTORY_ALLOW_OUTWARD` for child processes; the hook tests failed when the caller had T3 set
+    (bd1de78).
+- **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the four tdd
+  scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
+  them by hand (below).
+- **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the four tdd
+  scripts, the three hook files plus `_tdd_allow.sh`, `settings.json`, `test_writer.md` and the
+  changed bodies, `checks.toml`, `dod.jl`, `/change-review`, `lane-lifecycle`. The seeded hand
+  edits (T3, `FACTORY_ALLOW_T3=1`):
+  - **coordinator:** `.agents/agent-registry.toml` gains the `test_writer` and `implementer`
+    entries as in the template (D7 reversed; both use the vendored template bodies); `risk.toml`
+    adds `scripts/tdd.jl`, `scripts/_tdd_classify.jl`, `scripts/_tdd_history.jl` and
+    `scripts/_tdd_backfill.jl` to the T3 globs. No `tdd` in its tiers: it has no `src/`.
+  - **ChuiCore.jl** (after v0.0.1), **ChuiTypes.jl, ChuiFrames.jl** (after their open branches
+    merge): the registry `test_writer` entry and the `implementer` change (`file_scope`, `tools`,
+    `disallowed_tools`, role, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the four
+    tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
+    the template.
+  - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.
+- **Dogfood numbers (spec §6, plan Task 9 step 5).** Handoffs per task in lane tw-031, counted by
+  its sub-lead: item a 2 (test writer, implementer), item b 2, item c 2 (the three fixes above),
+  Task 8 3 (test writer, implementer, one test-fix), Task 9 2. So 2 handoffs per task, 3 with a
+  dispute round, in line with the spec's estimate of 2–4. Wall-clock per task for Tasks 2–7 is in
+  the tw-030 lane's records; this lane did not measure it: not measured here.
+
 ## 0.2.8 (2026-10-26)
 
 The lane cap (`dispatch_limit.sh`) was not enforced. It counted SubagentStart minus SubagentStop,

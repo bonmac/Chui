@@ -26,6 +26,47 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   (TaskStop says no task found; a dispatch that never ran) is released with
   `scripts/lane release <name>`. A spawned teammate or background agent is never dropped by time.
 
+**Test-first lanes (factory 0.3.0, ADR-0015)**
+- Each task gets two agents, each a fresh `subagent_type` dispatch (Agent call, the brief as
+  `prompt`): `test-writer` (RED, test-fix, test-refactor, backfill) then `implementer` (STUB,
+  GREEN, REFACTOR). Never a fork, never one agent switching roles, never one resumed with the other's transcript, no
+  `team_name`: subagents only, not teammates. A `name` is allowed (`tw-<lane>-<task>`,
+  `impl-<lane>-<task>`): a named teammate's payloads still carry `agent_type`. Continue an agent
+  only within its own task.
+- The hooks key the role on `agent_type` only, never `agent_id` (a named dispatch has none). The
+  lead is the caller with no `agent_type`. SubagentStart/SubagentStop never fired here; nothing
+  relies on them.
+- A new agent type added mid-session is not dispatchable until the session restarts: after
+  syncing 0.3.0 and adding the registry entries, restart the session before the first TDD dispatch.
+- Dispatch only on a clean lane. `julia scripts/tdd.jl brief --role test-writer|implementer --root
+  <lane checkout>` prints the header, the public API and the stub diffs, and saves the brief under
+  `<main>/.lanes/briefs/<lane>/`; add the rest by hand. `tdd_boundary` checks the header (role,
+  `checkout=` a lane worktree, `head=` its HEAD) and saves the prompt under `dispatched/`.
+- **The brief is the only channel.** Never relay src beyond the stub diffs, a GREEN/REFACTOR diff,
+  or the other agent's report or reasoning. A test-fix request passes on verbatim.
+- test-writer brief:
+
+  ```
+  <!-- tdd-brief role=test-writer lane=<lane> checkout=<abs path of the lane worktree> head=<sha> -->
+  ## Task    (the plan task text)
+  ## Spec    (the path)
+  ## Public API   (tdd.jl api output; docs/src pages)
+  ## Stub diffs   (git show of each stub commit, only if H5 passed)
+  ## Test-fix requests   (verbatim, if any)
+  ## Boundary  (spec §0.4 and §0.6, quoted)
+  ```
+
+- implementer brief: the same header with `role=implementer`, then `## Task`, `## Spec`,
+  `## Red tests` (paths and shas), `## Red evidence` (paths) and `## Boundary`. Never the
+  test-writer's report or messages.
+- **Mode.** The lead records it as a `TDD-Mode: required|refactor|skip — <reason>` trailer on a
+  commit authored `lead <lead@factory.invalid>` (e.g. `git commit --allow-empty --author "lead
+  <lead@factory.invalid>"`). The commit guard denies that identity and trailer to any caller with
+  an `agent_type`. Default `required`; no `src/`/`ext/` change needs none.
+- Before the merge: `/change-review` runs `tdd.jl audit --ledger` and `dod.jl`.
+  **Merge, never rebase:** evidence is keyed by sha; after a rebase run `tdd.jl green` at the tip, and audit
+  lists the missing reds for the lead to decide.
+
 **Monitor**
 - Wait for completion notifications; do not poll output files.
 - Bound every long run with `julia scripts/ci.jl <job> --timeout SECONDS` (or `CI_TIMEOUT`), and
