@@ -19,6 +19,7 @@ module Tdd
     include(joinpath(@__DIR__, "_tdd_classify.jl"))
     include(joinpath(@__DIR__, "_tdd_history.jl"))
     include(joinpath(@__DIR__, "evidence.jl"))   # module Tdd.Evidence
+    include(joinpath(@__DIR__, "_tdd_backfill.jl"))
 
     const ROLES = ("test-writer", "implementer")
     const RED_PHASES = ("red", "test-fix")
