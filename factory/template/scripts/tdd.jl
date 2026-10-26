@@ -6,6 +6,9 @@
 #   julia scripts/tdd.jl api    [--root DIR]                  docstrings of exported/public names (Julia >= 1.11)
 #   julia scripts/tdd.jl brief  --role R [--root DIR] [--base B]   header + api + stub diffs; saves it
 #   julia scripts/tdd.jl audit  [--root DIR] [--base B] [--ledger PATH]   history H1-H9, evidence E1-E5
+#   julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S
+#   julia scripts/tdd.jl gaps   [--root DIR]                  public names with no test (Julia >= 1.11)
+#   (mutate and gaps: scripts/_tdd_backfill.jl; mutate is run by the mutator agent, spec §5.2)
 #
 # Exit: 0 OK, 1 NOT OK, 2 could not evaluate (a dirty tree, a bad argument, a red commit with no
 # @testitem). Runs go through `julia scripts/ci.jl test -- item=<name> ...` in DIR, recorded by
@@ -302,11 +305,13 @@ module Tdd
            julia scripts/tdd.jl green [--root DIR] [--base B]
            julia scripts/tdd.jl api   [--root DIR]
            julia scripts/tdd.jl brief --role test-writer|implementer [--root DIR] [--base B]
-           julia scripts/tdd.jl audit [--root DIR] [--base B] [--ledger PATH]"""
+           julia scripts/tdd.jl audit [--root DIR] [--base B] [--ledger PATH]
+           julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S
+           julia scripts/tdd.jl gaps  [--root DIR]"""
 
     function main(args; io = stdout)
         opts, pos = try
-            parse_args(args, (), ("--root", "--rev", "--base", "--role", "--ledger"))
+            parse_args(args, (), ("--root", "--rev", "--base", "--role", "--ledger", "--item", "--src", "--expect", "--from", "--to"))
         catch e
             println(io, "tdd.jl: ", e isa ErrorException ? e.msg : e, "\n", USAGE)
             return 2
@@ -315,7 +320,8 @@ module Tdd
         root = abspath(get(opts, "--root", normpath(joinpath(@__DIR__, ".."))))
         base = get(opts, "--base", "main")
         cmd = only(pos)
-        allowed = Dict("red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"), "audit" => ("--root", "--base", "--ledger"))
+        allowed = Dict("red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"), "audit" => ("--root", "--base", "--ledger"),
+            "mutate" => ("--root", "--item", "--src", "--expect", "--from", "--to"), "gaps" => ("--root",))
         haskey(allowed, cmd) || (println(io, "tdd.jl: unknown command `$cmd`\n", USAGE); return 2)
         extra = setdiff(keys(opts), allowed[cmd])
         isempty(extra) || (println(io, "tdd.jl $cmd: unexpected option(s) $(join(sort!(collect(extra)), ", "))\n", USAGE); return 2)
@@ -323,6 +329,12 @@ module Tdd
         cmd == "green" && return green(root; base, io)
         cmd == "api" && return api(root; io)
         cmd == "audit" && return audit(root; base, ledger = get(opts, "--ledger", nothing), io)
+        cmd == "gaps" && return gaps(root; io)
+        if cmd == "mutate"
+            need = filter(k -> !haskey(opts, k), ["--item", "--from", "--to"])
+            isempty(need) || (println(io, "tdd.jl mutate: missing $(join(need, ", "))\n", USAGE); return 2)
+            return mutate(root; item = opts["--item"], src = get(opts, "--src", nothing), expect = get(opts, "--expect", nothing), from = opts["--from"], to = opts["--to"], io)
+        end
         haskey(opts, "--role") || (println(io, "tdd.jl brief: --role is required\n", USAGE); return 2)
         return brief(root; role = opts["--role"], base, io)
     end
