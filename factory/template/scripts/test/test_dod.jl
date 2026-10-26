@@ -1,6 +1,12 @@
 @testset "dod.jl" begin
     risk = TOML.parsefile(joinpath(ROOT, "risk.toml"))
-    ev(changed, labels = String[], text = "") = DoD.evaluate(risk, String.(changed), labels, text)
+    # 0.3.0: a valid TDD lane (red by the test writer, green by the implementer), so `tdd` passes and
+    # these cases test the other requirements; without `commits`, a src change fails `tdd` (review)
+    okl = [
+        DoD.LaneCommit("a"^40, "test-writer <test-writer@factory.invalid>", "red", nothing, ["test/a.jl"]),
+        DoD.LaneCommit("b"^40, "implementer <implementer@factory.invalid>", "green", nothing, ["src/A.jl"]),
+    ]
+    ev(changed, labels = String[], text = "") = DoD.evaluate(risk, String.(changed), labels, text; commits = okl)
     failed(results) = [r[1] for r in results if r[2] == :fail]
     # 0.2.4: CLI tests assert WHICH requirement failed, so a broken fixture cannot pass for the wrong reason
     fails(out) = [m.captures[1] for m in eachmatch(r"\[FAIL\] (\S+)", out)]
@@ -38,7 +44,7 @@
     # deleting the CHANGELOG or a test is not evidence
     tier, res = DoD.evaluate(
         risk, ["src/A.jl", "test/a.jl", "CHANGELOG.md"], ["T1"], "docs/superpowers/plans/x.md";
-        kept = ["src/A.jl"]
+        kept = ["src/A.jl"], commits = okl
     )
     @test failed(res) == ["tests", "changelog"]
     # default_tier = "T0" is honoured
@@ -47,7 +53,7 @@
 
     @testset "changelog fragments (0.2.4)" begin
         plan = "docs/superpowers/plans/x.md"
-        frag(changed; kw...) = failed(last(DoD.evaluate(risk, String.(changed), ["T1"], plan; kw...)))
+        frag(changed; kw...) = failed(last(DoD.evaluate(risk, String.(changed), ["T1"], plan; commits = okl, kw...)))
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/lane-a.md"]) == String[]
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/lane-a.md"]; added = ["test/a.jl"]) == ["changelog"]  # modified, not new
         @test frag(["src/A.jl", "test/a.jl", "changelog.d/sub/x.md"]) == ["changelog"]
@@ -64,9 +70,12 @@
             )
         )
         sh(`git -C $d checkout -q -b feat/f`)
-        commit!(
-            d, Dict("src/A.jl" => "y\n", "test/a.jl" => "t\n", "changelog.d/old.md" => "- edited\n"),
-            "feat: A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md"
+        # 0.3.0: a valid TDD lane (red by the test writer, green by the implementer), so `tdd` passes
+        tc!(files, author, msg) = (commit!(d, files, msg); sh(`git -C $d commit -q --amend --no-edit --author=$author`))
+        tc!(Dict("test/a.jl" => "t\n"), "test-writer <test-writer@factory.invalid>", "test: A red\n\nTDD: red")
+        tc!(
+            Dict("src/A.jl" => "y\n", "changelog.d/old.md" => "- edited\n"), "implementer <implementer@factory.invalid>",
+            "feat: A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md\nTDD: green"
         )
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 1 && fails(out) == ["changelog"]                           # editing an old fragment is not evidence
@@ -81,13 +90,20 @@
     @testset "CLI on a real branch" begin
         d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
-        commit!(d, Dict("src/A.jl" => "y\n"), "feat: change A")
+        # 0.3.0: a valid TDD lane, so `tdd` passes: the red is empty (no test/ yet, so `tests` still fails),
+        # the green changes A, and the tests come as a backfill (no order rule; the test writer's phase)
+        TW, IMPL = "test-writer <test-writer@factory.invalid>", "implementer <implementer@factory.invalid>"
+        red = "test: A red\n\nTDD: red"
+        sh(`git -C $d commit -q --allow-empty --author=$TW -m $red`)
+        commit!(d, Dict("src/A.jl" => "y\n"), "feat: change A\n\nTDD: green")
+        sh(`git -C $d commit -q --amend --no-edit --author=$IMPL`)
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 1 && occursin("NOT DONE", out) && fails(out) == ["ref", "tests", "changelog"]
         commit!(
             d, Dict("test/a.jl" => "t\n", "CHANGELOG.md" => "- A\n"),
-            "test: cover A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md"
+            "test: cover A\n\nPlan: docs/superpowers/plans/2026-10-19-a.md\nTDD: backfill"
         )
+        sh(`git -C $d commit -q --amend --no-edit --author=$TW`)
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main"]))
         @test rc == 0 && occursin("dod.jl: DONE", out) && isempty(fails(out))
         @test capture(() -> DoD.main(["--root", d, "--base", "nope"]))[1] == 2
@@ -120,5 +136,145 @@
         write(joinpath(d, ".factory-version"), "not = [toml")                 # --adr-dir works even then
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main", "--labels", "T3", "--adr-dir", "adr"]))
         @test rc == 0 || (print(out); false)
+    end
+
+    # ---- requirement `tdd` (factory 0.3.0, plan Task 7; spec §0.5, §4.2, §4.4, §6) ----
+    # Representation choices (the test writer's, from the spec and the Task 5 header):
+    # - dod.jl's `module DoD` includes _tdd_history.jl (top-level definitions, no module of its own),
+    #   so a test reaches `DoD.LaneCommit` and `DoD.history_rules`. While either is missing each named
+    #   testset fails on `@test` instead of erroring the suite.
+    # - `LaneCommit(sha, author, phase, mode, paths)` positional; `mode` is (mode, reason) or nothing.
+    # - `evaluate(risk, changed, labels, text; commits, stub_ok)`: pure. `commits` is a Vector of
+    #   LaneCommit (oldest first), `stub_ok(sha)::Bool` is passed through to `history_rules`.
+    # - The evaluate tests use a minimal risk whose T1 requires only ["tdd"], so they test the
+    #   requirement alone; the seeded risk.toml is checked by its own testset.
+    # - Result row ("tdd", :pass, "no src/ext change" | "tdd history OK (N commits, mode M)") or
+    #   ("tdd", :fail, <first history_rules string>), which starts with its rule id ("H2 ...").
+    @testset "tdd requirement (0.3.0)" begin
+        dt_ready() = isdefined(DoD, :LaneCommit) && isdefined(DoD, :history_rules)
+        dt_testset(f, name) = @testset "$name" begin
+            dt_ready() ? f() : @test dt_ready()   # RED: dod.jl does not include _tdd_history.jl yet
+        end
+        DT_TW = "test-writer <test-writer@factory.invalid>"
+        DT_IMPL = "implementer <implementer@factory.invalid>"
+        DT_LEAD = "lead <lead@factory.invalid>"
+        DT_GP = "general-purpose <general-purpose@factory.invalid>"
+        DT_USER = "Machine User <user@example.com>"           # the machine's own git identity
+        seq = Ref(0)
+        dc(author, phase, paths...; mode = nothing) =
+            DoD.LaneCommit(string(seq[] += 1; base = 16, pad = 40), author, phase, mode, String[paths...])
+        rk = Dict{String, Any}(
+            "default_tier" => "T1", "protected" => Any[],
+            "tiers" => Dict{String, Any}(t => Dict{String, Any}("requires" => (t == "T1" ? ["tdd"] : String[])) for t in DoD.TIERS)
+        )
+        "The `tdd` row of evaluate, or nothing when there is none."
+        function tddrow(commits; changed = unique(reduce(vcat, [c.paths for c in commits]; init = String[])), stub_ok = _ -> true, risk = rk)
+            _, res = DoD.evaluate(risk, String.(changed), ["T1"], ""; commits, stub_ok)
+            i = findfirst(r -> r[1] == "tdd", res)
+            return i === nothing ? nothing : res[i]
+        end
+        passed(r) = r !== nothing && r[2] == :pass
+        failed_rule(r, ids...) = r !== nothing && r[2] == :fail && any(id -> occursin(Regex("^" * id * "(?![0-9])"), r[3]), ids)
+        okmode(r, n, m) = passed(r) && occursin("tdd history OK ($n commits, mode $m)", r[3])
+
+        dt_testset("tdd passes with no src change") do
+            r = tddrow([dc(DT_USER, nothing, "docs/x.md"), dc(DT_USER, nothing, "README.md")])
+            @test passed(r) && r[3] == "no src/ext change" || (@show r; false)
+            r = tddrow(DoD.LaneCommit[]; changed = ["docs/x.md"])
+            @test passed(r) && r[3] == "no src/ext change" || (@show r; false)
+        end
+
+        dt_testset("tdd passes on stub-red-green-refactor") do
+            lane = [
+                dc(DT_IMPL, "stub", "src/A.jl"), dc(DT_TW, "red", "test/a_tests.jl"),
+                dc(DT_IMPL, "green", "src/A.jl", "changelog.d/a.md"), dc(DT_IMPL, "refactor", "src/A.jl"),
+            ]
+            asked = String[]
+            r = tddrow(lane; stub_ok = s -> (push!(asked, s); true))
+            @test okmode(r, 4, "required") || (@show r; false)
+            @test asked == [lane[1].sha]                     # stub_ok is consulted for the stub only
+            r = tddrow(lane; stub_ok = _ -> false)           # evaluate threads stub_ok through: H5
+            @test failed_rule(r, "H5") || (@show r; false)
+        end
+
+        dt_testset("tdd fails on refactor-only required lane") do
+            r = tddrow([dc(DT_IMPL, "refactor", "src/A.jl")])
+            @test failed_rule(r, "H2", "H6") || (@show r; false)
+        end
+
+        dt_testset("tdd fails on green editing a test") do
+            r = tddrow([dc(DT_TW, "red", "test/a_tests.jl"), dc(DT_IMPL, "green", "src/A.jl", "test/a_tests.jl")])
+            @test failed_rule(r, "H3", "H4") || (@show r; false)
+        end
+
+        dt_testset("tdd reads mode from the lead-authored trailer") do
+            ref = dc(DT_IMPL, "refactor", "src/A.jl")
+            r = tddrow([dc(DT_LEAD, nothing; mode = ("refactor", "rename internals")), ref])
+            @test okmode(r, 2, "refactor") || (@show r; false)
+            r = tddrow([ref])                                # no trailer: mode required, H2/H6 fail
+            @test r !== nothing && r[2] == :fail
+        end
+
+        spike = () -> dc(DT_USER, nothing, "src/A.jl")       # a spike has no phases
+        dt_testset("skip by a role-authored mode commit fails") do
+            for role in (DT_IMPL, DT_TW)
+                r = tddrow([dc(role, nothing; mode = ("skip", "spike")), spike()])
+                @test r !== nothing && r[2] == :fail && occursin(r"^H\d", r[3]) || (@show r; false)
+            end
+        end
+
+        dt_testset("skip by a general-purpose-authored mode commit fails") do
+            for who in (DT_GP, DT_USER)
+                r = tddrow([dc(who, nothing; mode = ("skip", "spike")), spike()])
+                @test r !== nothing && r[2] == :fail && occursin(r"^H\d", r[3]) || (@show r; false)
+            end
+        end
+
+        dt_testset("skip by lead <lead@factory.invalid> with reason passes") do
+            r = tddrow([dc(DT_LEAD, nothing; mode = ("skip", "prototype of the join API")), spike()])
+            @test okmode(r, 2, "skip") || (@show r; false)
+            r = tddrow([dc(DT_LEAD, nothing; mode = ("skip", "")), spike()])   # no reason: H8
+            @test failed_rule(r, "H8") || (@show r; false)
+        end
+
+        dt_testset("unknown requirement still fails") do
+            r1 = deepcopy(rk); r1["tiers"]["T1"]["requires"] = ["tdd", "bogus"]
+            _, res = DoD.evaluate(r1, ["docs/x.md"], ["T1"], ""; commits = DoD.LaneCommit[], stub_ok = _ -> true)
+            @test ("bogus", :fail) in [(r[1], r[2]) for r in res]
+            @test any(r -> r[1] == "bogus" && occursin("unknown requirement", r[3]), res)
+            @test !any(r -> r[1] == "tdd" && occursin("unknown requirement", r[3]), res)
+        end
+
+        @testset "risk.toml requires tdd and protects the tdd scripts" begin
+            seeded = TOML.parsefile(joinpath(ROOT, "risk.toml"))
+            for t in ("T1", "T2", "T3")
+                @test "tdd" in seeded["tiers"][t]["requires"] || (println("tier $t lacks tdd"); false)
+            end
+            @test !("tdd" in seeded["tiers"]["T0"]["requires"])
+            for f in ("scripts/tdd.jl", "scripts/_tdd_classify.jl", "scripts/_tdd_history.jl", "scripts/_tdd_backfill.jl")
+                @test DoD.path_tier(seeded, f) == "T3" || (println("$f is not T3"); false)
+            end
+            @test occursin(r"^#.*\btdd\b"m, read(joinpath(ROOT, "risk.toml"), String))   # the `requires` comment
+        end
+
+        dt_testset("dod main checks tdd on a real branch") do
+            d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
+            sh(`git -C $d checkout -q -b feat/t`)
+            cm(files, author, msg) = (
+                for (p, c) in files
+                    mkpath(dirname(joinpath(d, p))); write(joinpath(d, p), c)
+                end;
+                sh(`git -C $d add -- .`); sh(`git -C $d commit -q --author=$author -m $msg`)
+            )
+            plan = "Plan: docs/superpowers/plans/2026-10-26-a.md"
+            cm(Dict("test/a_tests.jl" => "t\n"), DT_TW, "test: A red\n\n$plan\nTDD: red")
+            cm(Dict("src/A.jl" => "y\n", "changelog.d/a.md" => "- A\n"), DT_IMPL, "feat: A\n\nTDD: green")
+            rc, out = capture(() -> DoD.main(["--root", d, "--base", "main", "--labels", "T1"]))
+            @test rc == 0 && fails(out) == String[] || (print(out); false)
+            @test occursin(r"\[PASS\] tdd +tdd history OK \(2 commits, mode required\)", out) || (print(out); false)
+            cm(Dict("src/A.jl" => "z\n", "test/a_tests.jl" => "u\n"), DT_IMPL, "feat: more\n\nTDD: green")
+            rc, out = capture(() -> DoD.main(["--root", d, "--base", "main", "--labels", "T1"]))
+            @test rc == 1 && fails(out) == ["tdd"] || (print(out); false)
+        end
     end
 end
