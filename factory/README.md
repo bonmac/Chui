@@ -95,7 +95,7 @@ Either way the change lands through a reviewed PR labelled T3.
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |
 | `.claude/commands/*.md` | intake, lanes, change-review, contract-check, release-check, test-changed | managed |
 | `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules | managed |
-| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_bash_guard_write.sh`, `_read_only_roots.sh`; guards fail closed if their script, a library, `protected-paths.txt` or a readable payload is missing | managed |
+| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_lanes.sh` (lane counting, 0.2.8), `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_bash_guard_write.sh`, `_read_only_roots.sh`; guards fail closed if their script, a library, `protected-paths.txt` or a readable payload is missing | managed |
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
 | `LICENSE` | MIT (ADR-0011); replace `<YEAR>` and `<COPYRIGHT HOLDER>` when scaffolding | seeded |

@@ -5,6 +5,56 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.2.8 (2026-10-26)
+
+The lane cap (`dispatch_limit.sh`) was not enforced. It counted SubagentStart minus SubagentStop,
+and in-process teammates never balance those. The coordinator's ledger has 32 starts, the last on
+2026-10-20T14:12Z, against 716 stops. One lead session had 77 stops, each with a different id,
+and no start. So the open count was always ≤ 0 and `max_open` never fired. Spec:
+`docs/superpowers/specs/2026-10-26-factory-028-design.md`.
+
+The guard is stricter (the cap now fires), which by the rule above would be a minor bump; the user
+chose to ship it as the 0.2.8 patch ahead of the 0.3.0 test-writer work.
+
+- **A lane is an Agent dispatch** (`dispatch_limit.sh`, new sourced `_lanes.sh`, `lane_ledger.sh`,
+  `settings.json`, `precompact.sh`).
+  - Open: `dispatch_limit.sh` writes `{ev: dispatch, key, name, desc}` when it allows a call. The
+    key is `tool_input.name`, else `tu:<tool_use_id>`, else `desc:<description>`.
+  - Closed by the lead's own tool results, through `lane_ledger.sh`, now also on PostToolUse and
+    PostToolUseFailure (`Agent|Task|TaskStop`):
+    - an Agent result other than `teammate_spawned` or `async_launched` (a foreground agent that
+      returned), or a failed Agent call;
+    - a `TaskStop`, done or failed, by name. A TaskStop given an internal task id closes by
+      description, as a fallback;
+    - a background subagent's SubagentStop, whose `agent_id` matches the `agentId` its Agent
+      result returned.
+  - SubagentStart/Stop stay in the ledger but no longer count on their own.
+  - Re-dispatching an open name counts once. A dispatch older than `FACTORY_LANE_TTL_HOURS`
+    (default 24; 0 = never) stops counting. A `ts` that does not parse counts.
+  - The denial now lists the open lanes and says how to clear one (`TaskStop <name>`).
+  - A ledger written before 0.2.8 counts 0 open lanes, because its lines are not dispatches.
+- **The ledger no longer loses the record after a truncated line** (`_lib.sh` `ledger`). A crash
+  mid-write left a last line with no newline, and the next `>>` record joined it and was skipped as
+  malformed. `ledger` now starts a new line first. A new test found this.
+- **`_lanes.sh` is a new managed hook library** (lane counting, split from `_lib.sh` to stay under
+  the 150-line hook budget). `dispatch_limit.sh` fails closed without it; `lane_ledger.sh` and
+  `precompact.sh` fail open.
+- `CHECK_COVERAGE` rows for `dispatch_limit` and `lane_ledger` list the new blind spots. The main
+  ones:
+  - a teammate resumed by SendMessage is not counted;
+  - a dispatch that never runs stays open until TaskStop or the TTL;
+  - parallel dispatches in one message are capped only if their PreToolUse hooks run one at a time
+    (UNVERIFIED).
+- The `lane-lifecycle` skill says what opens and closes a lane.
+- Tested by `scripts/test/test_hooks_lifecycle.jl`, whose start/stop testset is replaced. The new
+  cases:
+  - the 2026-10-26 regression: stops with no starts, plus named dispatches;
+  - teammate, background and foreground lanes;
+  - TaskStop by name, by internal id, and failed;
+  - re-dispatch, sessions, the TTL, a truncated line, and the settings wiring.
+
+  `test_hooks.jl` checks the missing-`_lanes.sh` behaviour.
+
 ## 0.2.7 (2026-10-20)
 
 Six problems lanes hit on 2026-10-20, each reproduced in a scratch repo built from the 0.2.6

@@ -29,19 +29,19 @@ blind_spots = ["cannot see whether a SendMessage report was sent; the second idl
 
 [[checks]]
 id = "dispatch_limit"
-rule = "At most [lanes] max_open subagent lanes are open per session"
+rule = "At most [lanes] max_open lanes (Agent dispatches: subagents and teammates) are open per session"
 prevented_by = ".claude/hooks/dispatch_limit.sh"
 runs_in = ["hook PreToolUse(Agent|Task)"]
 test = "scripts/test/test_hooks_lifecycle.jl"
-blind_spots = ["teammates may not emit SubagentStart/Stop (UNVERIFIED), so they may not be counted", "a crashed subagent with no SubagentStop stays counted until the session changes", "Workflow-tool fan-out is not counted"]
+blind_spots = ["the count is `_lanes.sh` (OPEN_LANES_JQ): a missing `_lanes.sh` blocks; an edited one is trusted","a teammate resumed by SendMessage after its TaskStop is not counted", "a dispatch whose call never runs and gets no PostToolUse or PostToolUseFailure (permission prompt denied, a later PreToolUse hook denies; UNVERIFIED which of these report a failure) stays open until TaskStop <name> or FACTORY_LANE_TTL_HOURS (default 24)", "a teammate that ends without a TaskStop (crash, shutdown) stays open until TaskStop <name> or the TTL", "parallel Agent calls in one message are capped only if Claude Code runs their PreToolUse hooks one at a time (UNVERIFIED); otherwise the batch can overshoot", "a TaskStop given an internal task id closes by description, so two open lanes with one description can close the wrong one", "the shape of tool_response in a PostToolUse payload is taken from transcripts, not from a captured hook payload (UNVERIFIED)", "a ledger written before 0.2.8 counts 0 open lanes (its start/stop lines are not dispatches)", "Workflow-tool fan-out is not counted"]
 
 [[checks]]
 id = "lane_ledger"
-rule = "Every subagent start and stop is recorded in the lane ledger"
+rule = "Every lane dispatch result, TaskStop, and subagent start and stop is recorded in the lane ledger"
 prevented_by = ".claude/hooks/lane_ledger.sh"
-runs_in = ["hook SubagentStart", "hook SubagentStop"]
+runs_in = ["hook PostToolUse(Agent|Task|TaskStop)", "hook PostToolUseFailure(Agent|Task|TaskStop)", "hook SubagentStart", "hook SubagentStop"]
 test = "scripts/test/test_hooks_lifecycle.jl"
-blind_spots = ["fails open (no jq, unwritable .lanes/)", "records ids only, not outcomes"]
+blind_spots = ["fails open (no jq, unwritable .lanes/, missing _lanes.sh)", "records ids only, not outcomes", "SubagentStart/Stop do not identify in-process teammates: their ids differ from the teammate's agent_id (coordinator ledger, 2026-10-26), so only a background subagent's stop closes a lane"]
 
 [[checks]]
 id = "precompact"
