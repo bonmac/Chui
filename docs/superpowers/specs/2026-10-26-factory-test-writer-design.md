@@ -250,6 +250,26 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
     **not** satisfy E5. The only exception is the lead's `TDD-Waiver: E5 <sha> — <reason>` commit
     described in the §4.3 note: a late record plus that waiver passes, and a late record alone fails.
 
+  *Dated note (2026-10-27, factory 0.3.1, lane tw-034; supersedes the TDD-ledger definition above):*
+  - The TDD ledger is no longer the session's ledger. It is the **owning ledger** of the lane
+    checkout: `<dirname(git -C <checkout> rev-parse --path-format=absolute --git-common-dir)>/.lanes/ledger.jsonl`,
+    i.e. the main checkout of the repo that owns the lane.
+  - One resolver per language, with a parity test: `owning_ledger CHECKOUT` in `.claude/hooks/_lib.sh`
+    and `owning_ledger(root)` in `scripts/_tdd_evidence.jl`.
+  - `tdd_commit_post` writes all three of its records there: `tdd-commit`, `tdd-commit-violation`,
+    and the sweep's `tdd-commit-late`. This holds whatever the dispatch shape (teammate, named or
+    unnamed subagent). If git fails, it falls back to the session ledger.
+  - Every other event stays in the **session** ledger: `tdd-boundary-denied`, the dispatch records
+    (`dispatch`, `dispatch-denied`), the lane records (`start`, `stop`, `close`, `spawned`,
+    `unknown-result`) and the idle records. For an unnamed subagent, that ledger is the
+    coordinator's. So the §4.5 check "every `tdd_boundary` denial is a finding" reads the session
+    ledger, while E5 reads the owning ledger.
+  - `tdd.jl audit`'s default `--ledger` is `owning_ledger(root)`. `/change-review` passes
+    `--ledger <owning repo main>/.lanes/ledger.jsonl`.
+  - Records written under 0.3.0 by unnamed subagents are in the coordinator ledger. Audit those lanes
+    with an explicit `--ledger <coordinator>/.lanes/ledger.jsonl`.
+  - The E5 row in §4.3 reads "the TDD ledger" in this sense.
+
 **What this proves, and what it does not.** A commit that passes H9 and E5 was made through a
 `git commit` that the hooks saw, by a process the harness reported as that role. The commit itself
 was checked after it was made. That partly closes the "one git identity" blind spot, because one
@@ -561,7 +581,7 @@ an `agent_type`, so it can do neither and asks the lead.
 | E2 | Each `green`/`refactor`/`test-refactor` has a passing `green-<sha7>`. In mode `refactor`, the merge base also needs one. |
 | E3 | Each item a `backfill` adds has a passing `mutate-<slug>` or `mutexp-<slug>`. Items whose only assertions are `@test_broken` are listed, not proved. |
 | E4 | No evidence file is dirty or killed. |
-| E5 | Every role-authored lane commit has a `tdd-commit` record in **the TDD ledger** (§0.5: `<session root>/.lanes/ledger.jsonl`, passed as `--ledger`; R4-M2) with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
+| E5 | Every role-authored lane commit has a `tdd-commit` record in **the TDD ledger** (§0.5: `<session root>/.lanes/ledger.jsonl`, passed as `--ledger`; R4-M2; since 0.3.1 the owning ledger, see the §0.5 dated note) with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
 
 2026-10-27 note (critic C3/C4/C6): E5 has one lead waiver. A lane commit authored exactly
 `lead <lead@factory.invalid>` with the git trailer `TDD-Waiver: E5 <sha> — <reason>` (sha full or a
