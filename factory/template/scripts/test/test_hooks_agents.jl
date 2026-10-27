@@ -202,6 +202,27 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
             ]
             @test blocked("bash_guard.sh", bash_as("reviewer", c; cwd), lane) || (println("not blocked for reviewer: $c (cwd $cwd)"); false)
         end
+        # round 2 (N1-N3): sort, uniq, file and less take a fixed short-option set and no long option (abbreviated long options
+        # and getopt clusters spelt -o in other ways); a lone - is an operand; uniq takes at most one operand including -
+        for c in (
+                "uniq - src/x.jl", "sort -ro src/x.jl g", "sort --out=src/x.jl g", "sort --outp=src/x.jl g", "file --comp -m x",
+                "file --compil x", "sort --compress=x f", "less --log-f=f x", "less --LOG-F=f x", "sort -k2 -o x f", "sort -T src f",
+                "sort -- f", "sort -m f", "uniq -f 1 f", "uniq -c - f", "uniq --count f", "file -C x", "file -m x f", "less -k f x",
+                "less -- f", "sort -nro x f",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in (
+                "sort -n f", "uniq -c f", "file -b f", "sort -nr f", "sort -k2 -t, f", "sort -k 2 f", "sort -t , -k 1,1 -n f", "uniq -",
+                "uniq -c -", "cat f | sort -u", "uniq -ci f", "file -bi f", "file -h f", "less f", "sort -rn -k2 f", "sort -bfs f",
+                "sort -k2,2n -k1 f", "sort -tk f",
+            )
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "sort --out=x f"), r)
+        @test rc == 2 && occursin("sort", err) && occursin("-n -r -u -b -f -s -k -t", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "less -o f x"), r)
+        @test rc == 2 && occursin("less", err) && occursin("no option", err)
         # the denial says why
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cd .lanes/scratch/reviewer && julia scripts/dod.jl"), r)
         @test rc == 2 && occursin(".lanes/", err)

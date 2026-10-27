@@ -1,0 +1,70 @@
+# shellcheck shell=sh
+# shellcheck disable=SC2034,SC2154 # cwd is bash_guard.sh's; ROOT/MAIN* are _lib.sh's; ro_deny is in _bash_guard_agents.sh
+# _bash_guard_agents_lib.sh: helpers of _bash_guard_agents.sh (factory 0.4.0 review rounds 1-2; ratchets.toml caps a
+# hook at 150 lines). Sourced by bash_guard.sh after _bash_guard_agents.sh; costs no fork.
+# 1. Where a read-only agent's command runs, and which script it runs (B2-B4). The agent writes only its scratch and
+#    the reports, so a file there is the agent's own: a Manifest, a gitdir whose config runs a command (core.fsmonitor),
+#    a scripts/dod.jl. Hence a trusted script is the repo's own scripts/<name> (or factory/template/scripts/<name>)
+#    RESOLVED against the tracked cwd, and the scratch is never a cwd, a `cd` or `git -C` target, or a script source:
+#    every such directory is a literal path in a trusted checkout and not below its .lanes/. Trusted checkouts: ROOT,
+#    its main checkout when ROOT is a lane (MAIN, _lib.sh), and a lane worktree of either (.worktrees/<n>,
+#    .claude/worktrees/<n>): their scripts are the lead's or a writer lane's (T3 paths).
+# 2. The options a text tool may take (B1, N1-N3): a fixed short-option set per tool and no long option at all.
+
+# ro_base ABS: true if ABS is in a trusted checkout; RO_REL is then the path below that checkout ('' at its root).
+ro_base() {
+    RO_REL=""
+    for _r in "$ROOT" "$ROOT_P" "$MAIN" "$MAIN_P" "$MAIN_L"; do
+        [ -n "$_r" ] || continue
+        case $1 in
+            "$_r") return 0 ;;
+            "$_r"/.worktrees/?* | "$_r"/.claude/worktrees/?*) # <r>/.worktrees/<n>[/rest]: RO_REL is rest
+                _x=${1#"$_r"/.worktrees/}
+                [ "$_x" != "$1" ] || _x=${1#"$_r"/.claude/worktrees/}
+                case $_x in */*) RO_REL=${_x#*/} ;; esac
+                return 0 ;;
+            "$_r"/?*) RO_REL=${1#"$_r"/}; return 0 ;;
+        esac
+    done
+    return 1
+}
+# ro_dir RAW WHAT: RAW (a cwd, a cd target or a git -C target, relative to the tracked cwd) is a literal path in
+# a trusted checkout and not below its .lanes/; sets RO_ABS.
+ro_dir() {
+    case $1 in *'$'* | *'`'*) ro_deny "$2 \`$1\` holds an expansion the guard cannot resolve" ;; esac
+    RO_ABS=$(abspath "$1" "$cwd")
+    ro_base "$RO_ABS" || ro_deny "$2 $RO_ABS is outside this checkout, its main checkout and their lane worktrees"
+    case $RO_REL in .lanes | .lanes/*) ro_deny "$2 $RO_ABS is below .lanes/: the scratch and the reports hold the agent's own files (a Manifest, a gitdir, a script), so they are never a working directory, a git -C target or a script source" ;; esac
+}
+# ro_script RAW: RAW resolves to scripts/<name> or factory/template/scripts/<name> of a trusted checkout; sets RO_SCRIPT=<name>.
+ro_script() {
+    ro_dir "$1" "the script"
+    RO_SCRIPT=""
+    case $RO_REL in scripts/?* | factory/template/scripts/?*) RO_SCRIPT=${RO_REL#*scripts/} ;; esac
+    [ -n "$RO_SCRIPT" ] || ro_deny "\`$1\` ($RO_ABS) is not a scripts/<name> of a trusted checkout: only the repo's own scripts/dod.jl, ci.jl, evidence.jl, gen.jl --check, test/runtests.jl, lane.jl audit and scripts/lane audit run"
+}
+# ro_opts TOOL SHORT ARGSHORT MAX ARGS...: ARGS hold only short options whose letters are in SHORT (' -n -k ' style; one
+# cluster per word, read as getopt does: a letter in ARGSHORT takes the rest of its word, or the next word), never a
+# --long option (abbreviations such as --out, --comp, --log-f cannot be enumerated), and at most MAX operands (a lone -
+# is one; -1: any). Round 2: `sort -ro F`, `sort --out=F`, `file --comp` and `uniq - F` wrote a file past literal patterns.
+ro_opts() {
+    _t=$1 _ok=$2 _oa=$3 _max=$4 _n=0 _need=""
+    shift 4
+    for _a in "$@"; do
+        if [ -n "$_need" ]; then _need=""; continue; fi # the argument of the previous option
+        case $_a in
+            -) _n=$((_n + 1)) ;;
+            --*) ro_deny "\`$_t $_a\`: a read-only agent's $_t takes no long option (an abbreviation hides --output, --compile, --log-file) and only${_ok:- no option}" ;;
+            -?*)
+                _r=${_a#-}
+                while [ -n "$_r" ]; do
+                    _ch=${_r%"${_r#?}"}
+                    _r=${_r#?}
+                    case $_ok in *" -$_ch "*) ;; *) ro_deny "\`$_t -$_ch\`: a read-only agent's $_t takes only${_ok:- no option}" ;; esac
+                    case $_oa in *" -$_ch "*) [ -n "$_r" ] || _need=1; _r="" ;; esac
+                done ;;
+            *) _n=$((_n + 1)) ;;
+        esac
+    done
+    [ "$_max" -lt 0 ] || [ "$_n" -le "$_max" ] || ro_deny "\`$_t\` takes at most $_max operand(s) for a read-only agent (a lone - is one: a second file is written)"
+}
