@@ -122,12 +122,11 @@
         end
         @test !blocked("bash_guard.sh", bash("cd; touch x"; cwd = "/opt"), root; env = Dict("HOME" => root))   # HOME inside the root
         @test !blocked("bash_guard.sh", bash("cd; ls"; cwd = root), root; env = Dict("HOME" => home))
-        # heredoc terminators are EXACT (review round 1, B1): a body ends only at a line equal to WORD (leading
-        # tabs stripped for <<-) or, inside a "$(...)", at WORD followed by `)` (bash 5.3 and 3.2 end the
-        # substitution there; zsh rejects the command). 93306c1 also ended a body at ` EOF`, `EOF `, `EOF\r` and
-        # a top-level `EOF)`, where bash does not: the lines it then scanned as commands could open a second
-        # heredoc (`cat <<ZZZ`) that swallowed the lines bash really runs. Such a body is never terminated, so
-        # the fallback checks it as commands (fails closed, as before 0.4.0).
+        # heredoc terminators are EXACT (review round 1, B1; round 2, B2): a body ends only at a line equal to
+        # WORD (leading tabs stripped for <<-), never at WORD + `)`. 93306c1 also ended a body at ` EOF`, `EOF `,
+        # `EOF\r` and `EOF)`, where a shell does not: the lines it then scanned as commands could open a second
+        # heredoc (`cat <<ZZZ`) that swallowed the lines the shell really runs. Such a body is never terminated,
+        # so the fallback checks it as commands (fails closed, as before 0.4.0).
         body = "cat <<'EOF'\nPKILL=1\npkill -f x\n"
         @test !blocked("bash_guard.sh", bash(body * "EOF"; cwd = root), root)                   # exact: a body, not a command
         @test !blocked("bash_guard.sh", bash("cat <<-'EOF'\n\tpkill -f x\n\tEOF"; cwd = root), root)   # <<-: leading tabs
@@ -139,9 +138,18 @@
             c = "cat <<EOF\n$term\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ\n"
             @test blocked("bash_guard.sh", bash(c; cwd = root), root) || (println("bypass with terminator $(repr(term))"); false)
         end
-        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard"; cwd = root), root)
-        @test !blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\""; cwd = root), root)
-        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"\npkill -f y"; cwd = root), root)
+        # (review round 2, B2) WORD + `)` NEVER ends a body: inside "$(...)" bash ends it there but zsh (the Bash
+        # tool's shell here) reads on to the bare EOF line and runs what follows, so an awk that ended the body
+        # dropped lines zsh executes. Such a line inside a "$(...)" body is denied; the closing `)` on its own
+        # line after the EOF line is read the same by bash and zsh, and stays allowed.
+        for c in ("echo \"\$(cat <<EOF\nEOF)\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ", "echo \"\$(cat <<EOF\nEOF )\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ",
+                "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"", "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard")
+            rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root)
+            @test rc == 2 && occursin("closing ) on its own line", err) || (println("EOF) inside \$(...) not denied: $(repr(c)) -> $rc $err"); false)
+        end
+        @test !blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF\n)\""; cwd = root), root) || (println("own-line ) blocked"); false)
+        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF\n)\"; git reset --hard"; cwd = root), root)
+        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF\n)\"\npkill -f y"; cwd = root), root)
         @test blocked("bash_guard.sh", bash("(cat <<'EOF'\npkill -f x\nEOF)"; cwd = root), root)   # a subshell: bash reads to end-of-file
         @test blocked("bash_guard.sh", bash("cat <<NEVER\npkill -f x\n"; cwd = root), root)      # unterminated: still the fallback
         @test blocked("bash_guard.sh", bash("cat <<'EOF'\nx\nEOFX\npkill -f x\n"; cwd = root), root)
@@ -156,7 +164,7 @@
         for c in ("echo \"\$(cat <<EOF)\"\nrm -rf ~\nEOF", "echo \"\$(cat <<EOF)\"\nEOF)\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ",
                 "echo \"\$(cat <<EOF)\"\nls\nEOF", "cat <<EOF \"\$(echo\nhi\nEOF)\"\nrm -rf ~\nEOF")
             rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root)
-            @test rc == 2 && occursin("read differently by bash 5", err) || (println("same-line \$( close not denied: $(repr(c)) -> $rc $err"); false)
+            @test rc == 2 && occursin("closing ) on its own line", err) || (println("same-line \$( close not denied: $(repr(c)) -> $rc $err"); false)
         end
         # a denial inside a read-only root says how to get out
         h = hooks_with_roots(REF_ROOTS)

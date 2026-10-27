@@ -46,3 +46,9 @@
     body from the next lines while bash 3.2 and zsh run them as commands (a pre-existing gap: those
     lines were a dropped body); `lane_ledger.sh` writes a `stop` for an agent_id that a `spawned` OR
     an `unknown-result` record names (the open-lane query closes a lane on either; sibling review).
+  - Review round 2 (B2): WORD followed by `)` never ends a heredoc body. Inside `"$(...)"` bash ends
+    the body there but zsh (the Bash tool's shell) reads on to the bare `EOF` line and runs what
+    follows, so round 1's `EOF)` terminator dropped lines zsh executes; such a line is now denied
+    with the same-line `"$(cat <<EOF)"` case ("put the closing ) on its own line after the EOF
+    line", which bash and zsh read alike). `teammate_idle`'s blind spots note that `reviewer` can
+    claim an auto-named `reviewer-2` teammate's report.
