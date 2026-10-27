@@ -18,8 +18,8 @@ implementer made them pass (0e16375).
   broken `.../scratchpkg/test/parse_tests.jl`, which is the ParseError 0.3.1 fixed for packages.
   Lane sync-031 hit it: 3 fails in `test_ci_format.jl` (:64, :72, :108) on Julia 1.13.
   - The rule now matches whole path segments: `occursin("/" * FORMAT_EXCLUDE, "/" * r)`. So
-    `a/b/scripts/test/fixtures/x.jl` is excluded, while `myscripts/test/fixtures/a.jl` and a file
-    named `scripts/test/fixtures.jl` are kept. It applies to both the git listing and the walk
+    a nested `.../scripts/test/fixtures/x.jl` is excluded, while a `myscripts/...` directory and a
+    file named `fixtures.jl` next to the fixtures directory are kept. It applies to both the git listing and the walk
     fallback.
   - Rationale: this is the minimal change. A profile-specific skip of `factory/template/` was not
     needed, because the vendored template's other scripts are factory-managed and Runic-clean.
