@@ -242,4 +242,59 @@
         rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
         @test rc == 2 && !occursin("lane compact", err)
     end
+
+    @testset "review round 4: idle takes Status or Verdict, not PENDING/PARTIAL; the main checkout's reports; FACTORY_LEDGER_LINES" begin
+        # A2c, A6: a write agent's final report starts `Status: DONE | BLOCKED`; `Status: PARTIAL` and `Verdict: PENDING` (the
+        # line while writing) are not reports; the hook cannot know the agent's type, so the demand names both forms
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/reports"))
+        idle(name; s = "s1") = "{\"session_id\":\"$s\",\"team_name\":\"t\",\"teammate_name\":\"$name\"}"
+        for (n, ln) in (("done", "Status: DONE"), ("blocked", "Status: BLOCKED"), ("fix", "Verdict: FIX FIRST"))
+            write(joinpath(r, ".lanes/reports/$n.md"), ln * "\nHead: abc\n")
+            @test hook("teammate_idle.sh", idle(n), r)[1] == 0 || (println("$ln not counted"); false)
+        end
+        for (n, ln) in (("partial", "Status: PARTIAL"), ("pending", "Verdict: PENDING"), ("lower", "status: done"), ("bold", "**Status: DONE**"), ("trail", "Status: DONE "))
+            write(joinpath(r, ".lanes/reports/$n.md"), ln * "\n")
+            rc, _, err = hook("teammate_idle.sh", idle(n), r)
+            @test rc == 2 && occursin("partial report", err) && occursin("Status: DONE | BLOCKED", err) && occursin("Verdict: MAY MERGE", err) || (println("$ln: $rc $err"); false)
+        end
+        rc, _, err = hook("teammate_idle.sh", idle("none"), r)
+        @test rc == 2 && occursin("Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST", err) && occursin("Status: DONE | PARTIAL | BLOCKED", err) &&
+            occursin("reviewer/critic/verifier", err) && occursin("main checkout", err) || (println(err); false)
+        # A7: a session rooted in a lane worktree: the MAIN checkout's .lanes/reports/ (where write_guard's in_main lets the lane
+        # write) is searched too; MAIN is trusted only when the main repo's worktree record points back (a crafted .git file is not)
+        main = tmp_repo(Dict("a" => "x\n")); sh(`git -C $main worktree add -q $main/.worktrees/l1 -b l1`); lane = joinpath(main, ".worktrees/l1")
+        @test hook("teammate_idle.sh", idle("mainrep"), lane)[1] == 2
+        mkpath(joinpath(main, ".lanes/reports")); write(joinpath(main, ".lanes/reports/mainrep-2.md"), "Verdict: MAY MERGE\nHead: abc\n")
+        @test hook("teammate_idle.sh", idle("mainrep"; s = "s2"), lane)[1] == 0 || (println("the main checkout's report was not counted"); false)
+        write(joinpath(main, ".lanes/reports/mainrep-3.md"), "Verdict: PENDING\n")                     # a later partial round does not undo it
+        @test hook("teammate_idle.sh", idle("mainrep"; s = "s3"), lane)[1] == 0
+        @test hook("teammate_idle.sh", idle("mainrepx"; s = "s4"), lane)[1] == 2                      # another name's report does not count
+        fake = realpath(mktempdir()); mkpath(joinpath(fake, ".worktrees/l1"))
+        write(joinpath(fake, ".worktrees/l1/.git"), "gitdir: $main/.git/worktrees/l1\n")
+        @test hook("teammate_idle.sh", idle("mainrep"; s = "s5"), joinpath(fake, ".worktrees/l1"))[1] == 2
+        # A8: FACTORY_LEDGER_LINES (default 2000) is the line budget dispatch_limit's hint and precompact's compaction read
+        big(n) = "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"a\"}\n"^n
+        pre = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"n1\",\"description\":\"d\"}}"
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes")); write(joinpath(r, ".lanes/ledger.jsonl"), big(6))
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0", "FACTORY_LEDGER_LINES" => "5"))
+        @test rc == 2 && occursin("6 lines", err) && occursin("run scripts/lane compact", err) && occursin("above 5 lines", err) &&
+            occursin("raise FACTORY_LEDGER_LINES", err) && occursin("precompact.sh", err) || (println(err); false)
+        write(joinpath(r, ".lanes/ledger.jsonl"), big(6))                                            # the denial above appended a line
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0", "FACTORY_LEDGER_LINES" => "6"))
+        @test rc == 2 && !occursin("lane compact", err)
+        write(joinpath(r, ".lanes/ledger.jsonl"), big(2001))
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0", "FACTORY_LEDGER_LINES" => "3000"))
+        @test rc == 2 && !occursin("lane compact", err)
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
+        @test rc == 2 && occursin("above 2000 lines", err) && occursin("default 2000", err)
+        stub = mktempdir(); argf = joinpath(stub, "args.txt")                                        # precompact: a julia stub records the call
+        write(joinpath(stub, "julia"), "#!/bin/sh\nprintf '%s\\n' \"\$@\" >\"$argf\"\n"); chmod(joinpath(stub, "julia"), 0o755)
+        repo = tmp_repo(Dict("scripts/lane.jl" => "# stub\n")); mkpath(joinpath(repo, ".lanes")); write(joinpath(repo, ".lanes/ledger.jsonl"), big(11))
+        pc = "{\"session_id\":\"s3\",\"trigger\":\"manual\"}"; path = Dict("PATH" => stub * ":" * ENV["PATH"])
+        @test hook("precompact.sh", pc, repo; env = path)[1] == 0                                     # 11 lines, default budget: no call
+        sleep(0.5); @test !isfile(argf)
+        @test hook("precompact.sh", pc, repo; env = merge(path, Dict("FACTORY_LEDGER_LINES" => "10")))[1] == 0
+        waitfile(f) = (for _ in 1:100; isfile(f) && return true; sleep(0.05); end; false)
+        @test waitfile(argf) && "compact" in readlines(argf) || (println("julia not called for 11 lines with FACTORY_LEDGER_LINES=10"); false)
+    end
 end

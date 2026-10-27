@@ -94,10 +94,14 @@ module Gen
     scope_text(a) = isempty(a["file_scope"]) ? "none (read-only)" : join(("`$g`" for g in a["file_scope"]), ", ")
     # 0.4.0 D4: fragments, rendered verbatim into EVERY agent between the "Mode:" line and its body. An
     # underscore-prefixed body is a fragment, never an agent (the slug rule forbids a leading `_`).
+    # Review round 4 (A2): `_verdict` (the Verdict/Head lines) goes ONLY into read_only agents; a write
+    # agent's report starts `Status: DONE | PARTIAL | BLOCKED` (_report), so it cannot pass as a review.
     const FRAGMENTS = ("_preflight", "_report")
+    const VERDICT_FRAGMENT = "_verdict"
+    fragments(a) = a["default_mode"] == "read_only" ? (FRAGMENTS..., VERDICT_FRAGMENT) : FRAGMENTS
     function fragment(root, f)
         p = joinpath(root, ".agents/bodies/$f.md")
-        isfile(p) || fail("missing fragment .agents/bodies/$f.md (rendered into every agent)")
+        isfile(p) || fail("missing fragment .agents/bodies/$f.md (rendered into every $(f == VERDICT_FRAGMENT ? "read_only " : "")agent)")
         return rstrip(read(p, String))
     end
 
@@ -105,7 +109,7 @@ module Gen
         io = IOBuffer()
         println(io, "## Role\n\n", a["role"], "\n")
         println(io, "Mode: `", a["default_mode"], "`. File scope: ", scope_text(a), ".\n")
-        foreach(f -> println(io, fragment(root, f), "\n"), FRAGMENTS)
+        foreach(f -> println(io, fragment(root, f), "\n"), fragments(a))
         println(io, body(root, a), "\n")
         println(io, "## Output format\n\nReport these sections, in order: ", a["output_format"], ".\n")
         println(io, "## Scorecard\n")
