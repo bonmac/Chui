@@ -276,7 +276,40 @@ Open factory notes for the user: the CHANGELOG rule suggests 0.3.0 for stricter 
 
 ## Next action
 
-**As of 2026-10-27 (supersedes the list below where they differ):** no lanes are open, and both ChuiFrames phase 4 and test-writer part 1 are merged.
+**As of 2026-10-27 17:20 (supersedes everything below where they differ).**
+
+**Factory.** 0.3.2 is final.
+- Merges into coordinator main:
+  - tw-034 → 0.3.1 (b4aeda3);
+  - tw-035 → 0.3.2 (6d66187). This fixes `ci.jl format` in the coordinator profile: fixtures are excluded at any depth, the Runic item is scoped to managed scripts, and the guard vendors factory/.
+- The lead re-ran the 0.3.2 suite with T3 set: 3608 pass, 2 broken.
+- Process note for tw-034 and tw-035: the TDD steps were general-purpose agents carrying the test-writer and implementer rules, not the registry roles. Briefs were not saved. Package lanes use the registry roles.
+
+**Per repo.**
+
+| Repo | Factory | Main | Notes |
+|---|---|---|---|
+| Coordinator | 0.3.2 | 5d8227b (sync-031) | Its own `ci.jl format` flags `contracts/` (T3) and `reference/prototype/`: a known limit, and there is no coordinator format CI job. |
+| ChuiTypes | 0.3.1 | cc10db3 | format OK |
+| ChuiFrames | 0.3.1 | 3ad98af | format OK |
+| ChuiCore | 0.2.6 | a4f86e7 | ci-cov fixed the coverage-only test failure |
+
+ChuiCore's ci-cov fix: `classes_unit_tests.jl` drops the `:code_coverage_effect` counters before the fold check. The lead re-ran the suite with coverage on: 3177/0.
+
+**ChuiCore 0.0.1 release.** The first run of `private/release-chuicore-001.sh` pushed all four mains: coordinator 14cf35c, Core aaca78f, Types cc10db3, Frames 3ad98af. It then stopped, because CI was red on the Julia 1 / ubuntu coverage job. There is no tag and no registry entry yet.
+- The script now points at a4f86e7.
+- The redaction scan found 0 hits on all pushed history, the trees and the unpushed commits. The positive control gave 12.
+- ★ **User:** re-run the script and say "released".
+
+**e1 (factory 0.4.0, lane f040).** It has integrated 0.3.1, found and fixed the `ledger()` pending-file bug, and fixed NOTE-3. Next, it integrates 0.3.2, then sends a land request. Check its 8c58666 path change to `changelog.d/tw-032.md`.
+
+**Next steps for the lead.**
+1. After the release: the releases.md rows, including factory 0.2.8/0.3.x; integration; compat-matrix; the ChuiTypes Upstream switch; sync ChuiCore to 0.3.2.
+2. Sync ChuiTypes and ChuiFrames to 0.3.2.
+3. Task 12 backfill: ChuiTypes, then ChuiFrames, then ChuiCore.
+4. Smoke-lane follow-ups F1–F3 and F6.
+
+**As of 2026-10-27 (earlier):** no lanes are open, and both ChuiFrames phase 4 and test-writer part 1 are merged.
 1. ★ **User:** restart the lead with `FACTORY_ALLOW_T3=1`, after merging this branch (feat/lead-1026) into coordinator main. Then:
    - sync factory 0.2.8 into the coordinator, ChuiTypes and ChuiFrames;
    - test-writer Task 0 (the agent_type probe), then Tasks 8–10 (Task 9 fixes the renamed-red deadlock);
