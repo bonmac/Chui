@@ -342,7 +342,11 @@ end
         a, b = get(rows, "tdd", Dict()), get(rows, "tdd_boundary", Dict())
         c = get(rows, "tdd_commit_post", Dict())
         @test get(a, "prevented_by", "") == "scripts/tdd.jl" && get(a, "test", "") == "scripts/test/test_tdd.jl"
-        @test length(get(a, "blind_spots", [])) == 9 && length(get(a, "runs_in", [])) == 2
+        # critic C7 (2026-10-27): merges and git aliases are named blind spots (tdd +2, tdd_boundary +1)
+        c7tdd = ["merge commits are invisible to H1/H3/H4: lane_commits reads base..head with --no-merges, so code or test edits made in a merge resolution are seen only by the reviewer's git show --cc",
+            "an alias commit (git ci) gets no commit guard, post check or record: tdd.jl audit's E5 fails it when a role identity authored it, but dod, which has no E rules, does not"]
+        c7b = "a git alias for commit (e.g. git ci, from git config) bypasses the commit guard for every caller: the guard sees no commit subcommand"
+        @test length(get(a, "blind_spots", [])) == 11 && last(get(a, "blind_spots", String[]), 2) == c7tdd && length(get(a, "runs_in", [])) == 2
         @test startswith(get(a, "rule", ""), "In a lane that changes src/ext: mode required has a RED")
         post = ["PostToolUse cannot undo a commit: a violating commit exists until audit E5 fails the lane",
             "a cancelled Bash call fires no post event: its commit gets only a tdd-commit-late record from a later call's sweep of .lanes/tdd-pending after 11 minutes, which does not satisfy E5: re-make or amend the commit through the hooks"]
@@ -361,16 +365,16 @@ end
         @test get(b, "runs_in", []) == ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)",
             "hook PreToolUse(Agent|Task)"]
         @test get(b, "test", "") == "scripts/test/test_hooks_tdd.jl"
-        @test length(get(b, "blind_spots", [])) == 8
-        @test sort(get(b, "blind_spots", String[])) == sort(setdiff(spec10, post))
+        @test length(get(b, "blind_spots", [])) == 9
+        @test sort(get(b, "blind_spots", String[])) == sort(vcat(setdiff(spec10, post), c7b))
         # tdd_commit_post: the post hook
         @test get(c, "prevented_by", "") == ".claude/hooks/tdd_commit_post.sh"
         @test get(c, "runs_in", []) == ["hook PostToolUse(Bash) and PostToolUseFailure(Bash)"]
         @test get(c, "test", "") == "scripts/test/test_hooks_tdd.jl"
         @test occursin("tdd-commit", get(c, "rule", ""))
         @test get(c, "blind_spots", []) == post
-        # together: exactly the spec's 10
-        @test sort(vcat(get(b, "blind_spots", String[]), get(c, "blind_spots", String[]))) == sort(spec10)
+        # together: exactly the spec's 10 plus critic C7's one
+        @test sort(vcat(get(b, "blind_spots", String[]), get(c, "blind_spots", String[]))) == sort(vcat(spec10, c7b))
     end
 
     # ---- fail closed ----
