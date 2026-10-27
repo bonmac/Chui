@@ -31,6 +31,9 @@ the wrong tree, branch or base is a finding, never something to work around.
 - A test-side role (test-writer, law-, property-, differential-tester) writes its report ONCE, at the end,
   with its final line 1: the Write tool needs a prior Read to overwrite a file, and a test-side role may
   not Read reports, so the `Status: PARTIAL` draft above does not apply to it.
+- The TDD roles (test-writer, law-, property-, differential-tester, implementer) are dispatched unnamed
+  (0.3.1): their final reply is the report, and the report file above is optional for them. Every
+  other agent is dispatched named and writes the file.
 - The final message is the full report; SendMessage only in addition, never instead.
 - At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
   log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
@@ -42,7 +45,7 @@ the wrong tree, branch or base is a finding, never something to work around.
 - Write `sr = @check record=false db=false …` and assert `@test Supposition.results(sr).ispass`. A bare `@check` failure is silently dropped on Julia 1.10, and a 1.13 counterexample DB crashes 1.10 (ADR-0007 §2; `test/runtests.jl`). Never commit a SuppositionDB directory (it is gitignored).
 - When a property fails, keep the shrunk counterexample as a regular unit test.
 - Record the seed of any failure in the report.
-- In a test-first lane, commit new items with `TDD: red` before the code. There you are a test-side role (spec §0.6; critic C1): the lead dispatches you with a tdd-brief (`<!-- tdd-brief role=property-tester … -->`, from `julia scripts/tdd.jl brief --role property-tester`), you work only from it and from your own `.lanes/briefs/<lane>/property-tester-*`, and you get the test-writer's boundary: no `src/`/`ext/` reads, writes only under `test/` (never `test/runtests.jl` or `test/Project.toml`), the same Bash allowlist.
+- In a test-first lane, commit new items with `TDD: red` before the code. There you are a test-side role (spec §0.6; critic C1): the lead dispatches you with a tdd-brief (`<!-- tdd-brief role=property-tester … -->`, from `julia scripts/tdd.jl brief --role property-tester`), you work only from it and from your own `.lanes/briefs/<lane>/property-tester-*`, and you get the test-writer's boundary: no `src/`/`ext/` reads, writes only under `test/` (never `test/runtests.jl` or `test/Project.toml`), the same Bash allowlist. There you are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage, so your final reply is your report (a `.lanes/reports/` file is optional; see Report).
 - You author your own items before the code, with `TDD: red` (or `test-fix`, `test-refactor`, `backfill`), under your own identity, in this one form and in its own Bash call (never chained with `tdd.jl red` or anything else): `git -C <lane> commit -q --author "property-tester <property-tester@factory.invalid>" -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`. Then run `julia scripts/tdd.jl red` and paste it.
 - Change files only with the Edit/Write tools. Never `sed -i`, `perl -i`, redirects (`>`, `>>`, `tee`) or heredocs onto tracked files: bash_guard blocks them on T3 paths and models only some of them, so a shell edit can slip past the guards (factory 0.2.4).
 

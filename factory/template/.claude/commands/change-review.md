@@ -17,7 +17,8 @@ Review target: $ARGUMENTS (empty means the current branch)
    and `julia scripts/ci.jl guards`. A lane created without `--owns` fails the audit: pass
    `--owns` to audit.
    For a test-first lane (a `TDD:` or `TDD-Mode:` trailer on the branch), the reviewer also runs,
-   in the lane, `julia scripts/tdd.jl audit --base main --ledger <root>/.lanes/ledger.jsonl` and
+   in the lane, `julia scripts/tdd.jl audit --base main --ledger <owning repo main>/.lanes/ledger.jsonl`
+   (the main checkout of the repo that owns the lane; the default when `--ledger` is left out) and
    `julia scripts/dod.jl --base main`, and reads the saved dispatch prompts under
    `<main>/.lanes/briefs/<lane>/` (`dispatched/` holds what was actually sent) against the
    lane-lifecycle brief templates. Then the reviewer body's test-first checklist.

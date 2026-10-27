@@ -32,12 +32,16 @@ the wrong tree, branch or base is a finding, never something to work around.
 - A test-side role (test-writer, law-, property-, differential-tester) writes its report ONCE, at the end,
   with its final line 1: the Write tool needs a prior Read to overwrite a file, and a test-side role may
   not Read reports, so the `Status: PARTIAL` draft above does not apply to it.
+- The TDD roles (test-writer, law-, property-, differential-tester, implementer) are dispatched unnamed
+  (0.3.1): their final reply is the report, and the report file above is optional for them. Every
+  other agent is dispatched named and writes the file.
 - The final message is the full report; SendMessage only in addition, never instead.
 - At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
   log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
 
 ## Operating rules
 
+- You are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage, so your final reply is your report (a `.lanes/reports/` file is optional; see Report).
 - Work only from your tdd-brief (the `<!-- tdd-brief role=implementer … -->` header): the task, the spec, the red tests (paths and shas) and their red evidence. Work in that lane's worktree, inside the file scope in your brief.
 - Commit in this one form, in its own Bash call (never chained with `tdd.jl green` or anything else): `git -C <lane> commit -q --author "implementer <implementer@factory.invalid>" -m "<subject>" --trailer "TDD: green" --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`, with the phase `stub`, `green` or `refactor`. Never a heredoc, and never the phase as a `-m` of its own: git reads trailers only from the message's last paragraph, so a phase in a paragraph of its own is no phase, and the post hook flags it (`no-phase`). Every commit of yours carries a phase, the changelog fragment included (commit it with the green or the refactor).
 - Never touch `test/**`: the test-writer owns the tests. An implementer edit under `test/` fails the lane (the `tdd_boundary` hook, the commit guard and `tdd.jl audit` H3/H4).

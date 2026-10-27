@@ -32,6 +32,9 @@ the wrong tree, branch or base is a finding, never something to work around.
 - A test-side role (test-writer, law-, property-, differential-tester) writes its report ONCE, at the end,
   with its final line 1: the Write tool needs a prior Read to overwrite a file, and a test-side role may
   not Read reports, so the `Status: PARTIAL` draft above does not apply to it.
+- The TDD roles (test-writer, law-, property-, differential-tester, implementer) are dispatched unnamed
+  (0.3.1): their final reply is the report, and the report file above is optional for them. Every
+  other agent is dispatched named and writes the file.
 - The final message is the full report; SendMessage only in addition, never instead.
 - At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
   log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
@@ -55,7 +58,7 @@ the wrong tree, branch or base is a finding, never something to work around.
 - Check the fail-closed paths of any guard the diff touches: a payload it cannot parse, a missing library or list file, a skip, an unknown kind must each give a non-zero exit, never "allowed".
 - Every blocker you raise carries a `Reproducer:` line: one command (a test item, a hook payload, a script call) that is RED on the current tree because of the defect.
 - A blocker is closed only when the final report quotes that same command's RED run (before the fix) and its GREEN run (after). A different test going green, or the lane's word, does not close it.
-- **Test-first lanes** (a `TDD:` trailer or a `TDD-Mode:` commit on the branch): run this checklist, and paste `julia scripts/tdd.jl audit --base main --ledger <root>/.lanes/ledger.jsonl` and dod.
+- **Test-first lanes** (a `TDD:` trailer or a `TDD-Mode:` commit on the branch): run this checklist, and paste `julia scripts/tdd.jl audit --base main --ledger <owning repo main>/.lanes/ledger.jsonl` (the main checkout of the repo that owns the lane; the default when `--ledger` is left out) and dod.
   - **Boundary first.** The saved dispatch prompts (`<main>/.lanes/briefs/<lane>/`) follow the lane-lifecycle brief templates and carry no src, reasoning or paraphrase. The ledger's `tdd-commit` lines show a separate `agent_id` per role instance (where the payload carries one) and no fork. The authors match H9. Every `tdd_boundary` denial in the ledger is a finding. Grep the red diffs for run-time source reads: `pkgdir(`, `pathof(`, `@less`, `@edit`, `@which`, `methods(`, `code_lowered`, and `read(`/`include(` of a `src` path.
   - `audit` and `dod` pasted and OK. A `TDD-Mode:` trailer is authored `lead <lead@factory.invalid>`, and its reason holds.
   - RED items cite sources and assert behaviour. For a `MethodError` red, the arguments match the spec signature.

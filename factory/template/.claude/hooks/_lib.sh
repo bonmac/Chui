@@ -58,7 +58,14 @@ if [ -f "$HOOKS_DIR/limits.env" ]; then . "$HOOKS_DIR/limits.env"; fi
 LEDGER_FILE="$ROOT/${LEDGER:-.lanes/ledger.jsonl}"
 PENDING_FILE="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" # appends made while the lock was held (ledger(), below)
 
-# ledger EVENT [KEY VALUE]...: append one JSON line; never fails the hook.
+# owning_ledger CHECKOUT (0.3.1 F2; Julia's Tdd.owning_ledger is the same rule): prints the TDD ledger of the main
+# checkout owning CHECKOUT, <dirname of git's absolute common dir>/.lanes/ledger.jsonl; exit 1, nothing, outside a repo.
+owning_ledger() {
+    _gcd=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) && [ -n "$_gcd" ] || return 1
+    printf '%s/.lanes/ledger.jsonl\n' "${_gcd%/*}"
+}
+
+# ledger EVENT [KEY VALUE]...: append one JSON line to $LEDGER_FILE (tdd_commit_post repoints it); never fails the hook.
 ledger() {
     have_jq || return 0
     mkdir -p "$(dirname "$LEDGER_FILE")" 2>/dev/null || return 0
@@ -74,7 +81,9 @@ ledger() {
     # order is arrival order (a holder's direct append overtook a line that had timed out into pending meanwhile). The lock
     # is waited for about 1 s; without it the event waits in pending. FACTORY_LEDGER_LOCKED=1: the caller holds the lock
     # (dispatch_limit); =pending: append only (the watchdog, which may fire during the lock wait: n1). Not its lock: it stays.
-    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to=$PENDING_FILE _fold=""
+    # The lock and pending file are those beside the CURRENT LEDGER_FILE (0.3.1 merge): a tdd-commit record for
+    # another checkout's owning ledger locks and folds that ledger, never the session's.
+    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" _fold=""
     case ${FACTORY_LEDGER_LOCKED:-} in
         1) _fold=1 ;;
         pending) ;;
@@ -93,8 +102,9 @@ ledger() {
 # a lock taker appends them first, each file (a crash's leftover `.<epoch>.<pid>` first) renamed, appended, removed:
 # a writer's `>>` after the rename makes a new pending file. dispatch_limit, ledger() and lane.jl's with_lock call it.
 fold_pending() {
-    [ ! -f "$PENDING_FILE" ] || mv "$PENDING_FILE" "$PENDING_FILE.$(date +%s).$$" 2>/dev/null
-    for _pf in "$PENDING_FILE".*; do
+    _pp="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" # beside the current LEDGER_FILE, as in ledger()
+    [ ! -f "$_pp" ] || mv "$_pp" "$_pp.$(date +%s).$$" 2>/dev/null
+    for _pf in "$_pp".*; do
         [ -f "$_pf" ] || continue
         [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
         _sz=$(wc -c <"$_pf" | tr -d ' '); head -c "$_sz" "$_pf" >>"$LEDGER_FILE" 2>/dev/null || continue # then re-read: a write that opened it before the mv
