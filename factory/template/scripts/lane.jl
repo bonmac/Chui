@@ -3,12 +3,28 @@
 #
 #   scripts/lane new <name> [--repo DIR] [--base BRANCH] [--prefix feat|fix|chore|docs|test] [--owns GLOBS]
 #   scripts/lane list [--repo DIR]
-#   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE]
+#   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE]
 #   scripts/lane remove <name> [--repo DIR] [--allow-ignored]
 #   scripts/lane release <agent name or lane key> [--repo DIR]
+#   scripts/lane compact [--repo DIR] [--keep N]
+#   scripts/lane stats [--repo DIR] [--since ISO]
+#   scripts/lane handoff [--repo DIR]
 #
 # release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
 #         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
+# compact (0.4.0, D2) rewrites the ledger keeping every dispatch, spawn, close, verdict and denial
+#         event of every session; it drops only `stop`s whose agent_id no `spawned` or
+#         `unknown-result` record names (teammate turns: the hooks close nothing on them), non-JSON
+#         lines and idle events outside the last N (200) lines. Atomic (tmp file, rename), holding
+#         the cap's lock throughout. The open set per session (the hooks' own query, _lanes.sh) is
+#         run before and after: if it would change, nothing is replaced. precompact.sh runs it past
+#         2,000 lines. Code: scripts/_lane_stats.jl. Every append this script makes (`lane-new`,
+#         `verdict`, `release`) takes the same lock (review round 1, M2), so none is lost in a rename.
+# stats   (0.4.0, D11) one Markdown row per dispatch of the ledger: dispatched, closed (by the
+#         hooks' closing rules), duration, the verdict `audit --report` recorded for that round, the
+#         dispatch denials of its session and the idle-unreported events of its name while it was open.
+# handoff (0.4.0, D11) the HANDOFF "Open lanes" table: one row per worktree (outside .worktrees/:
+#         `unmanaged`) and per open dispatch without a worktree. Both read-only.
 #
 # new     refuses past the cap ([lanes] max_open in the repo's .agents/agent-registry.toml,
 #         default 4) and when .worktrees/ is not gitignored; branch <prefix>/<name> from base;
@@ -24,7 +40,11 @@
 #         uncommitted and untracked files) touch a path outside its owned globs, when no globs
 #         are recorded, or, with --reported FILE (one path per line, as the lane reported its
 #         changed files), when the two lists differ. /change-review runs it before a lane lands.
-# list    name, branch, base, ahead/behind, clean/dirty. Read-only.
+#         (0.4.0, D5) --report FILE: the review report's first line must be exactly
+#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three) and a line
+#         `Head: <sha>` must name the lane's current HEAD (a stale round fails), else FAIL; a passing
+#         audit records {ev: verdict, lane, verdict, head, report} in the ledger (`lane stats` shows it).
+# list   name, branch, base, ahead/behind, clean/dirty. Read-only.
 # remove  refuses a dirty lane, one whose branch is not merged into its base, and one holding
 #         ignored files (reports, Manifest.toml, scratch) unless --allow-ignored. Never forces.
 #         Keeps the branch (delete it yourself once you are sure).
@@ -32,6 +52,7 @@ module Lane
 
     using TOML, Dates
     include(joinpath(@__DIR__, "_common.jl"))
+    include(joinpath(@__DIR__, "_lane_stats.jl"))   # 0.4.0: compact, stats, handoff (the ledger side)
 
     const NAME = r"^[a-z0-9][a-z0-9-]{0,39}$"
     const PREFIXES = ("feat", "fix", "chore", "docs", "test")
@@ -82,11 +103,12 @@ module Lane
         git(repo, "config", "branch.$branch.lane-base", base)
         owns = unique!([split_globs(get(opts, "--owns", "")); "changelog.d/$name.md"])
         git(repo, "config", "branch.$branch.lane-owns", join(owns, ' '))
-        ledger_line(repo, "lane-new"; lane = name, branch, base, owns)
+        recorded = ledger_line(repo, "lane-new"; lane = name, branch, base, owns)
         println(io, "lane: created $wt on $branch (base $base); $(n + 1)/$cap lanes open; owns: ", join(owns, ' '))
         local_setup(repo, wt; io)
         haskey(opts, "--owns") || println(io, "lane: no --owns given: `scripts/lane audit $name` will fail until the owned globs are recorded")
         foreach(w -> println(io, "lane: warning: ", w), env_warnings())
+        recorded || (println(stderr, "lane: the lane exists but its `lane-new` record was NOT written (the ledger lock is held, or the ledger is not writable)"); return 1)
         return 0
     end
 
@@ -129,23 +151,31 @@ module Lane
     end
 
     """
-    Append one JSON line to the repo's lane ledger; returns `true` if it was written. Never throws.
-    After a truncated last line (a crash mid-write) it starts a new line first, as the hooks'
-    `ledger` does (0.2.8): otherwise this record joins the fragment and is skipped as malformed.
+    Append one JSON line to the repo's lane ledger under the hooks' lock (`with_lock`, _lane_stats.jl);
+    returns `true` if it was written (`false` when the lock was held for 5 s: review round 1, M2, an
+    append between `compact`'s read and its rename was lost). Never throws. After a truncated last line
+    (a crash mid-write) it starts a new line first, as the hooks' `ledger` does (0.2.8): otherwise this
+    record joins the fragment and is skipped as malformed.
     """
     function ledger_line(repo, ev; kw...)
         esc(x) = "\"" * replace(string(x), "\\" => "\\\\", "\"" => "\\\"") * "\""
         val(v) = v isa AbstractVector ? "[" * join(esc.(v), ",") * "]" : esc(v)
         fields = ["\"ts\":" * esc(Dates_now()), "\"ev\":" * esc(ev), ("\"$k\":" * val(v) for (k, v) in kw)...]
-        f = ledger_path(repo)
-        return try
-            mkpath(dirname(f))
-            torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
-            open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
-            true
+        f = try
+            ledger_path(repo)
         catch
-            false
+            return false
         end
+        written = with_lock(joinpath(dirname(f), ".dispatch.lock")) do
+            try
+                torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
+                open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
+                true
+            catch
+                false
+            end
+        end
+        return written === true
     end
     Dates_now() = Dates.format(Dates.now(Dates.UTC), "yyyy-mm-ddTHH:MM:SS") * "Z"
 
@@ -221,6 +251,10 @@ module Lane
         )
         reported = haskey(opts, "--reported") ? read_reported(opts["--reported"]) : nothing
         bad = audit(changed, owns, reported)
+        report = get(opts, "--report", nothing)   # 0.4.0 (D5): the review report's first line is the verdict; a Head line names this HEAD
+        head = something(git(wt, "rev-parse", "HEAD"), "")
+        verdict, problem = report === nothing ? (nothing, nothing) : report_check(report, head)
+        problem === nothing || push!(bad, problem)
         println(
             io, "lane audit $name: $(l.branch) vs $(l.base) (merge base $(first(mb, 10))), $(length(changed)) changed; owns: ",
             isempty(owns) ? "(none)" : join(owns, ' ')
@@ -228,8 +262,35 @@ module Lane
         foreach(f -> println(io, "    ", f), changed)
         foreach(b -> println(io, "  [FAIL] ", b), bad)
         reported === nothing && println(io, "  [info] no --reported list: the lane's own changed-file list was not compared")
+        verdict === nothing || println(io, "  verdict: $verdict ($report)")
+        # the verdict is recorded only for a passing audit, so `lane stats` never shows one for a lane that failed it
+        isempty(bad) && verdict !== nothing && !ledger_line(repo, "verdict"; lane = name, verdict, head, report) &&
+            push!(bad, "could not write the verdict to the lane ledger $(ledger_path(repo))")
         println(io, isempty(bad) ? "lane audit: OK" : "lane audit: FAILED ($(length(bad)))")
         return isempty(bad) ? 0 : 1
+    end
+
+    const VERDICT = r"^Verdict: (MAY MERGE|MERGE WITH FIXES|FIX FIRST)$"
+    const HEADLINE = r"^Head: ([0-9a-f]{7,40})$"
+    """
+        report_check(path, head) -> (verdict, problem)
+
+    0.4.0 (D5): a review report's first line is exactly `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST`
+    (one of the three, exact case, nothing else on the line: no bold, not the template line, a CR counts),
+    and a line `Head: <sha>` (full, or a prefix of 7+ hex characters) names the lane worktree's HEAD, so a
+    report of an earlier round cannot pass this one. One of the two results is `nothing`. Anchored and
+    mechanical on purpose: `verdict: may merge` is no verdict.
+    """
+    function report_check(path, head)
+        isfile(path) || return nothing, "report $path is missing"
+        ls = [endswith(l, '\n') ? l[1:prevind(l, lastindex(l))] : l for l in readlines(path; keep = true)]
+        m = isempty(ls) ? nothing : match(VERDICT, ls[1])
+        m === nothing && return nothing, "report $path has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
+        hs = [String(h.captures[1]) for h in filter(!isnothing, map(l -> match(HEADLINE, l), ls))]
+        isempty(hs) && return nothing, "report $path has no line 'Head: <sha>' naming the lane's HEAD $(first(head, 7))"
+        any(h -> startswith(head, h), hs) ||
+            return nothing, "report $path names Head $(join(hs, ", ")) but the lane's HEAD is $(first(head, 7)): a stale round; the review must be of this HEAD"
+        return String(m.captures[1]), nothing
     end
 
     function cmd_list(repo; io = stdout)
@@ -275,14 +336,10 @@ module Lane
     """
     function cmd_release(repo, key; io = stdout)
         k = replace(key, r"[^A-Za-z0-9_./:@-]" => "_")
-        try
-            ledger_path(repo)
-        catch # a registry that does not parse, or a `[lanes] ledger` that is not a string (re-review n4)
-            println(stderr, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); $k is NOT released")
-            return 1
-        end
+        f = ledger_file(repo, "$k is NOT released")
+        f === nothing && return 1
         if !ledger_line(repo, "close"; session = "*", ref = k, why = "released")
-            println(stderr, "lane: could not write the lane ledger $(ledger_path(repo)); $k is NOT released")
+            println(stderr, "lane: could not write the lane ledger $f (its lock is held, or it is not writable); $k is NOT released")
             return 1
         end
         println(io, "lane: released $k (the dispatch cap no longer counts a lane with that name, key or agent id)")
@@ -290,9 +347,9 @@ module Lane
     end
 
     function main(args)
-        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR]"
+        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N] | stats [--repo DIR] [--since ISO] | handoff [--repo DIR]"
         opts, pos = try
-            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported"))
+            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--report", "--keep", "--since"))
         catch e
             println(stderr, "lane: ", e isa ErrorException ? e.msg : e)
             return 2
@@ -309,6 +366,9 @@ module Lane
         sub == "audit" && length(pos) == 2 && return cmd_audit(repo, pos[2], opts)
         sub == "release" && length(pos) == 2 && !isempty(pos[2]) && return cmd_release(repo, pos[2])
         sub == "remove" && length(pos) == 2 && return cmd_remove(repo, pos[2]; allow_ignored = get(opts, "--allow-ignored", false))
+        sub == "compact" && length(pos) == 1 && return cmd_compact(repo, opts)
+        sub == "stats" && length(pos) == 1 && return cmd_stats(repo, opts)
+        sub == "handoff" && length(pos) == 1 && return cmd_handoff(repo)
         println(stderr, usage)
         return 2
     end
