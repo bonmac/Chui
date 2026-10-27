@@ -213,16 +213,14 @@ function open_count(file, session; lanes_sh = joinpath(HOOKS, "_lanes.sh"))
 end
 
 @testset "lane compact keeps open chains (0.4.0)" begin
+    # The critic's rule: every dispatch/spawned/unknown-result/close/verdict/denial event is kept; dropped are only
+    # `stop`s whose agent_id matches no `spawned` record and idle-* events older than the last --keep lines. Two
+    # sessions (each teammate is one) each hold an open dispatch older than the last 200 lines, a closed chain Z
+    # and an open re-dispatch D sharing Z's description (dropping Z would let Z's close-by-ref close D by desc).
     withenv("FACTORY_LANE_TTL_HOURS" => "0") do                                 # 0 = a dispatch never expires (the hooks' rule)
         d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n"))
-        led = joinpath(d, ".lanes/ledger.jsonl")
-        mkpath(dirname(led))
+        led = joinpath(d, ".lanes/ledger.jsonl"); mkpath(dirname(led))
         at(i) = "2026-10-27T$(lpad(div(i, 3600), 2, '0')):$(lpad(div(i, 60) % 60, 2, '0')):$(lpad(i % 60, 2, '0'))Z"
-        # The critic's rule: every dispatch, spawned, unknown-result, close, verdict, dispatch-denied and
-        # guard-timeout event is kept; dropped are only `stop`s whose agent_id matches no `spawned` record,
-        # and idle-* events older than the last --keep lines. Each teammate is its own session, so two
-        # sessions each hold: an open dispatch older than the last 200 lines, a closed chain Z, and an open
-        # re-dispatch D sharing Z's description (dropping Z would let Z's close-by-ref close D by desc).
         ls = String[]
         ev!(e; kw...) = push!(ls, ledger_ev(at(length(ls) + 1), e; kw...))
         for s in ("s1", "s2")
@@ -245,31 +243,23 @@ end
         rc, out = lane("compact")
         @test rc == 0 && occursin("compacted 3017 -> 14 lines, 4 open lanes kept", out) || (print(out); false)
         after = readlines(led)
-        @test counts() == (2, 2)                                                 # identical before and after
-        @test length(after) == 14                                                # 12 chain events + the spawned agent's stop + the recent idle
+        @test counts() == (2, 2) && length(after) == 14                          # identical before and after; 12 chain events + the matched stop + the recent idle
         @test all(l -> success(pipeline(`jq -e .`; stdin = IOBuffer(l), stdout = devnull, stderr = devnull)), after)  # valid JSONL
         kinds(e) = count(l -> occursin("\"ev\":\"$e\"", l), after)
         @test kinds("dispatch") == 6 && kinds("spawned") == 4 && kinds("close") == 2   # closed chains stay too
         @test kinds("stop") == 1 && any(l -> occursin("a-z-s1", l), after)       # only the matched stop
         @test kinds("idle-unreported") == 1 && any(l -> occursin("\"teammate\":\"d-s1\"", l), after)
-        @test !any(l -> occursin("torn", l), after)                             # the torn line is dropped, not kept as a fragment
-        @test !isfile(led * ".tmp")
+        @test !any(l -> occursin("torn", l), after) && !isfile(led * ".tmp")   # the torn line is dropped, not kept as a fragment
         @test after == filter(l -> !occursin("torn", l) && (occursin("\"ev\":\"dispatch\"", l) || occursin("\"ev\":\"spawned\"", l) ||
                 occursin("\"ev\":\"close\"", l) || occursin("a-z-s1", l) || occursin("\"teammate\":\"d-s1\"", l)), ls)   # original lines, original order
-        # --keep 0: the recent idle goes too; the chains never do
-        rc, out = lane("compact", "--keep", "0")
-        @test rc == 0 && occursin("compacted 14 -> 13 lines, 4 open lanes kept", out)
-        @test counts() == (2, 2)
-        # the dispatch lock (as dispatch_limit.sh takes it) is honoured: held => exit 1, nothing written
-        lock = joinpath(d, ".lanes/.dispatch.lock")
-        mkdir(lock)
-        was = read(led, String)
-        rc, out = lane("compact")
-        @test rc == 1 && read(led, String) == was
+        rc, out = lane("compact", "--keep", "0")                                 # --keep 0: the recent idle goes too; the chains never do
+        @test rc == 0 && occursin("compacted 14 -> 13 lines, 4 open lanes kept", out) && counts() == (2, 2)
+        lock = joinpath(d, ".lanes/.dispatch.lock")                              # the lock dispatch_limit.sh takes: held => exit 1, nothing written
+        mkdir(lock); was = read(led, String)
+        @test lane("compact")[1] == 1 && read(led, String) == was
         rm(lock)
         @test lane("compact")[1] == 0 && !isdir(lock)                            # released afterwards
-        # an empty or missing ledger: nothing to do, exit 0
-        rm(led)
+        rm(led)                                                                  # a missing ledger: nothing to do, exit 0
         rc, out = lane("compact")
         @test rc == 0 && occursin("compacted 0 -> 0 lines, 0 open lanes kept", out)
         @test lane("compact", "--keep", "x")[1] == 2
@@ -283,8 +273,7 @@ end
     @test lane("new", "rv", "--owns", "src/*")[1] == 0
     wt = joinpath(d, ".worktrees/rv")
     commit!(wt, Dict("src/A.jl" => "b\n", "changelog.d/rv.md" => "- A\n"), "x")
-    led = joinpath(d, ".lanes/ledger.jsonl")
-    rep = tempname()
+    led = joinpath(d, ".lanes/ledger.jsonl"); rep = tempname()
     head = readchomp(`git -C $wt rev-parse HEAD`)
     # accepted: the exact verdict line first, and a `Head: <sha>` line (full, or a prefix of 7+ characters) naming the lane's HEAD
     for (v, h) in (("MAY MERGE", head), ("MERGE WITH FIXES", first(head, 7)), ("FIX FIRST", first(head, 12)))
@@ -292,17 +281,15 @@ end
         n = length(readlines(led))
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 0 && occursin("verdict: $v", out) && occursin("lane audit: OK", out) || (print(out); false)
-        last_line = last(readlines(led))
-        @test length(readlines(led)) == n + 1
+        last_line = last(readlines(led)); @test length(readlines(led)) == n + 1
         @test occursin("\"ev\":\"verdict\"", last_line) && occursin("\"lane\":\"rv\"", last_line) && occursin("\"head\":\"$head\"", last_line) &&
             occursin("\"verdict\":\"$v\"", last_line) && occursin("\"report\":\"$(replace(rep, "\\" => "\\\\"))\"", last_line)
         @test success(pipeline(`jq -e '.ev == "verdict"'`; stdin = IOBuffer(last_line), stdout = devnull))
     end
-    # review focus 4: the enum stays mechanical. Wrong case, the template line itself, bold, a leading blank
-    # line, a stray word, trailing space, CRLF, an empty file: exit 1, no verdict recorded
-    n = length(readlines(led))
+    # review focus 4: the enum stays mechanical. Wrong case, the template line itself, bold, a leading blank line, a stray
+    # word, trailing space, CRLF, an empty file: exit 1, no verdict recorded
+    n = length(readlines(led)); hl = "Head: $head\n"
     msg = "report $rep has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
-    hl = "Head: $head\n"
     for bad in (
             "verdict: may merge\n", "\nVerdict: MAY MERGE\n", "Verdict: APPROVE\n", "Verdict: MAY MERGE \n",
             "Verdict: MAY MERGE\r\n", "Verdict:MAY MERGE\n", "Verdict: MAY MERGE (with nits)\n", "# Review\nVerdict: MAY MERGE\n",
@@ -328,21 +315,16 @@ end
     commit!(wt, Dict("src/A.jl" => "c\n"), "another round")
     rc, out = lane("audit", "rv", "--report", rep)
     @test rc == 1 && occursin("stale", out) && occursin(first(head, 7), out) && length(readlines(led)) == n
-    head = readchomp(`git -C $wt rev-parse HEAD`)
-    hl = "Head: $head\n"
-    rm(rep)
-    rc, out = lane("audit", "rv", "--report", rep)
+    head = readchomp(`git -C $wt rev-parse HEAD`); hl = "Head: $head\n"
+    rm(rep); rc, out = lane("audit", "rv", "--report", rep)                        # a missing report
     @test rc == 1 && occursin("[FAIL] report $rep", out) && length(readlines(led)) == n
-    # with --reported too: both checks run; a bad verdict fails even when the files match
-    write(rep, "Verdict: MAY MERGE\n" * hl)
-    files = tempname()
-    write(files, "src/A.jl\nchangelog.d/rv.md\n")
+    write(rep, "Verdict: MAY MERGE\n" * hl)                                        # with --reported too: both checks run
+    files = tempname(); write(files, "src/A.jl\nchangelog.d/rv.md\n")
     rc, out = lane("audit", "rv", "--report", rep, "--reported", files)
     @test rc == 0 && !occursin("[info] no --reported", out)
-    write(rep, "Verdict: MAYBE\n" * hl)
+    write(rep, "Verdict: MAYBE\n" * hl)                                            # a bad verdict fails even when the files match
     @test lane("audit", "rv", "--report", rep, "--reported", files)[1] == 1
-    # an audit failure does not record the verdict either
-    write(rep, "Verdict: FIX FIRST\n" * hl)
+    write(rep, "Verdict: FIX FIRST\n" * hl)                                        # an audit failure does not record the verdict either
     write(joinpath(wt, "notes.txt"), "outside owns\n")
     n = length(readlines(led))
     rc, out = lane("audit", "rv", "--report", rep)
@@ -351,11 +333,10 @@ end
 end
 
 @testset "lane stats and handoff (0.4.0)" begin
-    # D11: one row per dispatch of the ledger, closed by the hooks' rules (_lanes.sh): a close with its key, a
-    # ref to its name/key/agent id, a stop of its agent; counts while it was open; the last verdict for its name
+    # D11: one row per dispatch, closed by the hooks' rules (_lanes.sh: a close with its key or a ref to its name/key/agent id,
+    # a stop of its agent); the denied and idle counts while it was open; the last verdict recorded for its name
     d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n/.claude/\n", "src/A.jl" => "a\n"))
-    led = joinpath(d, ".lanes/ledger.jsonl")
-    mkpath(dirname(led))
+    led = joinpath(d, ".lanes/ledger.jsonl"); mkpath(dirname(led))
     ts(h, m) = "2026-10-01T$(lpad(h, 2, '0')):$(lpad(m, 2, '0')):00Z"
     write(
         led, join(
@@ -393,10 +374,9 @@ end
     @test rc == 0 && !occursin("| la |", out) && occursin("| lb |", out) && occursin("| ld |", out)
     rc, out = capture(() -> Lane.main(["stats", "--repo", tmp_repo()]))            # no ledger: the header only
     @test rc == 0 && count(l -> startswith(l, "| "), split(out, '\n')) == 1
-    # handoff: the HANDOFF "Open lanes" table from `git worktree list` and the ledger (review focus 5: a
-    # worktree outside .worktrees/ is listed as unmanaged, not skipped; an open dispatch without a worktree too)
-    @test lane("new", "la", "--owns", "src/*")[1] == 0
-    @test lane("new", "lb", "--owns", "src/*")[1] == 0
+    # handoff: the HANDOFF table from `git worktree list` and the ledger; review focus 5: a worktree outside .worktrees/ is
+    # listed as unmanaged, not skipped; so is an open dispatch without a worktree
+    @test lane("new", "la", "--owns", "src/*")[1] == 0 && lane("new", "lb", "--owns", "src/*")[1] == 0
     write(joinpath(d, ".worktrees/lb/scratch.txt"), "dirty\n")
     sh(`git -C $d worktree add -q -b wt-x .claude/worktrees/x`)
     head = readchomp(`git -C $d rev-parse --short HEAD`)
