@@ -48,6 +48,23 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 - The rebase gets its own reviewer, and e1 also runs `test_hooks_tdd*.jl`.
 - HANDOFF stays the lead's.
 - e1's f040-hooks fixes a heredoc-terminator bypass in bash_guard's splitter. That bypass is in the 0.2.8 hooks running now |
+| tw-034 (factory 0.3.1) | coordinator | `.worktrees/tw-034` / `feat/tw-034` | `factory/**` | started 2026-10-27 (sub-lead tw-034). It fixes what the live smoke lane exposed in 0.3.0:
+1. `ci.jl format` FAILS in every package on 0.3.0, because the template scripts are not Runic-clean and the broken fixture has a ParseError. ChuiTypes main fails today; nothing is pushed.
+2. `tdd-commit` records land in different ledgers depending on dispatch. The fix is `owning_ledger` (shell and Julia, with a parity test), written through `ledger()` (agreed with e1 for 0.4.0's lock and pending file).
+3. The TDD roles have no report channel. Fix: dispatch them unnamed, with the final reply as the report, for TDD roles only (agreed with e1).
+4. A deletion-only test-fix deadlocks E1. Fix: recorded-removal evidence.
+5. Skill and brief text.
+6. CHECK_COVERAGE gets two blind spots.
+
+**The ChuiFrames 0.3.0 sync is held:** re-sync it to 0.3.1 instead. |
+| ~~smoke lane scan-widen~~ | ChuiTypes.jl | **MERGED 2026-10-27, ChuiTypes main 252b6f1.** It is the first test-first lane, and it fixes ADR-0009 follow-up 4 (`scan` widens like `Base.accumulate`).
+- Red b7d6694 by a test-writer: 5 items, all BEHAVIOUR. Green fd22a4a by an implementer: 17210/17210 on 1.13. The lead ran LTS 17197/17197. tdd audit OK; reviewer APPROVE FINAL.
+- A first test-writer attempt was reset: the lead's brief let already-passing items into the red commit.
+- Follow-ups:
+  - F1: add a `scan` perf budget row to `test/test_perf.jl`;
+  - F2: ChuiCore's `Scan` keeps the narrow slot, so the ADR-0004 switch would lose the widening (a request to ChuiCore);
+  - F3: a docstring note on two-step widening;
+  - F6: ADR-0009 lines 93 and 115 are stale. | — | — |
 | ~~factory 0.3.0~~ | coordinator | **DONE 2026-10-27: factory 0.3.0 is final and synced into the coordinator, main 979c495.**
 - **Merges:**
   - tw-031 7195240: Tasks 8–9 and critic C1–C8, with reviewer FINAL ×2.
