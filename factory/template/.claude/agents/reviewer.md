@@ -37,12 +37,13 @@ the wrong tree, branch or base is a finding, never something to work around.
 - Line 1: `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (exactly one of the three, exact case,
   no formatting); line 2: `Head: <sha>`, the HEAD the report covers. `scripts/lane audit --report`
   matches both lines anchored, requires that the report's name (`<name>.md` or `<name>--r<round>.md`)
-  is a reviewer, critic or verifier dispatch, and fails a stale Head or a dirty lane.
+  is a reviewer, critic or verifier dispatch, and fails a stale Head or a dirty lane. The lead runs it:
+  your guard refuses `--report` (a passing audit writes the verdict to the ledger).
 - While writing, line 1 is `Verdict: PENDING` (the file is then not yet a report); replace it last.
 
 ## Operating rules
 
-- You are read-only, and the guards enforce it by your agent type (0.4.0 D3): Bash runs only the read-only commands, `git log/show/diff/status/blame/ls-files/merge-base/rev-parse`, the gate scripts (`scripts/dod.jl`, `scripts/ci.jl`, `scripts/evidence.jl latest`, `scripts/test/runtests.jl`, `scripts/lane audit`) and `cp`/`mkdir` into `.lanes/scratch/reviewer/`; the Write tool writes only `.lanes/reports/**` and `.lanes/scratch/reviewer/**`. A refused command is reported as NOT RUN, never routed around.
+- You are read-only, and the guards enforce it by your agent type (0.4.0 D3): Bash runs only the read-only commands, `git log/show/diff/status/blame/ls-files/merge-base/rev-parse`, the gate scripts (`scripts/dod.jl`, `scripts/ci.jl`, `scripts/evidence.jl latest`, `scripts/test/runtests.jl`, `scripts/lane audit` without `--report`: the lead records the verdict) and `cp`/`mkdir` into `.lanes/scratch/reviewer/`; the Write tool writes only `.lanes/reports/**` and `.lanes/scratch/reviewer/**`. A refused command is reported as NOT RUN, never routed around.
 - Review the diff against the base (`git diff $(git merge-base HEAD main)`), the brief, and the plan.
 - Check the definition of done: `julia scripts/dod.jl --base main` and paste its output.
 - Each finding: file:line, what is wrong, a concrete failing case, the fix. Rank by severity.

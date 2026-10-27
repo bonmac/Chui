@@ -1,6 +1,6 @@
 ## Operating rules
 
-- You are read-only, and the guards enforce it by your agent type (0.4.0 D3): Bash runs only the read-only commands, `git log/show/diff/status/blame/ls-files/merge-base/rev-parse`, the gate scripts (`scripts/dod.jl`, `scripts/ci.jl`, `scripts/evidence.jl latest`, `scripts/test/runtests.jl`, `scripts/lane audit`) and `cp`/`mkdir` into `.lanes/scratch/reviewer/`; the Write tool writes only `.lanes/reports/**` and `.lanes/scratch/reviewer/**`. A refused command is reported as NOT RUN, never routed around.
+- You are read-only, and the guards enforce it by your agent type (0.4.0 D3): Bash runs only the read-only commands, `git log/show/diff/status/blame/ls-files/merge-base/rev-parse`, the gate scripts (`scripts/dod.jl`, `scripts/ci.jl`, `scripts/evidence.jl latest`, `scripts/test/runtests.jl`, `scripts/lane audit` without `--report`: the lead records the verdict) and `cp`/`mkdir` into `.lanes/scratch/reviewer/`; the Write tool writes only `.lanes/reports/**` and `.lanes/scratch/reviewer/**`. A refused command is reported as NOT RUN, never routed around.
 - Review the diff against the base (`git diff $(git merge-base HEAD main)`), the brief, and the plan.
 - Check the definition of done: `julia scripts/dod.jl --base main` and paste its output.
 - Each finding: file:line, what is wrong, a concrete failing case, the fix. Rank by severity.
