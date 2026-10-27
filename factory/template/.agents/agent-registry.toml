@@ -17,7 +17,8 @@
 #   file_scope     globs the agent may write (a read_only agent: none, or only .lanes/reports/** and
 #                  .lanes/scratch/<name>/**, which the guards allow it by agent_type; 0.4.0 D3)
 #   scorecard      what the lead grades the report on
-#   output_format  the sections the report must contain, in order
+#   output_format  the sections the report must contain, in order; ends with `; at most 80 lines` (0.4.0 D4)
+# Bodies named `_<fragment>.md` (`_preflight`, `_report`) are rendered into EVERY agent by gen.jl; they are not agents.
 #
 # Adjust per package: delete roles a package does not need, never add a 13th without
 # asking whether an existing role covers it (see docs/adr/ in the coordinator, ADR-0001).
@@ -41,7 +42,7 @@ color = "purple"
 default_mode = "write"
 file_scope = ["docs/adr/**", "docs/superpowers/specs/**"]
 scorecard = ["alternatives rejected with reasons", "claims cite evidence or say UNVERIFIED", "decision stated as must/must not", "revisit triggers concrete"]
-output_format = "summary, decision, alternatives, open questions, files written, scorecard"
+output_format = "summary, decision, alternatives, open questions, files written, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "researcher"
@@ -53,7 +54,7 @@ color = "cyan"
 default_mode = "write"
 file_scope = ["docs/research/**"]
 scorecard = ["every claim has a source or UNVERIFIED", "versions and dates stated", "answers the question asked"]
-output_format = "question, findings with sources, UNVERIFIED list, files written, scorecard"
+output_format = "question, findings with sources, UNVERIFIED list, files written, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "implementer"
@@ -65,7 +66,7 @@ color = "green"
 default_mode = "write"
 file_scope = ["src/**", "test/**", "ext/**", "changelog.d/**"]
 scorecard = ["failing test written first", "tests pass with output pasted", "stays in file scope", "CHANGELOG entry"]
-output_format = "summary, files changed, commands run with output, checks not run and why, scorecard"
+output_format = "summary, files changed, commands run with output, checks not run and why, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "law_tester"
@@ -77,7 +78,7 @@ color = "yellow"
 default_mode = "write"
 file_scope = ["test/laws/**"]
 scorecard = ["every instance covered by its laws", "generators cover edge cases", "a planted violation fails"]
-output_format = "instances covered, laws per instance, commands run with output, gaps, scorecard"
+output_format = "instances covered, laws per instance, commands run with output, gaps, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "property_tester"
@@ -89,7 +90,7 @@ color = "yellow"
 default_mode = "write"
 file_scope = ["test/property/**"]
 scorecard = ["invariant stated in words first", "shrinking produces a readable counterexample", "seed recorded"]
-output_format = "invariants, generators, commands run with output, counterexamples found, scorecard"
+output_format = "invariants, generators, commands run with output, counterexamples found, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "differential_tester"
@@ -101,7 +102,7 @@ color = "orange"
 default_mode = "write"
 file_scope = ["test/differential/**"]
 scorecard = ["reference version recorded", "inputs include edge cases (missing, empty, ties)", "every difference explained or filed"]
-output_format = "references and versions, cases, differences found, commands run with output, scorecard"
+output_format = "references and versions, cases, differences found, commands run with output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "benchmarker"
@@ -113,7 +114,7 @@ color = "orange"
 default_mode = "write"
 file_scope = ["benchmark/**"]
 scorecard = ["hardware and versions recorded", "cold vs warm separated", "median with spread", "losses published"]
-output_format = "setup, results table, comparison to budget, commands run with output, scorecard"
+output_format = "setup, results table, comparison to budget, commands run with output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "reviewer"
@@ -127,7 +128,7 @@ tools = ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
 disallowed_tools = ["Edit", "NotebookEdit"]
 file_scope = [".lanes/reports/**", ".lanes/scratch/reviewer/**"]
 scorecard = ["each finding has file:line and evidence", "severity ranked", "definition of done checked", "final report sent, not only a preview"]
-output_format = "verdict (approve | changes requested), findings with severity and evidence, DoD checklist, scorecard"
+output_format = "verdict (MAY MERGE | MERGE WITH FIXES | FIX FIRST), head, findings with severity and evidence, DoD checklist, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "critic"
@@ -141,7 +142,21 @@ tools = ["Read", "Grep", "Glob", "Bash", "Write", "WebSearch", "WebFetch", "Send
 disallowed_tools = ["Edit", "NotebookEdit"]
 file_scope = [".lanes/reports/**", ".lanes/scratch/critic/**"]
 scorecard = ["attacks the strongest version of the design", "separates errors from disagreements", "each attack has a concrete failure case", "never invents a citation"]
-output_format = "attacks ranked by impact, concrete failure cases, what would change my mind, scorecard"
+output_format = "verdict (MAY MERGE | MERGE WITH FIXES | FIX FIRST), head, attacks ranked by impact, concrete failure cases, what would change my mind, scorecard; at most 80 lines"
+
+[[agents]]
+slug = "verifier"
+name = "verifier"
+role = "Runs the gates (scripts/ci.jl jobs, dod.jl, the factory suite) on a named checkout through scripts/evidence.jl and reports the counts from the evidence files; never edits."
+description = "Use to run a repo's tests or gates and report the result without changing anything: a Julia-aware replacement for a generic tester (0.4.0 D8)."
+model = "inherit"
+color = "yellow"
+default_mode = "read_only"
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/verifier/**"]
+scorecard = ["every count cites an evidence file", "a killed or skipped run is reported NOT RUN, never green", "base and lane compared when a base is given", "failures explained with file:line, not fixed"]
+output_format = "verdict, commands run (command, exit code, last 20 lines), evidence files, counts from evidence, checks NOT run, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "docs_writer"
@@ -153,7 +168,7 @@ color = "cyan"
 default_mode = "write"
 file_scope = ["docs/src/**", "README.md"]
 scorecard = ["every public name documented", "doctests run", "examples copy-pasteable"]
-output_format = "pages changed, doctest output, stale references fixed, scorecard"
+output_format = "pages changed, doctest output, stale references fixed, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "release_manager"
@@ -165,7 +180,7 @@ color = "pink"
 default_mode = "write"
 file_scope = ["Project.toml", "CHANGELOG.md", "changelog.d/**"]
 scorecard = ["semver bump justified", "compat bounds on every dependency", "release-check output pasted", "no tag or registration without confirmation"]
-output_format = "proposed version, changes since last release, release-check output, actions needing confirmation, scorecard"
+output_format = "proposed version, changes since last release, release-check output, actions needing confirmation, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "contract_steward"
@@ -177,4 +192,4 @@ color = "purple"
 default_mode = "write"
 file_scope = ["test/contracts/**"]
 scorecard = ["every upstream name used is covered", "nothing beyond the used API is pinned", "requests written instead of upstream edits"]
-output_format = "upstream API used, contract tests changed, requests written, commands run with output, scorecard"
+output_format = "upstream API used, contract tests changed, requests written, commands run with output, scorecard; at most 80 lines"

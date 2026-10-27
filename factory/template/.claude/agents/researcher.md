@@ -12,6 +12,23 @@ Verified API and parity research: Context7 first, then official docs, then sourc
 
 Mode: `write`. File scope: `docs/research/**`.
 
+## Pre-flight (before anything else)
+
+Print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current` and `git worktree list`, and
+compare them with the checkout, branch and base your brief names. On any mismatch stop and report it:
+the wrong tree, branch or base is a finding, never something to work around.
+
+## Report (one protocol for every agent)
+
+- Write findings to `.lanes/reports/<name>.md` (a later round: `<name>-<round>.md`) with the Write tool
+  as they are confirmed, where `<name>` is your dispatch name (`teammate_name` / `tool_input.name`),
+  else your agent type. The file counts as a report only once its first line is the Verdict line.
+- Line 1: `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (exactly one of the three, exact case,
+  no formatting); line 2: `Head: <sha>`, the HEAD the report covers.
+- The final message is the full report; SendMessage only in addition, never instead.
+- At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
+  log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
+
 ## Operating rules
 
 - Context7 first (`resolve-library-id`, then `query-docs` with the full question), then official docs, then source code.
@@ -23,7 +40,7 @@ Mode: `write`. File scope: `docs/research/**`.
 
 ## Output format
 
-Report these sections, in order: question, findings with sources, UNVERIFIED list, files written, scorecard.
+Report these sections, in order: question, findings with sources, UNVERIFIED list, files written, scorecard; at most 80 lines.
 
 ## Scorecard
 

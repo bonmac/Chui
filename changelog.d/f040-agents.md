@@ -16,5 +16,19 @@
     mutates a copy under `.lanes/scratch/critic/hooks` and runs `julia scripts/test/runtests.jl hooks
     --hooks-dir <copy>` (new: `runtests.jl [NAME...] [--hooks-dir DIR]`). New check `read_only_agents`
     in `factory/template/.agents/checks.toml` (blind spots: keyed on the dispatch's agent_type; tmux-pane
-    teammates UNVERIFIED; the allowlisted scripts are trusted). `scripts/_lane_stats.jl` (the f040-lane
-    sibling) is T3 in `factory/template/risk.toml`. Tests: `factory/template/scripts/test/test_hooks_agents.jl`.
+    teammates UNVERIFIED; the allowlisted scripts are trusted). The f040-lane sibling's lane-stats helper
+    (included by lane.jl) is T3 in `factory/template/risk.toml`. Tests: `factory/template/scripts/test/test_hooks_agents.jl`.
+  - One review protocol in every agent: the fragments `factory/template/.agents/bodies/_preflight.md`
+    (print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list`;
+    compare with the brief; stop on a mismatch) and `_report.md` (findings written to
+    `.lanes/reports/<name>.md` or `<name>-<round>.md` as they are confirmed, counted as a report only
+    once line 1 is `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` and line 2 `Head: <sha>`; the
+    final message is the full report, SendMessage in addition; at most 80 lines, a command quoted as the
+    command, its exit code and its last 20 lines, the full log under `.lanes/evidence/`) are rendered by
+    `scripts/gen.jl` into every `.claude/agents/*.md` and `.codex/agents/*.toml` between the "Mode:" line
+    and the body; an underscore-prefixed body is a fragment, never an agent, and a missing one fails
+    `gen.jl`. Every `output_format` ends with `; at most 80 lines` (`gen.jl --check` fails otherwise);
+    the reviewer's and critic's start with `verdict (MAY MERGE | MERGE WITH FIXES | FIX FIRST), head`.
+    New read-only agent `verifier` (D8: runs `julia scripts/evidence.jl <job> -- julia scripts/ci.jl
+    <job> --timeout 900`, reports counts from the evidence file; tools Read, Grep, Glob, Bash, Write,
+    SendMessage; file scope as the reviewer's), so `READ_ONLY_AGENTS=" critic reviewer verifier "`.
