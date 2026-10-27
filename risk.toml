@@ -71,6 +71,12 @@ globs = [
   "scripts/changelog.jl",
   "scripts/check_claims.jl",
   "scripts/evidence.jl",
+  # the TDD gate (factory 0.3.0, ADR-0015): a lane must not weaken its own test-first audit
+  "scripts/tdd.jl",
+  "scripts/_tdd_classify.jl",
+  "scripts/_tdd_history.jl",
+  "scripts/_tdd_evidence.jl",
+  "scripts/_tdd_backfill.jl",
   # the gate's own tests (0.2.4): a lane must not weaken a test so its gate passes
   "scripts/test/*",
   "risk.toml",

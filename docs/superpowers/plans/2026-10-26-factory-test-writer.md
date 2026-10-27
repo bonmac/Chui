@@ -145,7 +145,10 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
   so the probe used the existing custom read-only agent `reviewer`. The question is the same: does
   a custom subagent's PreToolUse payload carry its `agent_type`? The tw-probe stanza was still added
   and removed. Consequence for Tasks 9–10: the new test-writer/implementer agents become
-  dispatchable only after a session restart.
+  dispatchable only after a session restart. *Corrected 2026-10-27 after Task 10:* when the 0.3.0
+  coordinator sync merged, the session announced test-writer and implementer as available without a
+  restart. Agent files are picked up mid-session, possibly a little after they are written. The
+  tw-probe miss came right after `gen.jl` wrote the file, so a short delay may explain it (UNVERIFIED).
 - **Unnamed** (`subagent_type: reviewer`, no name): Read and Bash payloads carry
   `agent_type: "reviewer"` and `agent_id`. `tool_input.file_path` is the worktree path. **PASS.**
 - **Named** (`name: tw-probe-named`, an in-process teammate): the payloads carry
@@ -675,18 +678,47 @@ needs a test and an implementation before 0.3.0.
 
 - [ ] **Step 1:** The critic, then the reviewer, on the factory branch. The report states the
   dogfood limit (Global Constraints).
-- [ ] **Step 2:** Dry run, and paste it:
+- [x] **Step 2:** Dry run, and paste it:
   `julia factory/template/scripts/sync_factory.jl --from factory --to . --profile coordinator`. A
   conflict goes to the lead; never `--force`.
-- [ ] **Step 3:** `--apply` (with `FACTORY_ALLOW_T3=1` from Task 0). Then the hand edits:
+- [x] **Step 3:** `--apply` (with `FACTORY_ALLOW_T3=1` from Task 0). Then the hand edits:
   - the coordinator registry gains the `test_writer` and `implementer` entries (spec §2.1);
   - the coordinator `risk.toml` T3 globs gain the 4 tdd scripts.
 
   Run `julia scripts/gen.jl`, `julia scripts/test/runtests.jl` and `julia scripts/check_docs.jl`;
   all must be OK.
-- [ ] **Step 4:** Check that `ls .claude/agents/ | grep -c -E '^(implementer|test-writer)\.md$'`
+- [x] **Step 4:** Check that `ls .claude/agents/ | grep -c -E '^(implementer|test-writer)\.md$'`
   gives `2`. This is the critic's NB1 reproducer, `0` before the change.
-- [ ] **Step 5:** Commit, review, merge.
+- [ ] **Step 5:** Commit, review, merge. (Commits and review done in lane sync-030; the merge is
+  the lead's.)
+
+**Task 10 result (2026-10-27, lane sync-030):**
+- **Step 2:** the first dry run on 12cbb45 showed add=93, same=49, seeded-differs=8, update=20 and
+  no conflict. It was applied, and the synced tests then failed in the coordinator: 20 failures and
+  35 errors on both versions. They read the package-profile `risk.toml` and `test/runtests.jl`.
+  Lane tw-032 fixed the factory without bumping VERSION (main 1722a44). After merging main, the
+  re-run showed add=3, update=5, same=157, seeded-differs=8, no conflict. Against main: 96 managed
+  files added and 20 updated.
+- **Step 3:** sync commit ef6bf28.
+  - The hand edits are the lead's commit 308b00b: write_guard denies T3 edits to a teammate
+    without `FACTORY_ALLOW_T3`.
+  - The registry gains the template's `implementer` and `test_writer` stanzas verbatim (managed
+    bodies, no `coord_` slug, `file_scope` relative to the package checkout).
+  - `risk.toml` gains all **five** tdd scripts as T3 (with `_tdd_evidence.jl`, which the
+    four-script text above predates).
+  - No `tdd` in the coordinator's tiers (0.3.0 migration list: it has no `src/`). The testers'
+    `disallowed_tools` change does not apply: the coordinator has no tester entries.
+- **Step 4:** the count is `2`.
+- **Lead workflow check:** the synced hooks were run on payloads in a sandbox root with a lane.
+  - These pass: a lead commit with a heredoc `-m` in `<root>`, `git -C <lane>`,
+    `cd <lane> && … git commit`, a commit with cwd = lane, the lead's `git merge --no-ff`, and a
+    non-TDD teammate's commit. All are authored by the real user.
+  - The two role-identity controls are denied.
+- **Blind spots for the next factory change:**
+  - `sync_factory.jl`'s own writes to T3 paths need no T3: the guards see Edit/Write calls and
+    command lines, not a script's file writes.
+  - bash_guard denies `git restore`/`git checkout` of T3 paths and `git clean -f`, so a teammate
+    cannot discard an applied sync.
 
 ### Task 11: Package syncs (one lane per package, in that repo)
 
