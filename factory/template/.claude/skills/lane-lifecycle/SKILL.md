@@ -20,7 +20,9 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   blocked there. Do not work in scratch copies. The parent lane still owns the merge.
 - The brief says: change files with Edit/Write only, never `sed -i`, redirects or heredocs.
 - Each lane records its change in `changelog.d/<name>.md`, never in `CHANGELOG.md`.
-- The cap is `[lanes] max_open` (default 4). `dispatch_limit.sh` refuses the next spawn. A lane
+- The cap is `[lanes] max_open` in `.agents/agent-registry.toml`; the repo's CLAUDE.md states the
+  number with a claim marker (this file is synced unchanged into repos whose caps differ, so it
+  never states one). `dispatch_limit.sh` refuses the next spawn. A lane
   is an Agent dispatch, open until its call returns (foreground), its background agent stops, or
   you `TaskStop <name>` it (a teammate). Give every teammate a `name`. A lane whose agent is gone
   (TaskStop says no task found; a dispatch that never ran) is released with
@@ -45,8 +47,11 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   reported) must pass; a path outside `--owns` is a finding, not a formality. It diffs against
   the local base when that contains `origin/<base>` (local merges not yet pushed are not the
   lane's); `--base B` audits against another base.
-- A lane's report: SendMessage, or `.lanes/reports/<name>.md` in its worktree or the repo root
-  (`teammate_idle` reads both).
+- A lane's report: SendMessage, or `.lanes/reports/<name>.md` (`<name>-<round>.md` per review
+  round) in its worktree or the repo root (`teammate_idle` reads both). The file counts as a
+  report only once its first line is the Verdict line (`Verdict: MAY MERGE | MERGE WITH FIXES |
+  FIX FIRST`, one of the three); until then it is partial. After the reviewer's FINAL report, run
+  `scripts/lane audit <name> --report <file>`: it checks that line and that `Head:` is the lane's HEAD.
 - Close the agent (TaskStop) in the same step as reading its report. A listing is not proof of
   closure. Before recording a lane as `no_report`, check once more for a late message: a report
   can arrive after the stop.
