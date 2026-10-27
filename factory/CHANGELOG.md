@@ -5,6 +5,64 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.3.2 (2026-10-27)
+
+This patch fixes 0.3.1's `ci.jl format` in the coordinator profile (lane tw-035). Every change is
+in managed files. It went test-first: a test agent committed failing tests (c662804), then an
+implementer made them pass (0e16375).
+
+- **Fixtures excluded at any depth (BLOCKER for the coordinator).** `CI.format_files` matched
+  `FORMAT_EXCLUDE = "scripts/test/fixtures/"` with `startswith`, so the exclusion worked only at
+  the repo root. The coordinator vendors the template at `factory/template/`. There,
+  `format_files` selected `factory/template/scripts/test/fixtures/**`, including the deliberately
+  broken `.../scratchpkg/test/parse_tests.jl`, which is the ParseError 0.3.1 fixed for packages.
+  Lane sync-031 hit it: 3 fails in `test_ci_format.jl` (:64, :72, :108) on Julia 1.13.
+  - The rule now matches whole path segments: `occursin("/" * FORMAT_EXCLUDE, "/" * r)`. So
+    `a/b/scripts/test/fixtures/x.jl` is excluded, while `myscripts/test/fixtures/a.jl` and a file
+    named `scripts/test/fixtures.jl` are kept. It applies to both the git listing and the walk
+    fallback.
+  - Rationale: this is the minimal change. A profile-specific skip of `factory/template/` was not
+    needed, because the vendored template's other scripts are factory-managed and Runic-clean.
+- **The Runic-clean test covers only factory-managed scripts.** "Every selected factory-managed
+  script is Runic-clean" (`test_ci_format.jl`) ran Runic on the host's whole selection. In the
+  coordinator that included repo-owned files that are not Runic-clean (`contracts/*.jl`,
+  `reference/prototype/**`). The test's `runic_scope` helper now narrows the set:
+  - in the template, the whole selection;
+  - in a synced host, the selection intersected with `.factory-version` `[managed]`, plus
+    `factory/template/scripts/**`.
+
+  This is test policy only; the format job itself still checks every host `.jl` file.
+- **The coordinator-profile guard runs the format tests.** In `test_profile_coordinator.jl`, the
+  scratch coordinator now looks like the real one: it holds a vendored copy of `factory/`
+  (fixtures included) and an unformatted `contracts/bad.jl`. Its default selection is now
+  `test_dod.jl`, `test_ci_format.jl`, `test_gen.jl` and `test_check_docs.jl`. That costs about
+  22 s for the scratch run, or 28 s for the guard item, against about 30 s for `test_dod.jl` alone
+  before. `FACTORY_GUARD_FULL=1` adds `test_ci.jl` (about 85 s alone) to the tdd files, for about
+  345 s in all.
+  - Other files that read files relative to ROOT were left out of the guard: `test_docs_031.jl`,
+    `test_gen_tdd.jl`, the hook files and `test_tdd_c1`/`c3`. They passed in the real
+    coordinator's full 0.3.1 run, and the hook files are expensive. The `IN_FACTORY`-gated blocks
+    do not run in a host.
+- **CHECK_COVERAGE.** The `scripts/ci.jl` row gains a blind spot: in a coordinator the format job
+  also checks repo-owned files.
+- **Process note: how the gap was missed.** tw-034's suite and the lead's re-run both ran from
+  `factory/template/`, where root = template, so the nested-fixture case never arose. The
+  `FACTORY_GUARD_FULL=1` coordinator-profile guard (`test_profile_coordinator.jl`) ran only
+  `test_dod.jl` and the tdd files, never `test_ci_format.jl`, and its scratch had neither a
+  vendored `factory/` nor any non-factory unformatted file. So no test ran the format tests in
+  the coordinator profile. Lesson: a fix for one profile gets a guard in the other profile. The
+  guard now runs the format, gen and check_docs tests.
+- **Known limits.** The coordinator's own `contracts/` (T3) and `reference/prototype/` are not
+  Runic-clean, and the coordinator has no format CI job. They were not reformatted, so
+  `julia scripts/ci.jl format` run in the coordinator still fails on them. This is recorded in
+  CHECK_COVERAGE. Making the coordinator Runic-clean, or giving it a format exclude list, is a
+  separate decision.
+- **Migration.** Sync 0.3.2; every changed file is managed (`scripts/ci.jl`, the two test files,
+  `test_gen_tdd.jl`, `.agents/checks.toml`, `docs/CHECK_COVERAGE.md`). Then run
+  `julia scripts/gen.jl`. Nothing seeded changes. Packages see no behaviour change: their
+  fixtures sit at the root, which the old rule already excluded. The coordinator's
+  `test_ci_format.jl` passes after the sync.
+
 ## 0.3.1 (2026-10-27)
 
 Fixes what the first live test-first lane (ChuiTypes smoke lane `scan-widen`) exposed in 0.3.0
