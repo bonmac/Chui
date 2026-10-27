@@ -145,7 +145,10 @@ lane. Temporary (removed in step 6): a `tw-probe` entry in `<root>/.agents/agent
   so the probe used the existing custom read-only agent `reviewer`. The question is the same: does
   a custom subagent's PreToolUse payload carry its `agent_type`? The tw-probe stanza was still added
   and removed. Consequence for Tasks 9–10: the new test-writer/implementer agents become
-  dispatchable only after a session restart.
+  dispatchable only after a session restart. *Corrected 2026-10-27 after Task 10:* when the 0.3.0
+  coordinator sync merged, the session announced test-writer and implementer as available without a
+  restart. Agent files are picked up mid-session, possibly a little after they are written. The
+  tw-probe miss came right after `gen.jl` wrote the file, so a short delay may explain it (UNVERIFIED).
 - **Unnamed** (`subagent_type: reviewer`, no name): Read and Bash payloads carry
   `agent_type: "reviewer"` and `agent_id`. `tool_input.file_path` is the worktree path. **PASS.**
 - **Named** (`name: tw-probe-named`, an in-process teammate): the payloads carry
