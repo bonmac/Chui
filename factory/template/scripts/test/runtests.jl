@@ -82,5 +82,6 @@ end
     include("test_tdd_c2.jl")   # critic C2: one trailer parser (git's), phase-less role commits
     include("test_tdd_c3.jl")   # critic C3/C6: skip separators, lead-only modes, per-merge segments
     include("test_tdd_c4.jl")   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
+    include("test_tdd_c5.jl")   # review of the critic fixes: sub-lane merged twice, trailer forms
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end
