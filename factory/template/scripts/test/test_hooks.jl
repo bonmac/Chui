@@ -6,7 +6,7 @@ function hook(name, payload, root; env = Dict{String, String}(), hooks = TEST_HO
     return p.exitcode, String(take!(out)), String(take!(err))
 end
 # 0.2.4: tabs are escaped too; a raw tab is invalid JSON, which the guards now refuse (fail closed)
-json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t")
+json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t", "\r" => "\\r")   # 0.4.0: CR too (CRLF heredocs)
 bash(cmd; cwd = "") = "{\"session_id\":\"s1\",\"cwd\":\"$(json(cwd))\",\"tool_input\":{\"command\":\"$(json(cmd))\"}}"
 write_payload(path; key = "file_path") = "{\"session_id\":\"s1\",\"tool_input\":{\"$key\":\"$(json(path))\"}}"
 blocked(name, payload, root; kw...) = hook(name, payload, root; kw...)[1] == 2
@@ -240,6 +240,8 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         @test hook("lane_ledger.sh", "{\"hook_event_name\":\"SubagentStop\"}", root; hooks = h)[1] == 0   # advisory: fails open
     end
 
+    # 0.4.0 testsets (fail-closed exits, the watchdog, bare cd, heredoc terminators): test_hooks_040.jl
+
     @testset "write_guard" begin
         @test blocked("write_guard.sh", write_payload("$OUT/x.jl"), root)
         @test blocked("write_guard.sh", write_payload(expanduser("~/x.md")), root)
@@ -336,3 +338,5 @@ end
         @test hook("bash_guard.sh", c, r; hooks = hooks_with_roots(String[]; src = hh, required = true))[1] == 2
     end
 end
+
+include("test_hooks_040.jl")   # the 0.4.0 hook testsets: this file and test_hooks_lifecycle.jl are at the 400-line budget

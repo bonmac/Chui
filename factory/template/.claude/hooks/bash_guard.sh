@@ -38,8 +38,16 @@ fi
 # One simple command per line (_bash_guard_lib.sh): heredoc bodies dropped, quoted text one
 # word with its quotes removed, `\`+newline joined. The denylist and the per-command checks
 # both read it, so a quoted commit message is not a command and `"git" reset` is.
-segs=$(printf '%s\n' "$raw" | segments)
+# 0.4.0: a splitter that fails (no awk, or awk crashed) gave an EMPTY list, which passed everything.
+segs=$(printf '%s\n' "$raw" | segments) || deny "the command splitter failed (awk missing or crashed, status $?); bash_guard fails closed. Check PATH for awk."
+case $segs in *[![:space:]]*) ;; *) # an empty list from a non-blank, non-comment command is a silent splitter failure (critic)
+    _t=$raw
+    while :; do case $_t in [[:space:]]*) _t=${_t#?} ;; *) break ;; esac; done
+    case $_t in '' | '#'*) ;; *) deny "the command splitter returned nothing for a non-empty command (awk broken?); bash_guard fails closed." ;; esac
+    ;;
+esac
 has() { printf '%s\n' "$segs" | grep -Eq -- "$1"; }
+has '^__factory_ambiguous_heredoc$' && deny "a heredoc inside a \"\$(...)\" whose closing ) is on the <<EOF line or on the EOF line (\"\$(cat <<EOF)\", 'EOF)') is read differently by bash and zsh (zsh reads on to the bare EOF line and runs what follows), so bash_guard cannot model it: put the closing ) on its own line after the EOF line."
 S='(^|[;&|(`[:space:]])'                          # start of a command word
 G="${S}git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|-[[:alpha:]]|--[a-z-]+(=[^[:space:]]+)?))*[[:space:]]+" # git + global options
 has "${G}reset[[:space:]]+--hard" && deny "git reset --hard is blocked: it discards work. Use a WIP commit or ask."

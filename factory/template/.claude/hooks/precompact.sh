@@ -24,4 +24,13 @@ mkdir -p "$ROOT/.lanes" 2>/dev/null || exit 0
     echo "with results, failures seen, checks NOT run, the agent roster, and the next action."
     echo "Update HANDOFF.md now if any of that is only in the conversation."
 } >"$out" 2>/dev/null
+# 0.4.0 (D2): a ledger over 2,000 lines is compacted after the snapshot (`scripts/lane compact`: every
+# event of an open dispatch chain is kept, plus the last 200 others), so dispatch_limit's count stays
+# inside its watchdog. Needs julia on PATH and scripts/lane.jl in the root; any failure is ignored.
+# Detached (review round 1 m4: nohup, background, no fd of the hook): the hook returns at once, so the
+# host's hook timeout cannot kill a compaction half-way and leave its .dispatch.lock behind.
+if [ -f "$LEDGER_FILE" ] && [ -f "$ROOT/scripts/lane.jl" ] && command -v julia >/dev/null 2>&1 &&
+    [ "$(wc -l <"$LEDGER_FILE" 2>/dev/null | tr -d ' ')" -gt 2000 ] 2>/dev/null; then
+    nohup julia --startup-file=no "$ROOT/scripts/lane.jl" compact --repo "$ROOT" >/dev/null 2>&1 </dev/null &
+fi
 exit 0
