@@ -1,6 +1,14 @@
 # ADR-0001: What we kept and what we changed from the three reference projects
 
-- **Status:** Accepted (2026-10-19, user at the L0 checkpoint)
+- **Status:** Accepted (2026-10-19, user at the L0 checkpoint).
+  *Dated note (2026-10-27, the lead, factory 0.2.8):* the "Lane cap + ledger" row is out of date.
+  The cap is `[lanes] max_open` (6). Since 0.2.8 the ledger counts Agent/Task dispatches, written
+  by `lane_ledger.sh` on PostToolUse, PostToolUseFailure and PermissionDenied; it no longer comes
+  from SubagentStart/Stop. The open question about teammates is answered: in the test-writer Task 0
+  probe (2026-10-27) SubagentStart/Stop fired for no dispatch, and named teammates carry
+  `agent_type` but no `agent_id` (plan `docs/superpowers/plans/2026-10-26-factory-test-writer.md`,
+  Task 0 result). The "teammates get stable ids in hook input" revisit trigger has fired. The
+  answer is to key on `agent_type`, never on ids.
 - **Date:** 2026-10-19
 - **Deciders:** the user, at the L0 ★ checkpoint
 - **Scope:** ecosystem (root repo); implemented by `factory/` 0.1.0
