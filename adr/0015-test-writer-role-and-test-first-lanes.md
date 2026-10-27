@@ -3,6 +3,17 @@
 - **Status:** Accepted (2026-10-26, user, at the merge of `feat/testwriter-spec`). The six design
   questions in it were answered by the user the same day. Implementation follows the plan, after
   factory 0.2.8.
+  *Dated note (2026-10-27, the lead, from the 0.3.0 critic's C1/C3 and the Task 0 probe):* these
+  notes are consequences of the accepted decision, not changes to it.
+  1. **Role identity.** The hooks identify a role by `agent_type` alone. Named teammates have no
+     `agent_id`, and the main session, the lead, has no `agent_type`.
+  2. **Who may dispatch.** Under topology (a), TDD dispatches and `TDD-Mode:` commits belong to
+     the **main session** only. A sub-lead teammate has an `agent_type`, so it cannot dispatch
+     the TDD roles or set a lane's mode, and must ask the lead for both.
+  3. **Test-side roles.** These are one class: test-writer, law-tester, property-tester and
+     differential-tester. Each may author the test phases (`red`, `test-fix`, `test-refactor`,
+     `backfill`) under the same read and write boundary, so law, property and differential tests
+     come from their own roles.
 - **Date:** 2026-10-26
 - **Deciders:** the user. The change is T3 in every repo that takes it: the registry, the bodies,
   the hooks and the gate scripts.

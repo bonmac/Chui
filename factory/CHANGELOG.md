@@ -5,6 +5,287 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.3.0 (2026-10-27)
+
+A `test-writer` role and test-first lanes with separate contexts (ADR-0015; spec
+`docs/superpowers/specs/2026-10-26-factory-test-writer-design.md`, plan
+`docs/superpowers/plans/2026-10-26-factory-test-writer.md`). The tests of a test-first lane come
+from the spec and the public API, written by an agent that never sees the implementation; a second,
+fresh agent writes the code. A minor bump: the guards are stricter (dod `tdd`, `tdd_boundary`, the
+commit guard), the implementer is narrowed, and there is a new seeded edit. Builds on 0.2.8.
+
+- **The 13th role, `test_writer`** (`.agents/agent-registry.toml`, seeded; new managed
+  `.agents/bodies/test_writer.md`). The spec §2.1 entry: `tools` Read, Grep, Glob, Bash, Edit,
+  Write; `disallowed_tools` Agent, Task, SendMessage, WebFetch, WebSearch, NotebookEdit;
+  `file_scope` `test/**`. The body: the context is the boundary (work only from the tdd-brief;
+  never read `src/`/`ext/`, their history, transcripts or the depot); author
+  `test-writer <test-writer@factory.invalid>`; `TDD: red` then `tdd.jl red`; `TDD: test-fix`,
+  `TDD: test-refactor`, `TDD: backfill`; a bug is `@test_broken`; it leaves law, property,
+  differential, contract and JET tests and the seeded runners alone. The registry header says
+  13 roles and cites ADR-0015.
+- **The `implementer` is narrowed.** `file_scope` `src/**`, `ext/**`, `changelog.d/**` (no
+  `test/**`); `tools` Read, Grep, Glob, Bash, Edit, Write, WebFetch, WebSearch; `disallowed_tools`
+  Agent, Task, SendMessage. Role: "Implements one planned task against the test-writer's red tests:
+  minimal code to green, then refactor with tests unchanged." Scorecard "failing test written
+  first" becomes "tdd.jl audit OK". The body: work from the tdd-brief, author
+  `implementer <implementer@factory.invalid>`, never touch `test/**`, disputes as a written
+  test-fix request with no source code, STUB declares only, GREEN is minimal, REFACTOR after a
+  green.
+- **Other bodies.** law-tester, property-tester, differential-tester: "In a test-first lane, commit
+  new items with `TDD: red` before the code." reviewer: the spec §4.5 checklist (boundary first:
+  saved dispatch prompts, separate `agent_id`s per role in the ledger's `tdd-commit` lines, H9
+  authors, every `tdd_boundary` denial a finding, the run-time source-read grep; `MethodError` reds
+  match the spec signature; `HELPER` flags; GREEN is minimal; `git show --cc` merges hold no test
+  edits; `mutexp` justified).
+- **`lane-lifecycle` skill: test-first lanes.** The two brief templates (`<!-- tdd-brief
+  role=test-writer|implementer lane= checkout= head= -->` and their sections); `tdd.jl brief`;
+  dispatch rules (a fresh `subagent_type` per role, never a fork, no `team_name`, subagents only,
+  a clean lane); the brief is the only channel; the `TDD-Mode:` trailer on a commit authored
+  `lead <lead@factory.invalid>`; merge, never rebase.
+- **`/change-review`** runs `tdd.jl audit --base main --ledger <root>/.lanes/ledger.jsonl` and
+  `dod.jl` for a test-first lane, and reads the saved prompts under `<main>/.lanes/briefs/<lane>/`.
+- **`CLAUDE.md`** (seeded): the `scripts/tdd.jl` red/green/audit lines, `tdd_boundary` in the hook
+  list, and one line on test-first lanes. The template's copy changes; a repo's own copy is a
+  hand edit (optional).
+- **What the Task 0 probe established** (2026-10-27, plan Task 0), and what the hooks rely on:
+  - TDD dispatches MAY use `name` (`tw-<lane>-<task>` / `impl-<lane>-<task>`): a named
+    teammate's payloads carry `agent_type`, but no `agent_id`. The hooks key the role on
+    `agent_type` only, never `agent_id`.
+  - The lead is the caller with no `agent_type`.
+  - SubagentStart/SubagentStop never fired for either dispatch; nothing relies on them.
+  - A new agent type added mid-session is not dispatchable until the session restarts: after
+    syncing 0.3.0 and adding the registry entries, **restart the session** before the first TDD
+    dispatch.
+- **Hooks (plan Task 8):** `.claude/hooks/tdd_boundary.sh` (PreToolUse: the test-writer's
+  Read/Grep/Glob and Bash allowlists and `test/**`-only writes, the implementer's `test/**` denial,
+  the lead-only dispatch of a role with a matching tdd-brief header, saved under
+  `<main>/.lanes/briefs/<lane>/dispatched/`), the sourced `_tdd_allow.sh` and `_tdd_commit_guard.sh`
+  (the effective author of every `git commit`, role identities and the lead identity, `TDD-Mode:`
+  denied to role callers, no background commits), and `tdd_commit_post.sh` (PostToolUse and
+  PostToolUseFailure `Bash`: the resulting commits' author, phase and paths; ledger `tdd-commit` /
+  `tdd-commit-violation`). `settings.json` gains the matchers; `checks.toml` the register rows.
+  **Deviation from the spec:** its single `tdd_boundary` register row is split into
+  `tdd_boundary` and `tdd_commit_post`, because every hook must be its own `prevented_by` file
+  (the `test_gen` register invariant).
+- **Deviations from the spec and plan in the hooks** (the full list, after review rounds 1 to 3):
+  - **A fourth hook file.** The plan named `tdd_boundary.sh` and `tdd_commit_post.sh`; the
+    150-line hook cap adds the sourced `_tdd_allow.sh` (allowlists, the implementer's Bash write
+    check) and `_tdd_commit_guard.sh` (the Pre half of the commit guard). The `tdd_boundary` row's
+    rule names both. The dispatch check (`tdd_dispatch`) lives in `_lanes.sh`, because
+    `dispatch_limit.sh` runs it too (below).
+  - **The register split** into `tdd_boundary` and `tdd_commit_post` (above).
+  - **The sweep** (§0.5 left it open). A pending entry `.lanes/tdd-pending/<tool_use_id>` older
+    than 11 minutes (the Bash tool's 10-minute maximum, plus one) belonged to a call that fired
+    no post event: a later call sweeps and deletes it, and records each of its commits only as
+    `tdd-commit-late {agent_id, agent_type, checkout, sha}`, never `tdd-commit` and never
+    `tdd-commit-violation`, and prints nothing. E5 accepts only `tdd-commit`, so a cancelled
+    call's commit fails E5 with "(only a late swept record: re-make or amend it through the
+    hooks)". Both the post hook and the sweep attribute to a call only the commits on
+    `git log --first-parent <HEAD before>..HEAD` (at most 100) whose committer time is within
+    [entry mtime − 5 s, entry mtime + 600 s]: a commit forged outside the hooks in a stale
+    entry's window is never recorded as the role's (stale entries only: one made in the same
+    checkout while another call is in flight, up to 10 minutes, is recorded as that call's
+    caller's, no stronger than a forged ledger line; the `tdd_commit_post` row says so), and a
+    merge of main records only the merge commit, never main's role commits. The committer time
+    decides the window, so a backdated commit gets no record and fails E5 (fail-closed).
+  - **E5 matches `tdd-commit-violation` records by the lane's commit shas only** (not also by
+    checkout), so a violation stops failing the lane once the commit is replaced.
+  - **Stricter role-commit rules than §0.5:** a role caller's `git commit` takes no `-a`/`-i`/
+    `-o`/`-p`/pathspecs (it commits the staged index); `--author` must be a full `Name <email>`;
+    a `git commit` after a `cd` the guard cannot follow needs `git -C <absolute checkout>`; a
+    commit run through a wrapper (`xargs git commit`, `sh -c`) is denied as unmodelled, while a
+    plain mention (`echo … git commit`, `printf`) is allowed; a test-writer's `-F`/`--file`/
+    `-t`/`--template` file is `-` (stdin) or on its read allowlist; only a `TDD-Mode:` trailer
+    line (case-insensitive key and colon) is denied to the role callers, not "tdd-mode" in prose.
+  - **The post hook exits 2 on a violation** (the message reaches the caller; PostToolUse cannot
+    undo the commit), not 0.
+  - **Test-writer Bash extras:** `true`, `false`, `echo`, `printf` and `pwd`; any word with `$`,
+    a backquote, `{`, `}` or a leading `~` is denied (brace expansion escaped `test/`), and an
+    implementer's Bash write target with `{` or `}` is denied. Review 2: a test-writer's or an
+    implementer's Bash command containing `$'` or `$"` is denied whole (rule `ansi-c-quote`),
+    before it is split: bash_guard's parser drops the `$` and mangles `\x` escapes, so
+    `cat test/$'\x2e\x2e'/src/a.jl` passed the path check. The lead is unaffected. Review 3: a
+    test-writer's raw Bash command containing `$`, a backquote or `<<` anywhere (heredocs and
+    `<<<` included) is denied whole (rule `tw-heredoc`), before it is split: bash_guard's parser
+    drops heredoc bodies, so `cat <<EOF` / `$(cat src/a.jl)` / `EOF` reached the checks as a
+    plain `cat` while bash expanded the body. The deny tells the test-writer to put a commit
+    message in plain quotes (`-m "test: …"`). The implementer and the lead keep heredocs
+    (`git commit -m "$(cat <<'EOF' … EOF)"`); an implementer's unmodelled write inside a heredoc
+    body is caught only at commit, by the staged-path check (H3/H4).
+  - **A `.git` marks a checkout** only as a directory or as a `gitdir:` file whose worktree record
+    points back, and (review 2) only when the directory entry is named exactly `.git`: on a
+    case-insensitive APFS a written `test/.GIT/HEAD` made `[ -d test/.git ]` true. A role never
+    Writes/Edits a `.git` path, in any letter case (a planted `test/.git` moved the root).
+    `is_co`, `co_of` and `in_root` moved from `_lib.sh` to `_tdd_allow.sh` (only
+    `tdd_boundary.sh` uses them; `_lib.sh` was at the 150-line cap); `phys` stays in `_lib.sh`.
+  - **A denied TDD dispatch opens no lane.** `dispatch_limit.sh` runs the same dispatch check and
+    denies without recording, since the two hooks run in parallel; the brief's `lane=` must be the
+    lane of a `.worktrees/<lane>` `checkout=`. Review 2: the check includes the prompt-save step's
+    precondition (the `dispatched/` directory can be created and written), so a save denial no
+    longer leaves a lane open; only a write that fails after the check (a full disk) still can.
+  - **Blind spots not in the pinned lists.** The register test pins the `tdd_boundary` and
+    `tdd_commit_post` blind-spot lists to the spec's ten, so the two review-2 additions (a commit
+    made while another call in the same checkout is in flight is attributed to that call's caller;
+    a backdated committer time gets no record and fails E5) are stated in the `tdd_commit_post`
+    row's rule text in `checks.toml` and `docs/CHECK_COVERAGE.md`.
+- **Tasks 1–7** (merged earlier as part 1): the failure-output fixtures for Julia 1.13.2 and
+  1.10.12; the seeded `test/runtests.jl` `item=` selection and the `TDD_MATCHED` record;
+  `scripts/_tdd_classify.jl` (ASSERTION, BEHAVIOUR, WRONG-REASON, PASSED, NOT-RUN, COLLATERAL,
+  HELPER); `scripts/tdd.jl` `red`, `green`, `api`, `brief`; `scripts/_tdd_history.jl` (H1–H9,
+  E1–E5) and `tdd.jl audit`; `scripts/_tdd_backfill.jl` (`mutate`, `gaps`); dod's `tdd`
+  requirement and the seeded `risk.toml` (`tdd` in T1–T3, the four tdd scripts in T3).
+- **Fixes in this release:**
+  - `tdd.jl green`: a red item renamed by a test-writer `TDD: test-fix` commit with passing red
+    evidence no longer deadlocks green; it is reported `RENAMED` (a26bf04).
+  - dod `changelog`: the heading check covers modified fragments too, not only added ones (281686e).
+  - The factory test runner unsets `FACTORY_ALLOW_T3`, `FACTORY_ALLOW_PUSH` and
+    `FACTORY_ALLOW_OUTWARD` for child processes; the hook tests failed when the caller had T3 set
+    (bd1de78).
+- **Critic fixes C1 and C2** (`.lanes/reports/critic-030.md`; red tests `test_tdd_c1.jl`,
+  `test_tdd_c2.jl`):
+  - **C1: the test-side roles are a class.** `test-writer`, `law-tester`, `property-tester` and
+    `differential-tester` may each author `TDD: red`, `test-fix`, `test-refactor` and `backfill`,
+    under their own identity `<role> <<role>@factory.invalid>` (`TEST_ROLES`, `phase_authors` in
+    `_tdd_history.jl`: H9, H4, E5). One shell list, `test_role`/`tdd_role` in `_lib.sh`, keys
+    every hook on `agent_type`: all four get the test-writer's boundary (no `src/` reads, writes
+    under `test/` minus the seeded runners, the same Bash allowlist, and only their own
+    `.lanes/briefs/<lane>/<role>-*`); the commit guard's `role_of`/`id_rule`/`role_paths` and the
+    post hook's phase check accept any of them for the test phases. Before, a law-tester obeying
+    its body ("commit new items with `TDD: red`") failed H9 (or H4 without a phase) permanently.
+    Dispatch stays the lead's alone, with a tdd-brief header `role=<role>`;
+    `tdd.jl brief --role law-tester|property-tester|differential-tester` writes the test-writer's
+    sections. Bodies: the three tester bodies say how they work in a test-first lane (their
+    tdd-brief, the boundary, their identity, `TDD: red`); `test_writer.md` no longer lists their
+    items as "not yours" and points to the dedicated roles. Registry: the three gain
+    `disallowed_tools` Agent, Task, SendMessage (as the test-writer: no channel to the
+    implementer), a description and a scorecard line for test-first lanes.
+  - **C2: git's trailer semantics are the one parser.** `tdd_commit_post.sh` reads the phase and
+    mode with `git log -1 --format=%(trailers:key=TDD,valueonly)` (and `key=TDD-Mode`), as
+    `lane_commits` (new `git_trailer`) and `tdd.jl phase()` do; `trailers(msg)` is
+    `git interpret-trailers --parse`. Before, the post hook took a `TDD:` line from anywhere,
+    while H1/H9 read only the last paragraph, so `-m "test: x" -m "TDD: red" -m "Co-Authored-By: …"`
+    passed the hook and failed dod later. Now a role commit with no phase as git reads it is a
+    post-hook violation (rule `no-phase`, exit 2) while it is still HEAD, and the message gives
+    the repair: `git -C <checkout> commit -q --amend --no-edit --trailer "TDD: <phase>"`. A lead
+    commit with no phase stays clean.
+  - **The one commit form**, in every role body (test-writer, implementer, the three testers) and
+    the lane-lifecycle skill: `git -C <lane> commit -q --author "<role> <<role>@factory.invalid>"
+    -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5
+    <noreply@anthropic.com>"`, run in its own Bash call, never chained with `tdd.jl red` or
+    anything else (a cancelled chained call leaves a late commit, critic C4). `--trailer` needs
+    git 2.32 or later.
+- **Critic fixes C3, C4, C6, C7 and C8** (`.lanes/reports/critic-030.md`; red tests `test_tdd_c3.jl`,
+  `test_tdd_c4.jl`):
+  - **C3: skip separators.** `parse_mode` takes ` — `, ` - ` or ` -- ` as the reason separator (its
+    first occurrence; later ones stay in the reason). `skip`, `skip -` and `skip —` with no reason
+    still fail H8. Before, `TDD-Mode: skip - format fix` had reason "" and failed H8, and since the
+    oldest mode trailer decides, only a rewrite fixed it. The migration list below names the skip
+    commit and the sub-lead limit.
+  - **C4: a cancelled commit call.** Every role body and the lane-lifecycle skill say to run
+    `git commit` in its own Bash call, never chained. The skill names the lead's recovery: amend
+    while the commit is HEAD; otherwise reset the lane to before it and re-dispatch, or attest it
+    with an **E5 lead waiver**: a lane commit authored `lead <lead@factory.invalid>` with the git
+    trailer `TDD-Waiver: E5 <sha> — <reason>` (sha full or ≥ 7 hex, naming one lane commit; any
+    `parse_mode` separator; a non-empty reason). It lets a role commit whose only ledger record is
+    `tdd-commit-late` pass E5. It never covers a sha with no record or a `tdd-commit-violation`.
+    The commit guard denies a role caller's commit that carries a `TDD-Waiver:` trailer (rule
+    `waiver-trailer`); the lead may write one.
+  - **C6: modes per merged sub-lane** (option a). `lane_segments` splits `base..head`: for each
+    merge M on the first-parent chain, the commits of `M^1..M^2` form a segment under that
+    sub-lane's own mode commit; the commits made directly on the integration branch form one
+    segment under the branch's own mode commit. `tdd.jl audit` and dod's `tdd` apply H1–H9 per
+    segment (`segment_rules`). Before, a refactor-mode sub-lane merged before a required-mode one
+    turned the latter's red and green into H8 failures. The E rules still read the whole lane.
+    **Known limit:** so audit's E2 refactor check uses the mode of the whole lane (the oldest mode
+    trailer, `_tdd_evidence.jl` `audit`), not each segment's: a refactor-mode sub-lane merged into a
+    required-mode branch gets no E2 green-at-the-merge-base check, and a refactor-mode branch's
+    check runs once, at the lane's merge base.
+  - **C7: named blind spots** (`checks.toml`, `docs/CHECK_COVERAGE.md`): merge commits are
+    invisible to H1/H3/H4 (`--no-merges`; only the reviewer's `git show --cc` sees a merge
+    resolution); a git alias (`git ci`) bypasses the commit guard; E5 catches alias commits by role
+    identities, dod does not.
+  - **C8:** `test_writer.md` rule 1 cites the API as `julia scripts/tdd.jl api` prints it (on Julia
+    1.10 `api` prints NOT RUN), never a docstring read in `src/`.
+  - `scripts/_tdd_history.jl` was at its 400-line budget: the evidence rules E1–E5, the ledger
+    and `audit` move to a new managed, T3 `scripts/_tdd_evidence.jl`, which only `tdd.jl` includes.
+- **Review of the critic fixes** (the reviewer's FINAL on 1097ee1..55ff8ca; red tests
+  `test_tdd_c5.jl`, 8d77f1c):
+  - **FIX-1: a sub-lane merged twice is one segment.** `lane_segments` joins a merge's segment to
+    an earlier merge's when that merge's `M^2` lies on the later `M^2`'s first-parent chain (the
+    same sub-lane, merged again). Before, the second merge's refactor formed a segment of its own,
+    with no red and no mode, and failed H2 and H6. A different sub-lane cut from the integration
+    branch after the first merge reaches that `M^2` only through a merge's second parent, so it
+    stays its own segment; nested merges are unchanged. 7 more lines (C6: 33 of its 40).
+  - **Trailer parsing agrees with git's commit parser:** `trailers(msg)` runs
+    `git interpret-trailers --parse --no-divider` (a commit message has no `---` divider).
+  - **The `=` form of `--trailer`** (`--trailer "TDD-Mode=…"`, `"TDD-Waiver=…"`, any case; git
+    writes `Key: value`) is denied to a role caller at Pre, rules `mode-trailer` and
+    `waiver-trailer`, as the `:` form is.
+  - `parse_mode` also takes the en dash ` – ` as the reason separator; the first separator wins.
+  - Docs: the E2 known limit (C6 above); the `checks.toml` `tdd` and `tdd_boundary` rules (and
+    `docs/CHECK_COVERAGE.md`) name every test-side role (test-writer, law-, property-,
+    differential-tester), not only the test-writer. The tdd_boundary row keeps its two git-alias
+    blind spots: `test_hooks_tdd.jl` pins both texts exactly. The only test-fix commit in this
+    round's history is 55ff8ca (it pins the C7 blind spots); the C1/C2 note about a test-fix lane
+    for old tests is removed.
+- **The managed tests pass in a coordinator-profile sync** (lane tw-032, found syncing 0.3.0 into
+  the coordinator; red test 4a774d9). Several tests read the host repo's seeded `risk.toml` (and
+  expected `tdd` in T1–T3) or copied its seeded `test/runtests.jl`. A coordinator has neither (no
+  `tdd` tier, no `test/`), so a scratch coordinator synced to 0.3.0 had 16 fails and 30–35 errors.
+  - New managed fixtures `scripts/test/fixtures/seed/risk.toml` and `runtests.jl`: the package
+    seeds, byte for byte (`test_dod.jl` checks this inside `factory/`). `test_dod.jl`,
+    `test_tdd_review.jl`, `test_tdd_c3.jl` and `test_tdd_cli.jl` (so also `test_tdd_backfill.jl`)
+    build their scratch repos from them through `seed_fixture` in `runtests.jl`.
+  - "risk.toml requires tdd" checks the package seed; the host's own `risk.toml` must only protect
+    the tdd scripts as T3 (true in both profiles). Inside `factory/`, the coordinator profile seed
+    has no `tdd` in its tiers.
+  - Guard: `test_profile_coordinator.jl` syncs the template into a scratch repo with
+    `--profile coordinator` and runs the scratch's own `scripts/test/runtests.jl` there, selected
+    with the new `FACTORY_TEST_ONLY=<file>,...`; it expects no fail and no error. By default it runs
+    `test_dod.jl` only (about 30 s); `FACTORY_GUARD_FULL=1` adds `test_tdd.jl`, `test_tdd_backfill.jl`,
+    `test_tdd_review.jl` and `test_tdd_c3.jl` (about 4.5 min of package runs, so opt-in). Every
+    factory change that touches `scripts/test/` or the tdd scripts runs it before merge, from
+    `factory/template`: `FACTORY_GUARD_FULL=1 FACTORY_TEST_ONLY=test_profile_coordinator.jl julia
+    --startup-file=no scripts/test/runtests.jl` (`factory/README.md`). `runtests.jl` now imports `TOML` and `SHA` itself, so a selection
+    runs on its own. No migration step.
+- **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the five tdd
+  scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
+  them by hand (below).
+- **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the five tdd
+  scripts, the four tdd hook files (`tdd_boundary.sh`, `_tdd_allow.sh`, `_tdd_commit_guard.sh`,
+  `tdd_commit_post.sh`) and the changed `_lib.sh`, `_lanes.sh`, `dispatch_limit.sh`, `settings.json`, `test_writer.md` and the
+  changed bodies, `checks.toml`, `dod.jl`, `/change-review`, `lane-lifecycle`. The seeded hand
+  edits (T3, `FACTORY_ALLOW_T3=1`):
+  - **coordinator:** `.agents/agent-registry.toml` gains the `test_writer` and `implementer`
+    entries as in the template (D7 reversed; both use the vendored template bodies); `risk.toml`
+    adds `scripts/tdd.jl`, `scripts/_tdd_classify.jl`, `scripts/_tdd_history.jl`,
+    `scripts/_tdd_evidence.jl` and `scripts/_tdd_backfill.jl` to the T3 globs. No `tdd` in its
+    tiers: it has no `src/`.
+  - **ChuiCore.jl** (after v0.0.1), **ChuiTypes.jl, ChuiFrames.jl** (after their open branches
+    merge): the registry `test_writer` entry and the `implementer` change (`file_scope`, `tools`,
+    `disallowed_tools`, role, scorecard), and the `law_tester`, `property_tester` and
+    `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard);
+    `risk.toml`: `tdd` in the T1–T3 `requires` and the five tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
+    the template.
+  - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.
+  - **Non-TDD code lanes need a lead skip commit** (critic C3). Once `tdd` is in a tier, every lane
+    that changes `src/` or `ext/` without the test-writer and implementer roles (a format fix, a perf
+    lane, a release fix, sub-lead work) fails dod (H1/H2) unless it carries a `TDD-Mode: skip`
+    commit authored by the lead. The lead runs, once per lane, before its first code commit:
+    - `git -C <lane> commit -q --allow-empty --author "lead <lead@factory.invalid>" -m "chore: tdd skip" --trailer "TDD-Mode: skip — <reason>"`
+  - **TDD dispatches and mode commits are the lead's** (the main session). A sub-lead teammate has an
+    `agent_type`, so `tdd_dispatch` denies its TDD dispatches (`dispatch-not-lead`) and the commit
+    guard denies it the lead identity: it can neither dispatch the TDD roles nor set a mode. A
+    sub-lead asks the lead for both.
+  - **In-flight branches:** add the skip commit to a branch that changes code before merging main
+    into it: the merge brings main's `risk.toml` with `tdd` in its tiers, and the branch's code
+    commits then fail H1 without it.
+- **Dogfood numbers (spec §6, plan Task 9 step 5).** Handoffs per task in lane tw-031, counted by
+  its sub-lead: item a 2 (test writer, implementer), item b 2, item c 2 (the three fixes above),
+  Task 8 3 (test writer, implementer, one test-fix), Task 9 2. So 2 handoffs per task, 3 with a
+  dispute round, in line with the spec's estimate of 2–4. Wall-clock per task for Tasks 2–7 is in
+  the tw-030 lane's records; this lane did not measure it: not measured here.
+
 ## 0.2.8 (2026-10-26)
 
 The lane cap (`dispatch_limit.sh`) was not enforced. It counted SubagentStart minus SubagentStop,

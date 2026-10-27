@@ -21,10 +21,11 @@ module Tdd
     include(joinpath(@__DIR__, "_common.jl"))
     include(joinpath(@__DIR__, "_tdd_classify.jl"))
     include(joinpath(@__DIR__, "_tdd_history.jl"))
+    include(joinpath(@__DIR__, "_tdd_evidence.jl"))   # E1-E5, the ledger, audit (split for the line budget)
     include(joinpath(@__DIR__, "evidence.jl"))   # module Tdd.Evidence
     include(joinpath(@__DIR__, "_tdd_backfill.jl"))
 
-    const ROLES = ("test-writer", "implementer")
+    const ROLES = (TEST_ROLES..., "implementer")   # critic C1: the test-side roles of _tdd_history.jl
     const RED_PHASES = ("red", "test-fix")
 
     # -----------------------------------------------------------------------------------------
@@ -32,7 +33,7 @@ module Tdd
 
     is_dirty(root) = !isempty(something(git(root, "status", "--porcelain"), ""))
     "The `TDD:` trailer of commit `rev` (`\"\"` when it has none)."
-    phase(root, rev) = String(strip(first(split(something(git(root, "log", "-1", "--format=%(trailers:key=TDD,valueonly)", rev), ""), '\n'))))
+    phase(root, rev) = git_trailer(root, rev, "TDD")   # git's parse, as lane_commits and the post hook (critic C2)
     "The shas of the non-merge commits in `base..HEAD`, oldest first; `nothing` when `base` has no merge
     base with HEAD. (`lane_commits` in _tdd_history.jl returns them as `LaneCommit`s.)"
     function lane_shas(root, base)
@@ -133,18 +134,50 @@ module Tdd
     # green
 
     """
+        renamed_by(root, commits, name) -> sha or nothing
+
+    The test-fix that frees red item `name`, gone at HEAD (plan Task 9 ruling): a commit after the
+    last red/test-fix requesting `name`, with trailer `TDD: test-fix`, authored by the test-writer,
+    that removes `name`, has red items of its own (the new name) and passing red evidence (E1's
+    `red_pass` plus `red <sha7>: OK`). Anything else (another author or phase, no evidence, a
+    deletion with no replacement) frees nothing.
+    """
+    function renamed_by(root, commits, name)
+        i = findlast(c -> c.phase in RED_PHASES && any(s -> s.name == name, requested(root, c.sha).red), commits)
+        i === nothing && return nothing
+        for c in commits[(i + 1):end]
+            (c.phase == "test-fix" && c.author in role_author.(TEST_ROLES)) || continue
+            isempty(spans_at(root, "$(c.sha)^", [name])) && continue   # not the commit that removed it
+            isempty(spans_at(root, c.sha, [name])) || continue
+            isempty(requested(root, c.sha).red) && continue            # no replacement
+            ev = evidence_file(joinpath(Evidence.evidence_dir(root), "red-$(sha7(c.sha)).txt"))
+            red_pass(ev, c.sha) && occursin(Regex("(?m)^red $(sha7(c.sha)): OK\\b"), ev.tdd) && return c.sha
+        end
+        return nothing
+    end
+
+    """
         green(root; base = "main", io) -> exit code
 
     The items of every `red`/`test-fix` commit in `base..HEAD` must all be selected and pass, with a
     `Test Summary:` total of at least their count; then the default suite must pass. Evidence `green`.
+    An item gone at HEAD is NOT-RUN unless a test-writer test-fix renamed it (`renamed_by`); then
+    it is dropped and reported as `RENAMED`.
     """
     function green(root; base = "main", io = stdout)
         refuse_dirty(root, io, "green") && return 2
-        reds = lane_shas(root, base, RED_PHASES)
-        reds === nothing && (println(io, "tdd.jl green: no merge base with `$base` in $root (exit 2)."); return 2)
+        commits = lane_commits(root, base)
+        commits === nothing && (println(io, "tdd.jl green: no merge base with `$base` in $root (exit 2)."); return 2)
         have_ci(root, io, "green") || return 2
-        names = unique!([s.name for c in reds for s in requested(root, c).red])
+        names = unique!([s.name for c in commits if c.phase in RED_PHASES for s in requested(root, c.sha).red])
         buf = IOBuffer()
+        present = Set(s.name for s in spans_at(root, "HEAD", names))
+        for n in filter(!in(present), names)
+            fix = renamed_by(root, commits, n)
+            fix === nothing && continue
+            println(buf, "RENAMED  $n (test-fix $(sha7(fix)))")
+            filter!(!=(n), names)
+        end
         if !isempty(names)
             spans = spans_at(root, "HEAD", names)
             r = run_items(root, "green", names; io)
@@ -253,7 +286,7 @@ module Tdd
         b = IOBuffer()
         println(b, "<!-- tdd-brief role=$role lane=$lane checkout=$checkout head=$head -->")
         println(b, "## Task\n\n(the lead pastes the plan task text here)\n\n## Spec\n\n(the lead names the spec path here)\n")
-        if role == "test-writer"
+        if role != "implementer"   # a test-side role (critic C1) gets the test-writer's brief
             stubs = filter(c -> phase(root, c) == "stub", commits)
             bad = filter(c -> !stub_declares_only(root, c), stubs)
             if !isempty(bad)

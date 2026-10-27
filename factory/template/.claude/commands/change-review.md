@@ -16,6 +16,11 @@ Review target: $ARGUMENTS (empty means the current branch)
    `git diff --stat $(git merge-base HEAD main)..HEAD`, `julia scripts/dod.jl --base main`
    and `julia scripts/ci.jl guards`. A lane created without `--owns` fails the audit: pass
    `--owns` to audit.
+   For a test-first lane (a `TDD:` or `TDD-Mode:` trailer on the branch), the reviewer also runs,
+   in the lane, `julia scripts/tdd.jl audit --base main --ledger <root>/.lanes/ledger.jsonl` and
+   `julia scripts/dod.jl --base main`, and reads the saved dispatch prompts under
+   `<main>/.lanes/briefs/<lane>/` (`dispatched/` holds what was actually sent) against the
+   lane-lifecycle brief templates. Then the reviewer body's test-first checklist.
 3. Wait for the reviewer's FINAL report. A preview is not a verdict; a report file whose first
    line is not the Verdict line is partial.
 4. Check the findings yourself before acting on them: each needs file:line and evidence.

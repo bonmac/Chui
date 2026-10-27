@@ -1,7 +1,6 @@
 # shellcheck shell=sh
 # _lib.sh: shared helpers for the factory hooks. Sourced, never run.
-# POSIX sh + jq, because a hook runs on every tool call: sh+jq starts in ~5 ms,
-# `julia` in ~150 ms warm (measured 2026-10-19, see factory/README.md).
+# POSIX sh + jq, because a hook runs on every tool call: sh+jq starts in ~5 ms, `julia` in ~150 ms warm (2026-10-19).
 # Guards (bash_guard, write_guard, dispatch_limit) fail CLOSED when jq is missing;
 # advisory hooks (ledger, idle, precompact) fail OPEN.
 
@@ -98,42 +97,15 @@ fold_pending() {
     done
 }
 # Lane counting (lane_key, OPEN_LANES_JQ, LANE_TTL_SECS) lives in _lanes.sh (0.2.8).
+# normpath, abspath and phys live in _paths.sh (split for the 150-line cap); a missing one blocks.
+[ -f "$HOOKS_DIR/_paths.sh" ] || deny "$HOOKS_DIR/_paths.sh is missing; the hook fails closed. Restore it (julia scripts/sync_factory.jl)."
+# shellcheck source=_paths.sh
+. "$HOOKS_DIR/_paths.sh"
 
-# normpath ABS: collapse //, /./ and /../ textually (symlinks are not resolved).
-normpath() {
-    _out=""
-    _oldifs=$IFS
-    case $- in *f*) _noglob=1 ;; *) _noglob="" ;; esac # restore the caller's noglob state
-    IFS=/
-    set -f
-    for _seg in $1; do
-        case $_seg in
-            '' | .) ;;
-            ..) _out=${_out%/*} ;;
-            *) _out="$_out/$_seg" ;;
-        esac
-    done
-    [ -n "$_noglob" ] || set +f
-    IFS=$_oldifs
-    printf '%s\n' "${_out:-/}"
-}
-
-# abspath PATH [BASE]: expand ~, make relative paths absolute against BASE, normalise.
-# shellcheck disable=SC2088 # matching a literal "~/" prefix is the point
-abspath() {
-    case $1 in
-        "~") _p=$HOME ;;
-        "~/"*) _p="$HOME/${1#"~/"}" ;;
-        "~+") _p=${2:-$ROOT} ;; # the current directory
-        "~+/"*) _p="${2:-$ROOT}/${1#"~+/"}" ;;
-        '$HOME' | '${HOME}') _p=$HOME ;;
-        '$HOME/'*) _p="$HOME/${1#'$HOME/'}" ;;
-        '${HOME}/'*) _p="$HOME/${1#'${HOME}/'}" ;;
-        /*) _p=$1 ;;
-        *) _p="${2:-$ROOT}/$1" ;;
-    esac
-    normpath "$_p"
-}
+# test_role ROLE / tdd_role ROLE (factory 0.3.0, critic C1): the one list of test-side roles (they author the test
+# phases and share the test-writer's boundary); a TDD role is a test-side role or the implementer.
+test_role() { case $1 in test-writer | law-tester | property-tester | differential-tester) return 0 ;; esac; return 1; }
+tdd_role() { [ "$1" = implementer ] || test_role "$1"; }
 
 # allowed ABS: true if ABS is inside the repo root, a lane worktree or the reports of its main checkout (in_main), or a scratch location.
 allowed() {

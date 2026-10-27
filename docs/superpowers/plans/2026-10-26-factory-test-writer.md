@@ -558,6 +558,32 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
   timings. Check that each file is ≤ 150 lines.
 - [ ] **Step 5:** Commit: `feat(factory): tdd boundary hook and commit guard`.
 
+**Task 8 note (2026-10-27, lane tw-031; sub-lead tw-build2):**
+- Red tests 9a6266c (46 testsets, 231 failures; written by a fresh general-purpose subagent);
+  implementation 5708160 and ca4ae7f (factory-maintainer); test-fix c7558a6.
+- Deviations: a fourth hook file `_tdd_allow.sh` (the rules did not fit 3 × 150 lines); the register
+  row split into `tdd_boundary` + `tdd_commit_post` (every hook must be its own `prevented_by`
+  file); the sweep picks up only entries older than 15 min, so parallel calls don't sweep each
+  other; role callers are stricter (no `-a`/pathspec commits, `--author` must be a full identity).
+- Timings (ms/call, including a 6.5 ms spawn; load 4–6): lead Read 21, test-writer Read 23, lead
+  Bash 21–26, test-writer Bash 28, denial 58, `git commit` Pre 52–55, post 24 (none pending) and
+  113 (one recorded). The common paths are under 30 ms; commits and denials are not.
+- **E5 ruling (sub-lead, review round 1; the lead accepted it on 2026-10-27; the lead adds the spec
+  note at merge):**
+  - E5 matches a `tdd-commit-violation` only by the lane's commit shas, no longer also by
+    `checkout`.
+  - A commit recorded only by a sweep (`tdd-commit-late`) does not satisfy E5.
+  - The sweep writes neither `tdd-commit` nor violations. The post hook and the sweep attribute only
+    `--first-parent` commits whose committer time falls inside the call's window (the entry's
+    mtime − 5 s to + 600 s).
+  - Reason: the reviewer measured three cases.
+    - A Pre entry left by a call that never ran (bash_guard denied it in parallel, or the user
+      cancelled it) gave other callers' commits spurious violations.
+    - A commit forged outside the guard got a late `tdd-commit` that E5 accepted.
+    - A lead's merge of `main` checked main's role commits against the lead.
+  - A violation matched by checkout failed the lane for good. Matching by sha makes "replace the
+    commit" a real way out.
+
 **Left to review on purpose (m4).** These rules are stated in the spec but have no mechanical test,
 and the reviewer checks them (spec §4.5):
 
@@ -606,6 +632,44 @@ needs a test and an implementation before 0.3.0.
 - [ ] **Step 5: Dogfood numbers.** Handoffs and wall-clock per task for Tasks 2–8, taken from the
   ledger, go into the CHANGELOG entry (spec §6).
 - [ ] **Step 6:** Commit: `feat(factory): test-writer role, factory 0.3.0`.
+
+**Task 9 note (2026-10-27, lane tw-031; sub-lead tw-build2):**
+- Red tests 52e6712 (test_gen_tdd.jl, 13 testsets, 102 failures); implementation d1562e5; test-fix
+  c684f25. That test-fix replaced two pins that contradicted each other with a check of the
+  implementer's File scope line, updated the PreToolUse count to 5, and gated the seeded-content
+  asserts on `IN_FACTORY` so synced repos pass.
+- 0.3.0 items, each a red/green pair:
+  - (a) renamed red item, 9a353ad → a26bf04: a test-writer `TDD: test-fix` with OK red evidence
+    frees the old name;
+  - (b) the dod heading check on modified fragments, 563b1d2 → 281686e;
+  - (c) test isolation, 65ce29d → bd1de78: the runner unsets `FACTORY_ALLOW_T3`, `_PUSH` and
+    `_OUTWARD`. RED with them set: 127 failures.
+- Step 4 ran on plain logs, not through `evidence.jl`: `FACTORY_ALLOW_T3=1`, at c684f25. On 1.13,
+  2753 pass, 2 broken. On 1.10, 2748 pass, 2 broken. `gen.jl --check` OK (32 files).
+- Step 5: handoffs were 2 each for items a, b and c, 3 for Task 8 and 3 for Task 9. Wall-clock per
+  task was not measured here.
+
+**C6 decision note (2026-10-27, lane tw-031; critic-030 C6):**
+- Chosen: option (a), the mode per merged sub-lane. For each `--no-ff` merge M on the first-parent
+  chain of base..head, the non-merge commits of `M^1..M^2` form a segment under their own mode; the
+  commits made directly on the integration branch form one segment under the branch's own mode
+  commit. `lane_segments` and `segment_rules` (`_tdd_history.jl`) apply H1–H9 per segment in
+  `tdd.jl audit` and dod's `tdd`. The E rules still read the whole lane.
+- Rejected: option (b), "one mode per integration branch" as a documented rule. Under (b) an
+  integration branch that merges a refactor-mode sub-lane and a required-mode sub-lane fails H8 on
+  the second one's red and green, though each sub-lane is correct on its own. The only repair would
+  be a rewrite, or splitting work that belongs together.
+- Line cost: 20 lines in `_tdd_history.jl` (the section: `lane_segments` with its docstring,
+  `segment_rules`, header and blank lines; 9 lines of code), 1 changed line in `_tdd_evidence.jl`
+  `audit`, and 5 changed lines in `dod.jl`: 26 in all, under the 40-line target.
+- Known limit (2026-10-27, review CONSIDER-1): the E rules read the whole lane, so audit's E2
+  refactor check (`_tdd_evidence.jl` `audit`) uses `lane_mode` of the whole lane, not each
+  segment's mode. A refactor-mode sub-lane merged into a required-mode branch gets no E2 check of
+  its own. Per-segment E rules would mean splitting evidence and the ledger by segment: not done.
+- Review FIX-1 (2026-10-27): a sub-lane merged twice is one segment. `lane_segments` joins merge
+  k's segment to the earlier merge j's when `M_j^2` is on `git rev-list --first-parent M_k^2`. A
+  different sub-lane cut after M_j reaches `M_j^2` only through M_j's second parent and stays its
+  own segment. Cost: 7 more lines in `_tdd_history.jl`, so C6 is 33 lines in all, under the 40.
 
 ### Task 10: Review, coordinator sync, and the coordinator registry (D7 reversed)
 

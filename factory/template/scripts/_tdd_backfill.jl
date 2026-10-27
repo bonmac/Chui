@@ -2,7 +2,7 @@
 # Included by scripts/tdd.jl inside `module Tdd` (it uses run_items, spans_at, classify, report,
 # refuse_dirty, have_ci and Evidence from there); never run on its own.
 
-"The evidence slug of item `name` (spec §5.2): `evidence_slug` of _tdd_history.jl, at most 33 characters."
+"The evidence slug of item `name` (spec §5.2): `evidence_slug` of _tdd_evidence.jl, at most 33 characters."
 slug(name) = evidence_slug(name)
 
 const MANIFESTS = ("Manifest.toml", "Manifest-v1.10.toml")

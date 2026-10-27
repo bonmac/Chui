@@ -219,6 +219,15 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
   - the changed paths against the role (the test-writer changes only `test/**`, outside the seeded
     runners; the implementer changes no `test/**`).
 
+  2026-10-27 note (critic C1/C2): the phase and mode are read with git's own trailer parser,
+  `git log -1 --format=%(trailers:key=TDD,valueonly)` (and `key=TDD-Mode`), the same parse that
+  `lane_commits` (H1/H9) and `tdd.jl phase()` use: only the message's last paragraph holds
+  trailers. A role commit with no phase in that parse is a violation (rule `no-phase`, exit 2) while
+  it is still HEAD; the message gives the amend (`git commit --amend --no-edit --trailer "TDD:
+  <phase>"`). The one commit form for every role is `git -C <lane> commit -q --author "<role>
+  <<role>@factory.invalid>" -m "<subject>" --trailer "TDD: <phase>" --trailer "Co-Authored-By: …"`,
+  in its own Bash call. The test-side roles (below, §0.6) are checked as the test-writer.
+
   It appends `{ev: "tdd-commit", agent_id, agent_type, checkout, sha}` with the **resulting sha** to
   **the TDD ledger**. The TDD ledger is defined once, here (R4-M2): it is the session's ledger,
   `<session root>/.lanes/ledger.jsonl`, the file `_lib.sh` already writes (`$ROOT/.lanes/ledger.jsonl`).
@@ -384,6 +393,15 @@ critic and the reviewer are read-only. The user asked for this one, and ADR-0015
 | law-tester, property-tester, differential-tester | One line: "In a test-first lane, commit new items with `TDD: red` before the code." |
 | reviewer | The §4.5 checklist. |
 
+2026-10-27 note (critic C1/C2): that one line had no legal author under H9 (only the test-writer
+could author `red`). The lead's ruling: test-writer, law-tester, property-tester and
+differential-tester are one class of test-side roles. Each may author `red`, `test-fix`,
+`test-refactor` and `backfill` under its own identity `<role> <<role>@factory.invalid>`, gets the
+test-writer's §0.6 boundary keyed on `agent_type`, reads only its own `.lanes/briefs/<lane>/<role>-*`,
+and is dispatched by the lead alone with a tdd-brief `role=<role>` (`tdd.jl brief --role <role>`,
+the test-writer's sections). The three tester bodies say so and give the one `--trailer` commit form;
+test_writer.md points to them instead of calling their items "not yours".
+
 ## 3. TDD protocol inside one lane (D2, D3)
 
 ### 3.1 Phases and order
@@ -506,6 +524,15 @@ The mode comes from the `TDD-Mode:` trailer of the oldest commit that carries on
 be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and the mode is
 `required`. With no such trailer the mode is `required`.
 
+2026-10-27 note (critic C3/C4/C6): the reason separator is ` — `, ` - ` or ` -- ` (its first
+occurrence; later separators stay in the reason), so `TDD-Mode: skip - format fix` is skip with a
+reason; a bare `skip` or `skip -` still fails H8. "Oldest" is per segment: for each `--no-ff` merge M on
+the first-parent chain of base..head, the commits of `M^1..M^2` are a segment with their own mode; the
+commits made directly on the integration branch are one segment under the branch's own mode commit.
+H1–H9 run per segment (`lane_segments`, `segment_rules`) in audit and in dod's `tdd`; E1–E5 still read
+the whole lane. TDD dispatches and mode commits are the lead's (main session): a sub-lead teammate has
+an `agent_type`, so it can do neither and asks the lead.
+
 | Rule | Check |
 |---|---|
 | H1 | No commit changes code: PASS, and H2–H8 do not apply (H9 still does). Otherwise every code-changing commit has a phase trailer. |
@@ -527,6 +554,13 @@ be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and 
 | E3 | Each item a `backfill` adds has a passing `mutate-<slug>` or `mutexp-<slug>`. Items whose only assertions are `@test_broken` are listed, not proved. |
 | E4 | No evidence file is dirty or killed. |
 | E5 | Every role-authored lane commit has a `tdd-commit` record in **the TDD ledger** (§0.5: `<session root>/.lanes/ledger.jsonl`, passed as `--ledger`; R4-M2) with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
+
+2026-10-27 note (critic C3/C4/C6): E5 has one lead waiver. A lane commit authored exactly
+`lead <lead@factory.invalid>` with the git trailer `TDD-Waiver: E5 <sha> — <reason>` (sha full or a
+prefix of at least 7 hex naming one lane commit; any TDD-Mode separator; a non-empty reason) lets a
+role commit whose only record is `tdd-commit-late` (a cancelled commit call) pass E5. It never covers a
+sha with no record, and never a `tdd-commit-violation`. The commit guard denies a `TDD-Waiver:` trailer
+to role callers (rule `waiver-trailer`). Every role commits in its own Bash call, never chained.
 
 ### 4.4 Where it runs; merges and rebases
 
