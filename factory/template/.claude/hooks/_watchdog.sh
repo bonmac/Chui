@@ -18,11 +18,14 @@ watchdog() {
     # the sleeper gets no fd of the hook, or the host waits for it to exit before reading the verdict
     (sleep "$1"; kill -TERM "$$" 2>/dev/null) </dev/null >/dev/null 2>&1 &
     WD_PID=$!
+    # test-only (FACTORY_TEST=1): record the sleeper's pid, so a test can check that no denial leaves it behind
+    [ "${FACTORY_TEST:-}" != 1 ] || [ -z "${FACTORY_WATCHDOG_PIDFILE:-}" ] || printf '%s\n' "$WD_PID" >"$FACTORY_WATCHDOG_PIDFILE" 2>/dev/null
     trap watchdog_fire TERM
 }
 watchdog_fire() {
     WD_PID=""
     watchdog_stop
+    FACTORY_LEDGER_LOCKED=1 # review round 1 m1: a fire during the lock wait must not wait on that lock again
     ledger guard-timeout hook "$WD_HOOK" secs "$WD_SECS"
     deny "$WD_HOOK exceeded $WD_SECS s; fails closed. The lane count took too long: a huge .lanes/ledger.jsonl? Run scripts/lane compact, or raise FACTORY_WATCHDOG_SECS (the host allows at 10 s)."
 }

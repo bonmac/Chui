@@ -26,9 +26,16 @@
         write(joinpath(root, ".lanes/reports/other-verdict.md"), "Verdict: APPROVE\n")
         @test hook("teammate_idle.sh", idle("other"), root)[1] == 2
         for (n, v) in (("fixes", "MERGE WITH FIXES"), ("fixfirst", "FIX FIRST"))
-            write(joinpath(root, ".lanes/reports/$n-f040.md"), "Verdict: $v\n\n- x\n")   # <name>-*.md
-            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n-f040.md not counted"); false)
+            write(joinpath(root, ".lanes/reports/$n-2.md"), "Verdict: $v\n\n- x\n")   # <name>-<round>.md
+            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n-2.md not counted"); false)
         end
+        # (review round 1 m3) `<name>-<digits>.md` only: `f040-hooks.md` is the f040-hooks lane's, not f040's
+        write(joinpath(root, ".lanes/reports/f040-hooks.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("f040"), root)[1] == 2 || (println("f040 claimed f040-hooks.md"); false)
+        write(joinpath(root, ".lanes/reports/rev-1a.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("rev"), root)[1] == 2 || (println("rev claimed rev-1a.md"); false)
+        write(joinpath(root, ".lanes/reports/reviewer-2.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("reviewer"), root)[1] == 0 || (println("reviewer-2.md not counted"); false)
         @test occursin("\"idle-reported\"", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         # 0.2.6 (factory-026 item 5): a lane's session (root = its worktree) writes the report there; it counts
         for wt in (".worktrees/delta", ".claude/worktrees/epsilon")
@@ -276,27 +283,36 @@
         @test rc == 0 && occursin("Pre-compaction snapshot", out)
         @test hook("session_start.sh", "{}", root)[1] == 0     # no snapshot: silent
         # 0.4.0 (D2): a ledger over 2,000 lines is compacted by `scripts/lane compact` (a sibling lane's
-        # work): the call is checked with a `julia` stub on PATH that records its arguments
+        # work): the call is checked with a `julia` stub on PATH that records its arguments. The compaction
+        # runs DETACHED (review round 1 m4): the hook returns at once (here: before the stub's 1.5 s), so the
+        # host's hook timeout never kills a compaction half-way and leaves its .dispatch.lock behind.
         stub = mktempdir()
         argf = joinpath(stub, "args.txt")
-        write(joinpath(stub, "julia"), "#!/bin/sh\nprintf '%s\\n' \"\$@\" >\"$argf\"\n")
+        startf = joinpath(stub, "started")
+        write(joinpath(stub, "julia"), "#!/bin/sh\n: >\"$startf\"\nsleep 1.5\nprintf '%s\\n' \"\$@\" >\"$argf\"\n")
         chmod(joinpath(stub, "julia"), 0o755)
         env = Dict("PATH" => stub * ":" * ENV["PATH"])
+        waitfile(f) = (for _ in 1:100; isfile(f) && return true; sleep(0.05); end; false)
         repo = tmp_repo(Dict("scripts/lane.jl" => "# stub\n"))
         mkpath(joinpath(repo, ".lanes"))
         pc = "{\"session_id\":\"s3\",\"trigger\":\"manual\"}"
         write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2000)
         @test hook("precompact.sh", pc, repo; env)[1] == 0
-        @test !isfile(argf)                                                   # 2,000 lines: not over the limit
+        sleep(0.3)
+        @test !isfile(startf)                                                 # 2,000 lines: not over the limit
         write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2001)
-        @test hook("precompact.sh", pc, repo; env)[1] == 0
-        @test isfile(argf) || (println("julia not called for 2,001 lines"); false)
+        t = @elapsed (rc = hook("precompact.sh", pc, repo; env)[1])
+        @test rc == 0
+        @test t < 1 || (println("precompact waited for the compaction: $t s"); false)
+        @test waitfile(argf) || (println("julia not called for 2,001 lines"); false)
         args = isfile(argf) ? readlines(argf) : String[]
         @test any(a -> endswith(a, "scripts/lane.jl"), args) && "compact" in args || (println("args: $args"); false)
         @test isfile(joinpath(repo, ".lanes/precompact.md"))                 # the snapshot is written first
-        rm(argf)
+        rm(argf); rm(startf)
         rm(joinpath(repo, "scripts/lane.jl"))                                # no lane.jl (a seeded repo without it): no call
-        @test hook("precompact.sh", pc, repo; env)[1] == 0 && !isfile(argf)
+        @test hook("precompact.sh", pc, repo; env)[1] == 0
+        sleep(0.3)
+        @test !isfile(startf)
     end
 
     @testset "a denial from a factory/template session root says so" begin

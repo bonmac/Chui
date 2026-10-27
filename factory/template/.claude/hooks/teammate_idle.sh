@@ -14,13 +14,16 @@ safe=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_.-' '_')
 key="$(field '.session_id')/$(field '.team_name')/$safe"
 seen="$ROOT/.lanes/teammate-idle.seen"
 
-# 0.4.0 (D5, critic): `<name>.md` or `<name>-*.md`, and it counts only when its first line is the verdict
-# line; any other first line is a PARTIAL report, blocked once like no report at all.
+# 0.4.0 (D4, D5, critic): `<name>.md` or `<name>-<round>.md` (round: digits only, review round 1 m3:
+# `f040-hooks.md` is the f040-hooks lane's, not f040's), and it counts only when its first line is the
+# verdict line; any other first line is a PARTIAL report, blocked once like no report at all.
 partial=""
-for report in "$ROOT/.lanes/reports/$safe.md" "$ROOT/.lanes/reports/$safe"-*.md \
-    "$ROOT"/.worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.worktrees/*/.lanes/reports/"$safe"-*.md \
-    "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe"-*.md; do
+for report in "$ROOT/.lanes/reports/$safe.md" "$ROOT/.lanes/reports/$safe"-[0-9]*.md \
+    "$ROOT"/.worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.worktrees/*/.lanes/reports/"$safe"-[0-9]*.md \
+    "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe"-[0-9]*.md; do
     [ -f "$report" ] || continue
+    _round=${report##*/}; _round=${_round%.md}; _round=${_round#"$safe"}; _round=${_round#-}
+    case $_round in *[!0-9]*) continue ;; esac
     IFS= read -r _first <"$report" || :
     case $_first in
         "Verdict: MAY MERGE" | "Verdict: MERGE WITH FIXES" | "Verdict: FIX FIRST") ledger idle-reported teammate "$safe"; exit 0 ;;

@@ -26,6 +26,7 @@ mkdir -p "$(dirname "$LEDGER_FILE")" 2>/dev/null || deny "cannot create $(dirnam
 # FACTORY_WATCHDOG_SECS (default 8), inside the host's 10 s budget, which fails OPEN. The lock wait below
 # (up to 5 s) alone could spend that budget, so the watchdog starts before it (critic).
 watchdog "${FACTORY_WATCHDOG_SECS:-8}"
+trap watchdog_stop EXIT # review round 1 m2: a denial in the lock wait exits before the lock is ours: kill the sleeper, keep the lock
 _n=0
 until mkdir "$lock" 2>/dev/null; do
     # A lock left by a killed hook (older than a minute; the hook timeout is 10 s) is broken by moving
@@ -50,7 +51,7 @@ until mkdir "$lock" 2>/dev/null; do
     sleep 0.1
 done
 _out="$lock.out.$$"
-trap 'rmdir "$lock" 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT
+trap 'rmdir "$lock" 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT # the lock is ours from here
 trap 'exit 2' INT HUP
 FACTORY_LEDGER_LOCKED=1 # ledger() appends without taking the lock again (0.4.0, _lib.sh)
 open=0 names=""

@@ -71,13 +71,43 @@
         t = @elapsed hook("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd2"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "8"))
         @test t < 3                                                        # no sleeper holds the hook's stdout open
         @test !blocked("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd3"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "0"))
-        # (critic) the watchdog runs from the hook's start: a held lock (its own wait is 5 s) is denied at 1 s,
-        # and that lock, which is not ours, is left in place
+        # (critic; review round 1 m1) the watchdog runs from the hook's start: a held lock (its own wait is 5 s)
+        # is denied at 1 s and answered within 2 s (the guard-timeout append must not wait on that lock too:
+        # FACTORY_LEDGER_LOCKED); the lock, which is not ours, is left in place. FACTORY_WATCHDOG_PIDFILE
+        # (under FACTORY_TEST=1) records the sleeper's pid: no sleeper of the hook survives a denial.
+        function sleeper_gone(pidf)
+            isfile(pidf) || return false
+            pid = parse(Int, strip(read(pidf, String)))
+            for _ in 1:40
+                ccall(:kill, Cint, (Cint, Cint), pid, 0) == 0 || return true
+                sleep(0.05)
+            end
+            return false
+        end
         r = realpath(mktempdir())
         mkpath(joinpath(r, ".lanes/.dispatch.lock"))
-        t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = Dict("FACTORY_WATCHDOG_SECS" => "1")))
-        @test res[1] == 2 && occursin("exceeded 1 s", res[3]) && t < 3 || (println("watchdog in lock wait: ", res, " in $t s"); false)
+        pidf = joinpath(r, "wd.pid")
+        wd(secs) = Dict("FACTORY_WATCHDOG_SECS" => secs, "FACTORY_TEST" => "1", "FACTORY_WATCHDOG_PIDFILE" => pidf)
+        t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = wd("1")))
+        @test res[1] == 2 && occursin("exceeded 1 s", res[3]) || (println("watchdog in lock wait: ", res); false)
+        @test t < 2 || (println("watchdog in lock wait answered in $t s"); false)
         @test isdir(joinpath(r, ".lanes/.dispatch.lock"))
+        @test any(contains("\"guard-timeout\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test sleeper_gone(pidf)
+        # (review round 1 m2) a denial during the lock wait (a stale lock that is not an empty directory) exits
+        # before the lock is ours: the EXIT trap set with the watchdog kills the sleeper; the lock stays
+        r = realpath(mktempdir())
+        lk = joinpath(r, ".lanes/.dispatch.lock")
+        mkpath(lk); touch(joinpath(lk, "junk")); run(`touch -t 202601010000 $lk`)       # older than a minute
+        rc, _, err = hook("dispatch_limit.sh", agent_payload, r; env = wd("8"))
+        @test rc == 2 && occursin("not an empty directory", err) || (println("stale non-empty lock: $rc $err"); false)
+        @test isdir(lk) && isfile(joinpath(lk, "junk"))
+        @test sleeper_gone(pidf) || (println("sleeper alive after a lock-wait denial"); false)
+        r = realpath(mktempdir())                                          # a denial after the lock: an unreadable ledger
+        mkpath(joinpath(r, ".lanes")); write(joinpath(r, ".lanes/ledger.jsonl"), "{}\n"); chmod(joinpath(r, ".lanes/ledger.jsonl"), 0o000)
+        rc, _, err = hook("dispatch_limit.sh", agent_payload, r; env = wd("8"))
+        @test rc == 2 && occursin("cannot read the lane ledger", err) || (println("unreadable ledger: $rc $err"); false)
+        @test sleeper_gone(pidf) && !isdir(joinpath(r, ".lanes/.dispatch.lock"))
         h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_watchdog.sh"))
         rc, _, err = hook("dispatch_limit.sh", agent_payload, realpath(mktempdir()); hooks = h)
         @test rc == 2 && occursin("_watchdog.sh is missing", err)
@@ -92,18 +122,42 @@
         end
         @test !blocked("bash_guard.sh", bash("cd; touch x"; cwd = "/opt"), root; env = Dict("HOME" => root))   # HOME inside the root
         @test !blocked("bash_guard.sh", bash("cd; ls"; cwd = root), root; env = Dict("HOME" => home))
-        # heredoc terminators bash would not accept (it reads to end-of-file: nothing after them runs) end the
-        # body here too: trailing blank, `)`, leading blanks, CRLF. Before, the body fell back to being
-        # checked as commands and `pkill` in it was denied. What follows the terminator is checked.
+        # heredoc terminators are EXACT (review round 1, B1): a body ends only at a line equal to WORD (leading
+        # tabs stripped for <<-) or, inside a "$(...)", at WORD followed by `)` (bash 5.3 and 3.2 end the
+        # substitution there; zsh rejects the command). 93306c1 also ended a body at ` EOF`, `EOF `, `EOF\r` and
+        # a top-level `EOF)`, where bash does not: the lines it then scanned as commands could open a second
+        # heredoc (`cat <<ZZZ`) that swallowed the lines bash really runs. Such a body is never terminated, so
+        # the fallback checks it as commands (fails closed, as before 0.4.0).
         body = "cat <<'EOF'\nPKILL=1\npkill -f x\n"
+        @test !blocked("bash_guard.sh", bash(body * "EOF"; cwd = root), root)                   # exact: a body, not a command
+        @test !blocked("bash_guard.sh", bash("cat <<-'EOF'\n\tpkill -f x\n\tEOF"; cwd = root), root)   # <<-: leading tabs
+        @test blocked("bash_guard.sh", bash(body * "EOF\npkill -f y"; cwd = root), root)        # after the terminator: checked
         for term in ("EOF ", "EOF)", "EOF )", "  EOF", "\tEOF", "EOF\r", "EOF \r")
-            @test !blocked("bash_guard.sh", bash(body * term; cwd = root), root) || (println("heredoc terminator $(repr(term)) not accepted"); false)
-            @test blocked("bash_guard.sh", bash(body * term * "\npkill -f y"; cwd = root), root) || (println("after terminator $(repr(term)) unchecked"); false)
+            @test blocked("bash_guard.sh", bash(body * term; cwd = root), root) || (println("lenient terminator $(repr(term)) ended the body"); false)
+        end
+        for term in (" EOF", "EOF ", "EOF)")                   # the reproducer: bash runs `rm -rf ~` (its body ends at line 4)
+            c = "cat <<EOF\n$term\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ\n"
+            @test blocked("bash_guard.sh", bash(c; cwd = root), root) || (println("bypass with terminator $(repr(term))"); false)
         end
         @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard"; cwd = root), root)
         @test !blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\""; cwd = root), root)
+        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"\npkill -f y"; cwd = root), root)
+        @test blocked("bash_guard.sh", bash("(cat <<'EOF'\npkill -f x\nEOF)"; cwd = root), root)   # a subshell: bash reads to end-of-file
         @test blocked("bash_guard.sh", bash("cat <<NEVER\npkill -f x\n"; cwd = root), root)      # unterminated: still the fallback
         @test blocked("bash_guard.sh", bash("cat <<'EOF'\nx\nEOFX\npkill -f x\n"; cwd = root), root)
+        # (reviewer) a nested heredoc inside a never-closed outer body: the fallback scans every body line as a
+        # command, and the nested `<<ZZZ` it meets there must not swallow the lines after it
+        @test blocked("bash_guard.sh", bash("cat <<EOF\nx\ncat <<ZZZ\nrm -rf ~\n"; cwd = root), root)
+        @test blocked("bash_guard.sh", bash("cat <<EOF\ncat <<ZZZ\nrm -rf ~\nZZZ\n"; cwd = root), root)
+        # the "$(...)" closes on the line of the `<<EOF` itself: bash 5.3 reads the body from the NEXT lines (up to
+        # the exact EOF), bash 3.2 and zsh run those lines as commands ("unterminated here-document"). Neither
+        # model is safe for the other (a `cat <<ZZZ` among those lines swallows what follows in one of them), so
+        # the construct is denied outright, whatever follows it.
+        for c in ("echo \"\$(cat <<EOF)\"\nrm -rf ~\nEOF", "echo \"\$(cat <<EOF)\"\nEOF)\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ",
+                "echo \"\$(cat <<EOF)\"\nls\nEOF", "cat <<EOF \"\$(echo\nhi\nEOF)\"\nrm -rf ~\nEOF")
+            rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root)
+            @test rc == 2 && occursin("read differently by bash 5", err) || (println("same-line \$( close not denied: $(repr(c)) -> $rc $err"); false)
+        end
         # a denial inside a read-only root says how to get out
         h = hooks_with_roots(REF_ROOTS)
         rc, _, err = hook("bash_guard.sh", bash("cd ~/ro-fixture/ref-a && touch notes"; cwd = root), root; hooks = h)
@@ -126,6 +180,15 @@
         hook("lane_ledger.sh", substop("a1fe56"), r)
         @test count(l -> occursin("\"ev\":\"stop\"", l), lines(r)) == 1
         @test any(l -> occursin("\"ev\":\"stop\"", l) && occursin("\"agent_id\":\"a1fe55\"", l), lines(r))
+        # (sibling review) an `unknown-result` record names an agent_id too, and OPEN_LANES_JQ closes that lane on
+        # its stop: the stop must be written for it as well; a stop for an agent_id no record names writes nothing
+        hook("lane_ledger.sh", post("odd", "{\"status\":\"weird\",\"agentId\":\"u1\"}"), r)
+        @test any(l -> occursin("\"ev\":\"unknown-result\"", l) && occursin("\"agent_id\":\"u1\"", l), lines(r))
+        hook("lane_ledger.sh", substop("u1"), r)
+        hook("lane_ledger.sh", substop("u2"), r)
+        @test any(l -> occursin("\"ev\":\"stop\"", l) && occursin("\"agent_id\":\"u1\"", l), lines(r)) || (println("no stop for the unknown-result agent u1"); false)
+        @test !any(l -> occursin("\"ev\":\"stop\"", l) && occursin("\"agent_id\":\"u2\"", l), lines(r))
+        @test count(l -> occursin("\"ev\":\"stop\"", l), lines(r)) == 2
         # three idles of one teammate without a report: one idle-blocked, then ONE idle-unreported
         r = realpath(mktempdir())
         idle = "{\"session_id\":\"s1\",\"team_name\":\"t\",\"teammate_name\":\"quiet\"}"

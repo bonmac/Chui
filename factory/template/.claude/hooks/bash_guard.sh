@@ -47,6 +47,7 @@ case $segs in *[![:space:]]*) ;; *) # an empty list from a non-blank, non-commen
     ;;
 esac
 has() { printf '%s\n' "$segs" | grep -Eq -- "$1"; }
+has '^__factory_ambiguous_heredoc$' && deny "a heredoc opened inside a \"\$(...)\" that closes on the same line (\"\$(cat <<EOF)\") is read differently by bash 5 (a body from the next lines), bash 3.2 and zsh (the next lines run as commands), so bash_guard cannot model it: put the heredoc on its own lines, the closing ) after the EOF line."
 S='(^|[;&|(`[:space:]])'                          # start of a command word
 G="${S}git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|-[[:alpha:]]|--[a-z-]+(=[^[:space:]]+)?))*[[:space:]]+" # git + global options
 has "${G}reset[[:space:]]+--hard" && deny "git reset --hard is blocked: it discards work. Use a WIP commit or ask."

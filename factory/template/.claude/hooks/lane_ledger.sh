@@ -1,7 +1,7 @@
 #!/bin/sh
 # lane_ledger.sh: appends one slim JSON line per lane event to the lane ledger (.lanes/ledger.jsonl).
 # - SubagentStart / SubagentStop: {ev: start|stop, agent_id, agent_type}. A stop closes a background
-#   subagent's lane (its agent_id was recorded as `spawned`); starts and stops alone count nothing.
+#   subagent's lane (its agent_id was recorded as `spawned` or `unknown-result`); starts and stops alone count nothing.
 # - PostToolUse / PostToolUseFailure (Agent|Task|TaskStop), 0.2.8:
 #   Agent|Task: status teammate_spawned, async_launched or remote_launched -> {ev: spawned, key,
 #   agent_id} (stays open); status completed (a foreground agent returned) or PostToolUseFailure -> {ev: close, key};
@@ -21,11 +21,12 @@ ev=$(field '.hook_event_name')
 AGENT_ID_JQ='.tool_response.agentId? // .tool_response.agent_id? // .tool_response.taskId?'
 case $ev in
     SubagentStart) ledger start agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')" ;;
-    SubagentStop) # 0.4.0 (D2): a stop is written only for an agent_id a `spawned` record names (a background
-        # subagent's); a teammate turn's stop closes nothing and was ledger noise (1,043 lines by 2026-10-27)
+    SubagentStop) # 0.4.0 (D2): a stop is written only for an agent_id a `spawned` or `unknown-result` record
+        # names (OPEN_LANES_JQ closes a lane on either's stop); a teammate turn's stop closes nothing and was
+        # ledger noise (1,043 lines by 2026-10-27)
         _a=$(field '.agent_id')
         _a=$(printf '%s' "$_a" | tr -c 'A-Za-z0-9_./:@-' '_')
-        [ -z "$_a" ] || ! grep -F -- "\"agent_id\":\"$_a\"" "$LEDGER_FILE" 2>/dev/null | grep -qF -- '"ev":"spawned"' ||
+        [ -z "$_a" ] || ! grep -F -- "\"agent_id\":\"$_a\"" "$LEDGER_FILE" 2>/dev/null | grep -qE -- '"ev":"(spawned|unknown-result)"' ||
             ledger stop agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')"
         ;;
     PostToolUse | PostToolUseFailure)

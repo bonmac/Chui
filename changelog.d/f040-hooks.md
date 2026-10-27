@@ -30,3 +30,19 @@
   - The 0.4.0 hook testsets live in the new `scripts/test/test_hooks_040.jl`, included from
     `test_hooks.jl`: that file and `test_hooks_lifecycle.jl` had passed the 400-line `scripts/*.jl`
     budget of `ratchets.toml` (the full gate's `test_ratchet.jl` caught it).
+  - Review round 1 fixes: heredoc terminators are exact again (a line equal to WORD, leading tabs
+    stripped for `<<-`), plus WORD followed by `)` only inside `"$(...)"`; the lenient match above
+    (trailing blanks, a CR, leading blanks, a top-level `EOF)`) ended a body where bash does not, so
+    a later body line could open a second heredoc that hid the lines bash runs (B1, a bypass: such a
+    body now stays open and the fallback checks it as commands). `_watchdog.sh` sets
+    `FACTORY_LEDGER_LOCKED=1` before its `guard-timeout` append (a fire during the lock wait answered
+    at 2 s, not 1 s; m1); `dispatch_limit.sh` sets an EXIT trap with `watchdog_stop` as soon as the
+    watchdog starts (a denial during the lock wait left the sleeper alive; m2); `teammate_idle.sh`
+    counts `<name>-<digits>.md` only (`f040` no longer claims `f040-hooks.md`; m3); `precompact.sh`
+    runs the compaction detached (`nohup ... &`), so the hook returns at once and the host's timeout
+    cannot kill it half-way (m4). Also: the awk records, when a heredoc opens, whether it is inside
+    an open `$(` (the `EOF)` terminator is accepted from that flag only); a heredoc whose `$(...)`
+    closes or opens on the `<<` line (`"$(cat <<EOF)"`) is denied outright, since bash 5 reads its
+    body from the next lines while bash 3.2 and zsh run them as commands (a pre-existing gap: those
+    lines were a dropped body); `lane_ledger.sh` writes a `stop` for an agent_id that a `spawned` OR
+    an `unknown-result` record names (the open-lane query closes a lane on either; sibling review).
