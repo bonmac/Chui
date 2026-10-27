@@ -203,8 +203,12 @@ tb_cm(d; author = TB_TW, phase = "red", extra = "") = "git -C $d commit -q -m \"
         tb_git(a, "add", "test/t.jl")                    # staged after Pre: the Pre half is bypassed
         @test tb_exec(t, c, a)
         sha = tb_head(a)
-        post = tb_run(t, tb_bash(c; agent = "implementer", cwd = a, tu, event = "PostToolUse",
-            extra = Dict("tool_response" => Dict("stdout" => "", "stderr" => ""))); name = "tdd_commit_post.sh")
+        post = tb_run(
+            t, tb_bash(
+                c; agent = "implementer", cwd = a, tu, event = "PostToolUse",
+                extra = Dict("tool_response" => Dict("stdout" => "", "stderr" => ""))
+            ); name = "tdd_commit_post.sh"
+        )
         v = tb_recs(t, "tdd-commit-violation")
         @test any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "implementer" && !isempty(get(r, "rule", "")), v)
         @test occursin("violation", post.err)

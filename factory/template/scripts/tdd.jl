@@ -260,8 +260,10 @@ module Tdd
 
     "The next free `<dir>/<role>-<n>.md`."
     function next_brief(dir, role)
-        taken = [something(tryparse(Int, m.captures[1]), 0) for f in (isdir(dir) ? readdir(dir) : String[])
-                     for m in (match(Regex("^" * role * raw"-(\d+)\.md$"), f),) if m !== nothing]
+        taken = [
+            something(tryparse(Int, m.captures[1]), 0) for f in (isdir(dir) ? readdir(dir) : String[])
+                for m in (match(Regex("^" * role * raw"-(\d+)\.md$"), f),) if m !== nothing
+        ]
         return joinpath(dir, "$role-$(maximum(taken; init = 0) + 1).md")
     end
 
@@ -355,8 +357,10 @@ module Tdd
         root = abspath(get(opts, "--root", normpath(joinpath(@__DIR__, ".."))))
         base = get(opts, "--base", "main")
         cmd = only(pos)
-        allowed = Dict("red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"), "audit" => ("--root", "--base", "--ledger"),
-            "mutate" => ("--root", "--item", "--src", "--expect", "--from", "--to"), "gaps" => ("--root",))
+        allowed = Dict(
+            "red" => ("--root", "--rev"), "green" => ("--root", "--base"), "api" => ("--root",), "brief" => ("--root", "--base", "--role"), "audit" => ("--root", "--base", "--ledger"),
+            "mutate" => ("--root", "--item", "--src", "--expect", "--from", "--to"), "gaps" => ("--root",)
+        )
         haskey(allowed, cmd) || (println(io, "tdd.jl: unknown command `$cmd`\n", USAGE); return 2)
         extra = setdiff(keys(opts), allowed[cmd])
         isempty(extra) || (println(io, "tdd.jl $cmd: unexpected option(s) $(join(sort!(collect(extra)), ", "))\n", USAGE); return 2)

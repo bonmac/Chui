@@ -160,8 +160,10 @@ end
         @test occursin("<!-- tdd-brief role=test-writer", s)
         @test occursin("<!-- tdd-brief role=implementer", s) || occursin(r"`role=implementer`", s)
         @test occursin("checkout=", s)
-        for h in ("## Task", "## Spec", "## Public API", "## Stub diffs", "## Test-fix requests",
-                  "## Red tests", "## Red evidence", "## Boundary")
+        for h in (
+                "## Task", "## Spec", "## Public API", "## Stub diffs", "## Test-fix requests",
+                "## Red tests", "## Red evidence", "## Boundary",
+            )
             @test occursin(h, s) || (println("skill lacks $h"); false)
         end
         @test occursin("tdd.jl brief", s)

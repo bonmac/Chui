@@ -137,11 +137,15 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
     end
 
     th_testset("is_compat_decl: public with one name, a tuple, and export; rejects @compat with any other payload", :is_compat_decl, :strip_lines!) do
-        ok = ("@compat public a", "@compat public a, h", "@compat public (a, h)", "Compat.@compat public a",
-            "Compat.@compat public a, h", "@compat export g", "@compat export g, h", "Compat.@compat export g")
-        bad = ("@compat f(x) = 1", "@compat public f(x)", "@compat public a, f(x)", "@compat begin end", "@compat 1",
+        ok = (
+            "@compat public a", "@compat public a, h", "@compat public (a, h)", "Compat.@compat public a",
+            "Compat.@compat public a, h", "@compat export g", "@compat export g, h", "Compat.@compat export g",
+        )
+        bad = (
+            "@compat f(x) = 1", "@compat public f(x)", "@compat public a, f(x)", "@compat begin end", "@compat 1",
             "@compat", "@compat public a b", "@compat public \"a\"", "@other public a", "Compat.@other export g",
-            "export g", "@compat import Base: show", "@compat const c = 1")
+            "export g", "@compat import Base: show", "@compat const c = 1",
+        )
         for s in ok
             e = Meta.parse(s)
             @test th(:is_compat_decl)(e)

@@ -63,8 +63,12 @@ end
 "The flat string fields of each JSONL line of the ledger (no JSON stdlib)."
 function ledger_records(path)
     isfile(path) || return nothing
-    return [Dict{String, String}(m.captures[1] => replace(m.captures[2], r"\\(.)" => s"\1")
-        for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l)) for l in eachline(path) if !isempty(strip(l))]
+    return [
+        Dict{String, String}(
+            m.captures[1] => replace(m.captures[2], r"\\(.)" => s"\1")
+                for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l)
+        ) for l in eachline(path) if !isempty(strip(l))
+    ]
 end
 "The outermost ancestor-or-self of `root` that holds `.lanes/ledger.jsonl` (spec §0.5), or nothing."
 function default_ledger(root)
@@ -75,6 +79,7 @@ function default_ledger(root)
         dirname(d) == d && return found
         d = dirname(d)
     end
+    return
 end
 canon(p) = (q = rstrip(p, '/'); ispath(q) ? realpath(q) : q)
 
@@ -120,8 +125,10 @@ function evidence_rules(root, commits::AbstractVector; ledger, base = nothing)
             for (name, broken) in sort!(collect(added_items(root, c.sha)))
                 broken && (push!(out, "note $(sha7(c.sha)): `$name` has only @test_broken assertions: listed, not proved"); continue)
                 s = evidence_slug(name)
-                ok = any(f -> (startswith(f, "mutate-$s-") || startswith(f, "mutexp-$s-")) && endswith(f, ".txt") &&
-                    mutate_pass(evidence_file(joinpath(dir, f))), files)
+                ok = any(
+                    f -> (startswith(f, "mutate-$s-") || startswith(f, "mutexp-$s-")) && endswith(f, ".txt") &&
+                        mutate_pass(evidence_file(joinpath(dir, f))), files
+                )
                 ok || fail("E3", c, "item `$name` has no passing mutate-$s or mutexp-$s evidence")
             end
         end
@@ -148,8 +155,10 @@ function evidence_rules(root, commits::AbstractVector; ledger, base = nothing)
         any(r -> get(r, "ev", "") == "tdd-commit" && get(r, "sha", "") == c.sha && get(r, "agent_type", "") == t, recs) && continue
         late = any(r -> get(r, "ev", "") == "tdd-commit-late" && get(r, "sha", "") == c.sha, recs)   # B2: a sweep's record
         late && c.sha in waived && continue   # critic C4: the lead's TDD-Waiver: E5 attests a late-only record
-        fail("E5", c, "no tdd-commit record with this sha and agent_type $t in $ledger" *
-            (late ? " (only a late swept record: amend it through the hooks while it is HEAD, or the lead's TDD-Waiver: E5)" : ""))
+        fail(
+            "E5", c, "no tdd-commit record with this sha and agent_type $t in $ledger" *
+                (late ? " (only a late swept record: amend it through the hooks while it is HEAD, or the lead's TDD-Waiver: E5)" : "")
+        )
     end
     shas = Set(c.sha for c in commits)   # B2: a violation is this lane's only by sha
     for r in recs
