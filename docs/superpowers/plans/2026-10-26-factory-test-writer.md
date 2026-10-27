@@ -649,6 +649,20 @@ needs a test and an implementation before 0.3.0.
 - Step 5: handoffs were 2 each for items a, b and c, 3 for Task 8 and 3 for Task 9. Wall-clock per
   task was not measured here.
 
+**C6 decision note (2026-10-27, lane tw-031; critic-030 C6):**
+- Chosen: option (a), the mode per merged sub-lane. For each `--no-ff` merge M on the first-parent
+  chain of base..head, the non-merge commits of `M^1..M^2` form a segment under their own mode; the
+  commits made directly on the integration branch form one segment under the branch's own mode
+  commit. `lane_segments` and `segment_rules` (`_tdd_history.jl`) apply H1–H9 per segment in
+  `tdd.jl audit` and dod's `tdd`. The E rules still read the whole lane.
+- Rejected: option (b), "one mode per integration branch" as a documented rule. Under (b) an
+  integration branch that merges a refactor-mode sub-lane and a required-mode sub-lane fails H8 on
+  the second one's red and green, though each sub-lane is correct on its own. The only repair would
+  be a rewrite, or splitting work that belongs together.
+- Line cost: 20 lines in `_tdd_history.jl` (the section: `lane_segments` with its docstring,
+  `segment_rules`, header and blank lines; 9 lines of code), 1 changed line in `_tdd_evidence.jl`
+  `audit`, and 5 changed lines in `dod.jl`: 26 in all, under the 40-line target.
+
 ### Task 10: Review, coordinator sync, and the coordinator registry (D7 reversed)
 
 - [ ] **Step 1:** The critic, then the reviewer, on the factory branch. The report states the

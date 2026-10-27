@@ -66,7 +66,7 @@ module DoD
     function evaluate(
             risk, changed::Vector{<:AbstractString}, labels, text::AbstractString;
             kept::Vector{<:AbstractString} = changed, added::Vector{<:AbstractString} = kept,
-            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true,
+            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true, segments = nothing,
             headed::Vector{<:AbstractString} = String[]   # added/modified fragments with a heading (fold refuses them)
         )
         lt = label_tier(labels)
@@ -109,7 +109,7 @@ module DoD
                 (adr || occursin(r"ADR-\d{4}", text)) ? (:pass, "ADR changed or cited") :
                     (:fail, "a T3 change needs an ADR ($dir or a cited coordinator ADR-NNNN)")
             elseif req == "tdd"
-                tdd_result(commits, src_changed, stub_ok)
+                tdd_result(commits, src_changed, stub_ok, segments)
             elseif req == "ci"
                 (:info, "CI is the caller")
             elseif req == "review"
@@ -123,12 +123,12 @@ module DoD
     end
 
     "Requirement `tdd`: H9 applies to every lane, H2-H8 only when code changed (spec §4.2 H1)."
-    function tdd_result(commits, src_changed, stub_ok)
+    function tdd_result(commits, src_changed, stub_ok, segments = nothing)
         # review B3 / minor 5: code changed and no history to check is a failure, never a pass or info
         commits === nothing &&
             return src_changed ? (:fail, "not checked: no lane history given") : (:pass, "no src/ext change")
         src_changed && isempty(commits) && return (:fail, "src/ or ext/ changed but no lane commits were found")
-        problems = history_rules(commits; stub_ok)
+        problems = segment_rules(something(segments, [commits]); stub_ok)   # critic C6: per merged sub-lane
         isempty(problems) || return (:fail, first(problems))
         src_changed || return (:pass, "no src/ext change")
         return (:pass, "tdd history OK ($(length(commits)) commits, mode $(first(lane_mode(commits))))")
@@ -170,7 +170,7 @@ module DoD
         tier, results = evaluate(
             risk, changed, labels, body * "\n" * msgs; kept, added,
             adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root),
-            commits, stub_ok = s -> stub_declares_only(root, s), headed
+            commits, stub_ok = s -> stub_declares_only(root, s), headed, segments = lane_segments(root, base, commits, head)
         )
         println("dod.jl: $(length(changed)) files changed since $(first(mb, 10)); tier $tier")
         for (req, st, detail) in results
