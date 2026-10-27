@@ -48,7 +48,20 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 - The rebase gets its own reviewer, and e1 also runs `test_hooks_tdd*.jl`.
 - HANDOFF stays the lead's.
 - e1's f040-hooks fixes a heredoc-terminator bypass in bash_guard's splitter. That bypass is in the 0.2.8 hooks running now |
-| tw-034 (factory 0.3.1) | coordinator | `.worktrees/tw-034` / `feat/tw-034` | `factory/**` | started 2026-10-27 (sub-lead tw-034). It fixes what the live smoke lane exposed in 0.3.0:
+| ~~tw-034 (factory 0.3.1)~~ | coordinator | **MERGED 2026-10-27 into coordinator main as b4aeda3.**
+- Reviewer: REQUEST CHANGES ×1 (FIX-1: an untested `must_pass` removal, now pinned by 85251d8), then APPROVE FINAL. tw-034 reported 3581/3583 (1.13, T3 set) and 3576/3578 (1.10) at e96d382, plus FACTORY_GUARD_FULL 772/0/0. The lead re-ran the factory suite at the tip 85251d8: 3591 pass, 2 broken, rc 0.
+- A scratch package-profile sync passed `ci.jl format`.
+- The named resolver is `owning_ledger`. e1 is told; sync-frames-030 is told to re-sync to 0.3.1.
+- Breaches, recorded in the CHANGELOG: a python edit of `tdd_commit_post.sh`, reviewed line by line; an untested clause, removed and pinned.
+- Reviewer NOTEs 1–4, 7 and 8 are open, minor; NOTE-3 (LEDGER_FILE not restored) is passed to e1.
+- Worktree removed, report in `.lanes/archive/tw-034/`.
+- 0.3.1 sync lanes:
+  - **sync-031 (coordinator)**: `.worktrees/sync-031`, agent sync-031-coord, also fixing spec §0.5 and the E5 row;
+  - **sync-031 (ChuiTypes)**: `ChuiTypes.jl/.worktrees/sync-031`, agent sync-031-types; fixes main's red `ci.jl format`;
+  - **ChuiFrames:** sync-frames-030 re-syncs to 0.3.1.
+
+The original row follows. | — | — |
+| (was) tw-034 | coordinator | `.worktrees/tw-034` / `feat/tw-034` | `factory/**` | started 2026-10-27 (sub-lead tw-034). It fixes what the live smoke lane exposed in 0.3.0:
 1. `ci.jl format` FAILS in every package on 0.3.0, because the template scripts are not Runic-clean and the broken fixture has a ParseError. ChuiTypes main fails today; nothing is pushed.
 2. `tdd-commit` records land in different ledgers depending on dispatch. The fix is `owning_ledger` (shell and Julia, with a parity test), written through `ledger()` (agreed with e1 for 0.4.0's lock and pending file).
 3. The TDD roles have no report channel. Fix: dispatch them unnamed, with the final reply as the report, for TDD roles only (agreed with e1).
