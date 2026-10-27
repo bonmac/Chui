@@ -301,7 +301,34 @@ ChuiCore's ci-cov fix: `classes_unit_tests.jl` drops the `:code_coverage_effect`
 - The redaction scan found 0 hits on all pushed history, the trees and the unpushed commits. The positive control gave 12.
 - ★ **User:** re-run the script and say "released".
 
-**e1 (factory 0.4.0, lane f040).** It has integrated 0.3.1, found and fixed the `ledger()` pending-file bug, and fixed NOTE-3. Next, it integrates 0.3.2, then sends a land request. Check its 8c58666 path change to `changelog.d/tw-032.md`.
+**e1 (factory 0.4.0, lane f040). LANDED 2026-10-27 as coordinator main 3e90f8e.**
+- The lead re-ran the suite at aa37741 with T3 set: 4906 pass, 2 broken. The coordinator guard gave 763/0.
+- Four reviews, all MAY MERGE: integrate, release (fixes done), release2 and critic4. The lead reviewed 0eb7d16 (test-only).
+- ChuiTypes is on 0.3.2 at 71a7fdd.
+- **Next:** e1 runs the 0.4.0 coordinator sync in its own lane, and tells the lead before it touches `<root>/.claude/` and `.agents/`. **After it lands, the user restarts every session**: hooks, agents and limits.env only load at start.
+
+**0.4.0 migration notes for the packages** (from e1; also in factory/CHANGELOG.md "## 0.4.0"):
+1. Restart every session after the sync.
+2. Fail-closed:
+   - Any guard that crashes, exits non-zero or times out inside its 8 s watchdog now BLOCKS with exit 2.
+   - A missing jq, awk, sourced hook library or parseable payload means every Bash, Write and Agent call is denied.
+   - A limits.env without READ_ONLY_AGENTS denies every dispatch. Run `julia scripts/gen.jl` after the sync.
+3. Read-only agents (reviewer, critic, verifier) are enforced by agent_type:
+   - They may write only `.lanes/reports/**` and `.lanes/scratch/<type>/**`.
+   - They may run only an allowlist.
+   - Briefs must not ask them to edit, commit or run `tdd.jl mutate`.
+4. Report headers:
+   - Read-only agents: line 1 is `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST`, line 2 is `Head: <sha>`.
+   - Write agents: line 1 is `Status: DONE | PARTIAL | BLOCKED`.
+   - **Name every reviewer dispatch.** `lane audit --report` accepts only `<name>.md` or `<name>--r<N>.md`.
+   - TDD roles stay unnamed.
+5. Seeded hand edits:
+   - **CLAUDE.md:** the cap line `<!-- claim: max_open=N -->`, plus the "Precedence" and "Writing files under the guard" sections.
+   - **agent-registry.toml (T3):** add the `verifier` agent. Give reviewer and critic `Write` plus `.lanes/reports/**` and `.lanes/scratch/<slug>/**`. Every output_format ends `; at most 80 lines`. Keep the implementer and test_writer stanzas.
+   - **risk.toml (T3):** add `scripts/_lane_stats.jl`.
+6. Heredocs end only at an exact terminator line (`EOF)` is refused). A `.git` path component is matched case-insensitively.
+7. Ledger appends go through `.lanes/ledger.pending.jsonl`. Use `scripts/lane compact` if a ledger is huge.
+8. New commands: /lane-review and /ci-triage, plus an advisory runic check after edits.
 
 **Next steps for the lead.**
 1. After the release: the releases.md rows, including factory 0.2.8/0.3.x; integration; compat-matrix; the ChuiTypes Upstream switch; sync ChuiCore to 0.3.2.
