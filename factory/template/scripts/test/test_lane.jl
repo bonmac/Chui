@@ -319,3 +319,69 @@ end
     @test rc == 1 && occursin("outside owns: notes.txt", out) && length(readlines(led)) == n
     @test lane("audit", "rv")[1] == 1 && lane("audit", "nope", "--report", rep)[1] == 2   # --report is optional; no lane: 2
 end
+
+@testset "lane stats and handoff (0.4.0)" begin
+    # D11: one row per dispatch of the ledger, closed by the hooks' rules (_lanes.sh): a close with its key, a
+    # ref to its name/key/agent id, a stop of its agent; counts while it was open; the last verdict for its name
+    d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n/.claude/\n", "src/A.jl" => "a\n"))
+    led = joinpath(d, ".lanes/ledger.jsonl")
+    mkpath(dirname(led))
+    ts(h, m) = "2026-10-01T$(lpad(h, 2, '0')):$(lpad(m, 2, '0')):00Z"
+    write(
+        led, join(
+            [
+                ledger_ev(ts(10, 0), "dispatch"; key = "la", name = "la", desc = "lane a"),
+                ledger_ev(ts(10, 1), "spawned"; key = "la", agent_id = "a-la"),
+                ledger_ev(ts(10, 30), "dispatch-denied"; open = "1", max = "1"),
+                ledger_ev(ts(10, 40), "idle-unreported"; teammate = "la"),
+                ledger_ev(ts(10, 50), "idle-unreported"; teammate = "la"),
+                ledger_ev(ts(10, 55), "idle-unreported"; teammate = "lb"),          # before lb is dispatched: not lb's
+                ledger_ev(ts(12, 0), "stop"; agent_id = "a-la"),                      # its agent's stop closes it
+                ledger_ev(ts(12, 10), "idle-unreported"; teammate = "la"),           # after the close: not counted
+                ledger_ev(ts(12, 20), "dispatch-denied"; open = "1", max = "1"),
+                "{\"ts\":\"$(ts(12, 30))\",\"ev\":\"verdict\",\"lane\":\"la\",\"verdict\":\"MAY MERGE\",\"report\":\"r.md\"}",  # lane audit --report
+                ledger_ev(ts(13, 0), "dispatch"; key = "lb", name = "lb", desc = "lane b"),
+                ledger_ev(ts(13, 5), "dispatch"; session = "s2", key = "lc", name = "lc", desc = "lane c"),
+                ledger_ev(ts(14, 0), "dispatch"; key = "ld", name = "ld", desc = "lane d"),
+                ledger_ev(ts(14, 45), "close"; session = "*", ref = "ld", why = "released"),   # scripts/lane release
+                "not json",
+            ], "\n"
+        ) * "\n"
+    )
+    lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
+    rc, out = lane("stats")
+    @test rc == 0 || (print(out); false)
+    rows = filter(l -> startswith(l, "| "), split(out, '\n'))
+    @test rows[1] == "| name | dispatched | closed | duration | verdict | denied | idle-unreported |"
+    @test rows[2:end] == [
+        "| la | $(ts(10, 0)) | $(ts(12, 0)) | 2h00m | MAY MERGE | 1 | 2 |",
+        "| lb | $(ts(13, 0)) | - | open | - | 0 | 0 |",
+        "| lc | $(ts(13, 5)) | - | open | - | 0 | 0 |",
+        "| ld | $(ts(14, 0)) | $(ts(14, 45)) | 0h45m | - | 0 | 0 |",
+    ] || (print(out); false)
+    rc, out = lane("stats", "--since", ts(13, 0))
+    @test rc == 0 && !occursin("| la |", out) && occursin("| lb |", out) && occursin("| ld |", out)
+    rc, out = capture(() -> Lane.main(["stats", "--repo", tmp_repo()]))            # no ledger: the header only
+    @test rc == 0 && count(l -> startswith(l, "| "), split(out, '\n')) == 1
+    # handoff: the HANDOFF "Open lanes" table from `git worktree list` and the ledger (review focus 5: a
+    # worktree outside .worktrees/ is listed as unmanaged, not skipped; an open dispatch without a worktree too)
+    @test lane("new", "la", "--owns", "src/*")[1] == 0
+    @test lane("new", "lb", "--owns", "src/*")[1] == 0
+    write(joinpath(d, ".worktrees/lb/scratch.txt"), "dirty\n")
+    sh(`git -C $d worktree add -q -b wt-x .claude/worktrees/x`)
+    head = readchomp(`git -C $d rev-parse --short HEAD`)
+    rc, out = lane("handoff")
+    @test rc == 0 || (print(out); false)
+    rows = filter(l -> startswith(l, "| "), split(out, '\n'))
+    @test rows[1] == "| Lane | Repo | Worktree / branch | Head | Dirty | Status |"
+    row(n) = only(filter(r -> startswith(r, "| $n |"), rows))
+    @test row("la") == "| la | $(basename(d)) | `.worktrees/la` / `feat/la` | $head | no | closed $(ts(12, 0)); verdict: MAY MERGE |"
+    @test row("lb") == "| lb | $(basename(d)) | `.worktrees/lb` / `feat/lb` | $head | yes | open since $(ts(13, 0)) |"
+    @test row("x") == "| x | $(basename(d)) | `.claude/worktrees/x` / `wt-x` | $head | no | unmanaged |"
+    @test row("lc") == "| lc | $(basename(d)) | - | - | - | open since $(ts(13, 5)), no worktree |"
+    @test !any(r -> startswith(r, "| ld |"), rows) && length(rows) == 5          # closed, no worktree: not an open lane
+    @test !any(r -> occursin(basename(d) * " | `.` ", r), rows)                   # the main checkout is not a lane
+    rc, out = capture(() -> Lane.main(["handoff", "--repo", joinpath(d, ".worktrees/la")]))   # from inside a lane: the same table
+    @test rc == 0 && occursin(row("x"), out)
+    @test lane("stats", "extra")[1] == 2 && lane("handoff", "extra")[1] == 2
+end

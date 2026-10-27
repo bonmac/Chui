@@ -7,6 +7,8 @@
 #   scripts/lane remove <name> [--repo DIR] [--allow-ignored]
 #   scripts/lane release <agent name or lane key> [--repo DIR]
 #   scripts/lane compact [--repo DIR] [--keep N]
+#   scripts/lane stats [--repo DIR] [--since ISO]
+#   scripts/lane handoff [--repo DIR]
 #
 # release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
 #         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
@@ -14,6 +16,11 @@
 #         session, plus the last N (200) other lines; atomically, under the cap's lock. The open
 #         set is the hooks' own query (_lanes.sh), run before and after: if it would change, nothing
 #         is replaced. precompact.sh runs it past 2,000 lines. Code: scripts/_lane_stats.jl.
+# stats   (0.4.0, D11) one Markdown row per dispatch of the ledger: dispatched, closed (by the
+#         hooks' closing rules), duration, the verdict `audit --report` recorded, the dispatch
+#         denials of its session and the idle-unreported events of its name while it was open.
+# handoff (0.4.0, D11) the HANDOFF "Open lanes" table: one row per worktree (outside .worktrees/:
+#         `unmanaged`) and per open dispatch without a worktree. Both read-only.
 #
 # new     refuses past the cap ([lanes] max_open in the repo's .agents/agent-registry.toml,
 #         default 4) and when .worktrees/ is not gitignored; branch <prefix>/<name> from base;
@@ -321,9 +328,9 @@ module Lane
     end
 
     function main(args)
-        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N]"
+        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N] | stats [--repo DIR] [--since ISO] | handoff [--repo DIR]"
         opts, pos = try
-            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--report", "--keep"))
+            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--report", "--keep", "--since"))
         catch e
             println(stderr, "lane: ", e isa ErrorException ? e.msg : e)
             return 2
@@ -341,6 +348,8 @@ module Lane
         sub == "release" && length(pos) == 2 && !isempty(pos[2]) && return cmd_release(repo, pos[2])
         sub == "remove" && length(pos) == 2 && return cmd_remove(repo, pos[2]; allow_ignored = get(opts, "--allow-ignored", false))
         sub == "compact" && length(pos) == 1 && return cmd_compact(repo, opts)
+        sub == "stats" && length(pos) == 1 && return cmd_stats(repo, opts)
+        sub == "handoff" && length(pos) == 1 && return cmd_handoff(repo)
         println(stderr, usage)
         return 2
     end

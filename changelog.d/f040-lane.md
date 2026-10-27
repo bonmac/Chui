@@ -9,3 +9,8 @@
     `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three, exact case, nothing
     else on the line), else the audit fails; a passing audit records `{ev: verdict, lane, verdict,
     report}` in the ledger. `--reported` is unchanged.
+  - `scripts/lane stats [--since ISO]` and `scripts/lane handoff` (D11): one Markdown row per
+    dispatch of the ledger (dispatched, closed by the hooks' closing rules, duration, verdict, the
+    session's dispatch denials and the name's idle-unreported events while open), and the HANDOFF
+    "Open lanes" table from `git worktree list` (a worktree outside `.worktrees/` is `unmanaged`)
+    and the open dispatches without a worktree. Read-only.
