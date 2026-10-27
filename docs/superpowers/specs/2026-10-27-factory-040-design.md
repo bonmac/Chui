@@ -50,9 +50,16 @@ D2. **The ledger is compacted, not grown.** `scripts/lane compact` rewrites `.la
     keeping every `dispatch`, `spawned`, `unknown-result`, `close`, `release`, `verdict`,
     `dispatch-denied` and `guard-timeout` event, so no session's open chain and no `$known` name is
     lost, and dropping only `stop` events whose agent_id matches no `spawned` or `unknown-result`
-    record (the query closes on either) and `idle-*` events older than the last 200 lines. It rewrites atomically under the dispatch lock, and the
-    `ledger()` appender in `_lib.sh` takes the same lock, so no append is lost between read and
-    rename; `lane.jl`'s own appends (`release`, `verdict`, `new`) take it too. `lane_ledger.sh`
+    record (the query closes on either) and `idle-*` events older than the last 200 lines. It
+    rewrites atomically under the dispatch lock. *(Revised after the final review, M1, and its
+    re-review B1/B2.)* No appender writes the ledger without the lock: `ledger()` in `_lib.sh` waits
+    about 1 s for it, then writes to `.lanes/ledger.pending.jsonl` instead; every lock taker
+    (`ledger()`, `dispatch_limit`, `lane.jl` with_lock) first folds pending into the ledger by
+    renaming it to a private name, appending it and removing it, so pending only ever holds lines
+    newer than the ledger's tail and event order is preserved; a leftover renamed file from a crash
+    is folded by the next lock taker, and a duplicate it leaves is harmless to the open-lane query.
+    Lock-free readers read the ledger then pending as its tail. `lane.jl`'s own appends (`release`,
+    `verdict`, `new`) take the lock too; a lock is removed only by its owner token. `lane_ledger.sh`
     writes a `stop` only when the agent_id appears in a `spawned` or `unknown-result` record.
     `precompact.sh` runs `compact` when the ledger exceeds 2,000 lines, and `dispatch_limit`'s denial
     names `scripts/lane compact` when it does.
