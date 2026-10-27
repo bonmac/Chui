@@ -310,11 +310,42 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
         @test !blocked("bash_guard.sh", bash_as("reviewer", "cp -R ok8 .lanes/scratch/reviewer/ok8"), r)              # 8 levels: allowed
+        # round-4 review round 3 (P1): operands were stored space-joined and re-split, so `cp -R "sp ace"` scanned `sp` and `ace`
+        # (nothing) and planted the link; and write_guard matched the scratch prefix lexically, so a Write through a planted link
+        # under the scratch passed. Operands are never re-split; a scratch or report Write follows no symlink and takes no ./.. component
+        # The splitter flattens a quoted space or an escape to `_` (`"sp ace"` reaches the guard as `sp_ace`), so an operand holding
+        # `_` is trusted only when it exists as written: the source itself, a target's parent (a new last component is fine)
+        mkpath("$r/sp ace/in"); symlink(r, "$r/sp ace/in/dl"); mkpath("$r/no_link/in"); write("$r/no_link/in/f", "f\n"); mkpath("$sc/x_y")
+        for c in (
+                "cp -R \"sp ace\" .lanes/scratch/reviewer/sp", "cp -R 'sp ace' .lanes/scratch/reviewer/sp", "cp -R sp\\ ace .lanes/scratch/reviewer/sp",
+                "cp -R no_link \"sp ace\" .lanes/scratch/reviewer/sp", "cp a \".lanes/scratch/reviewer/d/dl/x y\"", "cp a \".lanes/scratch/reviewer/d/d l/q\"",
+                "mkdir -p \".lanes/scratch/reviewer/d/dl/x y\" .lanes/scratch/reviewer/z", "cp a \"x y/../.lanes/scratch/reviewer/q\"",
+                "mkdir -p \".lanes/scratch/reviewer/new one/z\"", "cp -R \"no link\" .lanes/scratch/reviewer/nl", "cp -R sp_ace .lanes/scratch/reviewer/sp",
+                "cp -R no_link .lanes/scratch/reviewer/nl", "cp -R no_link no_link .lanes/scratch/reviewer/n_l",   # a same-named `no_link` could hide `no link`
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in ("cp a \".lanes/scratch/reviewer/x y\"", "cp no_link/in/f .lanes/scratch/reviewer/nl", "mkdir -p .lanes/scratch/reviewer/x_y/z",
+                "cp \"no link/in/f\" .lanes/scratch/reviewer/n_l", "cp a \".lanes/scratch/reviewer/x_y/new one\"", "mkdir -p .lanes/scratch/reviewer/x_y/b_c")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R \"sp ace\" .lanes/scratch/reviewer/sp"), r)
+        @test rc == 2 && occursin("quoted space", err) && occursin("sp_ace", err)
+        for p in ("$r/.lanes/scratch/reviewer/d/dl/q", "$r/.lanes/scratch/reviewer/lnkdir/x", "$r/.lanes/scratch/reviewer/lnk", "$r/.lanes/scratch/reviewer/d/./q",
+                "$r/.lanes/scratch/reviewer/d/dl/../q", "$r/.lanes/scratch/reviewer/\$X/q", "$r/.lanes/reports/lnkrep/q")
+            islink("$r/.lanes/reports/lnkrep") || symlink(r, "$r/.lanes/reports/lnkrep")
+            @test blocked("write_guard.sh", write_as("reviewer", p), r) || (println("write not blocked: $p"); false)
+        end
+        rc, _, err = hook("write_guard.sh", write_as("reviewer", "$r/.lanes/scratch/reviewer/d/dl/q"), r)
+        @test rc == 2 && occursin("symlink", err) && occursin("$sc/d/dl", err)
+        for p in ("$r/.lanes/scratch/reviewer/plain.md", "$r/.lanes/scratch/reviewer/d/q", "$r/.lanes/scratch/reviewer/real/x y", "$r/.lanes/reports/reviewer-9.md")
+            @test !blocked("write_guard.sh", write_as("reviewer", p), r) || (println("write blocked: $p"); false)
+        end
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_bash_guard_agents_lib.sh"))                       # write_guard needs the lib too
+        @test blocked("write_guard.sh", write_as("", "$r/src/x.jl"), r; hooks = h)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/*"), r)
         @test rc == 2 && occursin("glob", err) && occursin(".lanes/scratch/reviewer/d/*", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R deep2 .lanes/scratch/reviewer/deep2"), r)
-        @test rc == 2 && occursin("deeper than 8 levels", err)
-        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R deep .lanes/scratch/reviewer/deep"), r)
         @test rc == 2 && occursin("deeper than 8 levels", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R srcdir .lanes/scratch/reviewer/d"), r)
         @test rc == 2 && occursin("symlink", err) && occursin("srcdir/dl", err)

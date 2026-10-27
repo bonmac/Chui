@@ -117,7 +117,15 @@ ro_agent_git() {
 # ro_agent_write_check ABS: write_guard.sh; a read-only agent writes only its reports and its scratch.
 ro_agent_write_check() {
     [ -n "$RO_AGENT" ] || return 0
-    case $1 in "$ROOT"/.lanes/reports/?* | "$ROOT_P"/.lanes/reports/?* | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT"/?*) return 0 ;; esac
+    case $1 in "$ROOT"/.lanes/reports/?* | "$ROOT_P"/.lanes/reports/?* | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT"/?*)
+        # review P1: the prefix match is lexical, so the RAW path ($fp, write_guard.sh) takes no `.`/`..` component or expansion,
+        # and no existing symlink sits at or above the path below the root (ro_nolink, _bash_guard_agents_lib.sh)
+        _n=Write
+        case "/$fp/" in */./* | */../*) ro_deny "the write target $fp has a . or .. component: a symlink before it is followed by the OS, not by the guard" ;; esac
+        case $fp in *'$'* | *'`'*) ro_deny "the write target $fp holds an expansion the guard cannot resolve" ;; esac
+        ro_nolink "$1"
+        return 0 ;;
+    esac
     if in_main "$1"; then case $1 in "$IN_MAIN"/.lanes/reports/?*) return 0 ;; esac; fi
     deny "agent_type '$AGENT' is read-only (ADR-0016 D3): it may write only .lanes/reports/** and .lanes/scratch/$AGENT/**, not $1."
 }
