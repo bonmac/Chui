@@ -76,6 +76,7 @@ const TEST_FILES = [
     "test_check_docs.jl",
     "test_contract_usage.jl",
     "test_ci.jl",
+    "test_ci_format.jl",   # 0.3.1 finding 1: format job selects files, fixtures excluded, Runic-clean
     "test_lane.jl",
     "test_changelog.jl",
     "test_check_claims.jl",
