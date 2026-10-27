@@ -191,9 +191,12 @@ end
     end
 
     if IN_FACTORY
-        @testset "factory VERSION 0.3.0 and its CHANGELOG migration list (§9.2, §6)" begin
-            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.3.0"
-            sec = changelog_section(read(joinpath(FACTORY, "CHANGELOG.md"), String), "0.3.0")
+        @testset "factory VERSION 0.3.1; the 0.3.1 and 0.3.0 CHANGELOG migration lists (§9.2, §6)" begin
+            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.3.1"
+            cl = read(joinpath(FACTORY, "CHANGELOG.md"), String)
+            sec1 = changelog_section(cl, "0.3.1")
+            @test occursin("**Migration.**", sec1) && occursin("julia scripts/gen.jl", sec1)
+            sec = changelog_section(cl, "0.3.0")   # 0.3.0's section keeps its migration items
             @test !isempty(sec)
             for w in ("test_writer", "implementer", "risk.toml", "test/runtests.jl", "ADR-0015")
                 @test occursin(w, sec) || (println("CHANGELOG 0.3.0 lacks $w"); false)

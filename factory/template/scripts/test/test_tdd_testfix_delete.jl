@@ -29,9 +29,8 @@
 #   `renamed_by`), is dropped and reported on its own line `REMOVED <name> (test-fix <sha7>)`, not
 #   NOT-RUN, and does not fail green. A deletion by any other author or phase is still NOT-RUN.
 #
-# Note for the implementer: test_tdd_rename.jl's "an item deleted with no replacement still blocks
-# green" pins the OLD behaviour (red exit 2, then NOT-RUN after a test-writer deletion-only test-fix)
-# and contradicts this decision; the lead must rule on updating it.
+# test_tdd_rename.jl's deletion case was reworked to this decision in a test-fix commit (68c3a5e):
+# it no longer pins the old behaviour (red exit 2, then NOT-RUN after a deletion-only test-fix).
 #
 # Helpers are copied (prefix `tf_`) from test_tdd_cli.jl and test_tdd_history2.jl so this file runs
 # alone (FACTORY_TEST_ONLY=test_tdd_testfix_delete.jl). Cost: about eight package test runs.
