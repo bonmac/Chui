@@ -9,7 +9,7 @@
 #   FACTORY_ALLOW_OUTWARD=1  allow gh actions that create or change things on GitHub
 #   FACTORY_ALLOW_T3=1       allow modelled Bash writes to T3 paths (as for write_guard; 0.2.4)
 d=$(dirname -- "$0")
-for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh _bash_guard_write.sh; do # a missing library must block (exit 2), not fail open
+for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh _bash_guard_write.sh _bash_guard_agents.sh _bash_guard_agents_lib.sh; do # a missing library must block (exit 2), not fail open
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; bash_guard fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
@@ -17,6 +17,8 @@ done
 . "$d/_read_only_roots.sh"
 . "$d/_bash_guard_cmd.sh"
 . "$d/_bash_guard_write.sh"
+. "$d/_bash_guard_agents.sh" # 0.4.0 D3: a read-only agent (payload agent_type in READ_ONLY_AGENTS) runs only an allowlist
+. "$d/_bash_guard_agents_lib.sh" # ... whose cwd, cd/-C targets and scripts resolve into a trusted checkout, never .lanes/; fixed option sets
 T3_HINT=" For other files use the Edit/Write tools, not sed -i, redirects or heredocs."
 need_jq
 raw=$(field '.tool_input.command | strings')
@@ -38,8 +40,16 @@ fi
 # One simple command per line (_bash_guard_lib.sh): heredoc bodies dropped, quoted text one
 # word with its quotes removed, `\`+newline joined. The denylist and the per-command checks
 # both read it, so a quoted commit message is not a command and `"git" reset` is.
-segs=$(printf '%s\n' "$raw" | segments)
+# 0.4.0: a splitter that fails (no awk, or awk crashed) gave an EMPTY list, which passed everything.
+segs=$(printf '%s\n' "$raw" | segments) || deny "the command splitter failed (awk missing or crashed, status $?); bash_guard fails closed. Check PATH for awk."
+case $segs in *[![:space:]]*) ;; *) # an empty list from a non-blank, non-comment command is a silent splitter failure (critic)
+    _t=$raw
+    while :; do case $_t in [[:space:]]*) _t=${_t#?} ;; *) break ;; esac; done
+    case $_t in '' | '#'*) ;; *) deny "the command splitter returned nothing for a non-empty command (awk broken?); bash_guard fails closed." ;; esac
+    ;;
+esac
 has() { printf '%s\n' "$segs" | grep -Eq -- "$1"; }
+has '^__factory_ambiguous_heredoc$' && deny "a heredoc inside a \"\$(...)\" whose closing ) is on the <<EOF line or on the EOF line (\"\$(cat <<EOF)\", 'EOF)') is read differently by bash and zsh (zsh reads on to the bare EOF line and runs what follows), so bash_guard cannot model it: put the closing ) on its own line after the EOF line."
 S='(^|[;&|(`[:space:]])'                          # start of a command word
 G="${S}git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|-[[:alpha:]]|--[a-z-]+(=[^[:space:]]+)?))*[[:space:]]+" # git + global options
 has "${G}reset[[:space:]]+--hard" && deny "git reset --hard is blocked: it discards work. Use a WIP commit or ask."
@@ -78,6 +88,7 @@ printf '%s\n' "$segs" | {
             case $tok in *'>'?*) outside "${tok##*>}" ;; esac
             prev=$tok
         done
+        [ -z "$RO_AGENT" ] || ro_agent_check "$@" # the allowlist first, so the denial names it; the lead's rules still apply below
         check_cmd "$@"
     done
 }

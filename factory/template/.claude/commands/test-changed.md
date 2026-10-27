@@ -1,5 +1,5 @@
 ---
-description: Run the tests affected by the current diff, then the format and guard checks.
+description: "Package repos only: Run the tests affected by the current diff, then the format and guard checks."
 allowed-tools: Bash(git diff:*), Bash(git merge-base:*), Bash(julia:*), Read, Grep
 ---
 <!-- Factory-managed (see .factory-version). -->

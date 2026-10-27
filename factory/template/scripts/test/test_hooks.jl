@@ -6,7 +6,7 @@ function hook(name, payload, root; env = Dict{String, String}(), hooks = TEST_HO
     return p.exitcode, String(take!(out)), String(take!(err))
 end
 # 0.2.4: tabs are escaped too; a raw tab is invalid JSON, which the guards now refuse (fail closed)
-json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t")
+json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t", "\r" => "\\r")   # 0.4.0: CR too (CRLF heredocs)
 bash(cmd; cwd = "") = "{\"session_id\":\"s1\",\"cwd\":\"$(json(cwd))\",\"tool_input\":{\"command\":\"$(json(cmd))\"}}"
 write_payload(path; key = "file_path") = "{\"session_id\":\"s1\",\"tool_input\":{\"$key\":\"$(json(path))\"}}"
 blocked(name, payload, root; kw...) = hook(name, payload, root; kw...)[1] == 2
@@ -240,6 +240,8 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         @test hook("lane_ledger.sh", "{\"hook_event_name\":\"SubagentStop\"}", root; hooks = h)[1] == 0   # advisory: fails open
     end
 
+    # 0.4.0 testsets (fail-closed exits, the watchdog, bare cd, heredoc terminators): test_hooks_040.jl
+
     @testset "write_guard" begin
         @test blocked("write_guard.sh", write_payload("$OUT/x.jl"), root)
         @test blocked("write_guard.sh", write_payload(expanduser("~/x.md")), root)
@@ -269,6 +271,7 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
                 # 0.2.4: the gate's own tests and the new gate scripts
                 "scripts/test/*", "scripts/lane.jl", "scripts/lane", "scripts/bench.jl", "scripts/changelog.jl",
                 "scripts/check_claims.jl", "scripts/evidence.jl",
+                "scripts/_lane_stats.jl",   # 0.4.0: included by lane.jl (f040-lane), so it is part of the gate
             ]
             for f in (joinpath(ROOT, "risk.toml"), joinpath(FACTORY, "profiles/coordinator/risk.toml"))
                 t3 = reduce(vcat, [p["globs"] for p in TOML.parsefile(f)["protected"] if p["tier"] == "T3"])
@@ -336,3 +339,9 @@ end
         @test hook("bash_guard.sh", c, r; hooks = hooks_with_roots(String[]; src = hh, required = true))[1] == 2
     end
 end
+
+include("test_hooks_040.jl")   # the 0.4.0 hook testsets: this file and test_hooks_lifecycle.jl are at the 400-line budget
+include("test_hooks_format.jl")   # 0.4.0 D10: the advisory format_check.sh (PostToolUse Edit|Write)
+include("test_hooks_agents.jl")   # 0.4.0 Task 3: read-only agents (bash_as, write_as)
+include("test_hooks_040b.jl")   # 0.4.0 final review: pending ledger appends, report names, --report, format_check, lock owner
+include("test_hooks_040c.jl")   # 0.4.0 critic round 3 (fix7): lane audit --repo, case-insensitive .git, appends through pending

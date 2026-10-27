@@ -84,6 +84,8 @@ tw_git() { # ARGS (after git): status, add <test paths>, diff [--cached] -- <tes
     [ $# -eq 0 ] || shift
     case $_sub in
         commit) return 0 ;;
+        rev-parse | branch | worktree) # 0.4.0 _preflight: the checkout, branch and worktree list only (no history, no code)
+            case "$_sub $*" in 'rev-parse --show-toplevel' | 'branch --show-current' | 'worktree list') ;; *) tdeny tw-git §0.6 "a test-writer runs only git rev-parse --show-toplevel, branch --show-current and worktree list for its pre-flight (not git $_sub $*)" ;; esac ;;
         status) for _w; do case $_w in --verbose | -v* | -[!-]*v*) tdeny tw-git §0.6 "git status -v prints diffs" ;; esac; done ;;
         add) for _w; do case $_w in -- | -v | --verbose | -N | --intent-to-add) ;; -*) tdeny tw-git §0.6 "git add $_w: stage named test/ paths" ;; *) tw_tpath "$_w" "$_rd" ;; esac; done ;;
         diff)
@@ -120,7 +122,7 @@ tw_cmd() { # NAME ARGS: the test-writer's Bash allowlist, other than cd and git
             grep:-e | rg:-e | *:--regexp) _p=1 _pa="" ;;
             grep:-f | rg:-f | *:--file) _p=f _pa="" ;;
             grep:-[ABCmd] | rg:-[ABCmgtT] | head:-[nc] | tail:-[nc] | rg:--glob | rg:--type) _p=1 ;;
-            grep:-R* | grep:-[!-]*R* | rg:-L* | rg:-[!-]*L* | *:--dereference-recursive | rg:--follow | rg:--pre* | *:--*-from* | *:--file=*)
+            grep:-R* | grep:-[!-]*R* | rg:-L* | rg:-[!-]*L* | *:--dereference-recursive | rg:--follow | rg:--pre* | rg:--hostname-bin* | *:--*-from* | *:--file=*)
                 tdeny tw-bash §0.6 "$_n $_w can read beyond the allowlist (symlinks, commands, file lists)" ;;
             grep:-r* | grep:-[!-]*r* | grep:--recursive) _rec=1 ;;
             *:-*) ;;

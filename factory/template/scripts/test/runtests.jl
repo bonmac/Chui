@@ -1,15 +1,94 @@
 # Factory tests: every script and hook in scripts/ and .claude/hooks/ has tests here.
-#   julia scripts/test/runtests.jl            (also run by `julia scripts/ci.jl guards`)
+#   julia scripts/test/runtests.jl [NAME...] [--hooks-dir DIR]   (also run by `julia scripts/ci.jl guards`)
+# NAME selects test files (`hooks` = test_hooks*.jl, `gen`, `lane`, `tdd`, ...; none = all), in file order;
+# some files use helpers an earlier one defines (`sync_factory` needs `hooks`), so name those too. --hooks-dir
+# runs the hook tests against a COPY of the hooks (0.4.0, D3: the critic's gate audit mutates
+# .lanes/scratch/critic/hooks and looks for a test that goes red), not .claude/hooks.
 # Stdlib only. Hooks are run as real `sh` processes with JSON on stdin. Needs git and jq.
 using Test
-using TOML, SHA   # here too, so a FACTORY_TEST_ONLY selection runs without the files that import them
+using TOML, SHA   # here, so a NAME or FACTORY_TEST_ONLY selection runs without the files that import them
 
 # factory 0.3.0: a caller's FACTORY_ALLOW_* leaked into every child process and flipped 101+ hook deny tests.
 foreach(v -> delete!(ENV, v), ("FACTORY_ALLOW_T3", "FACTORY_ALLOW_PUSH", "FACTORY_ALLOW_OUTWARD"))
 
 const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
-const HOOKS = joinpath(ROOT, ".claude", "hooks")
+"The top-level test files, in order. Others (test_tdd_cli.jl, test_tdd_history*.jl, ...) are included by these."
+const TEST_FILES = [
+    "test_gen.jl",
+    "test_hooks.jl",
+    "test_env_isolation.jl",
+    "test_hooks_lifecycle.jl",
+    "test_hooks_tdd.jl",   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
+    "test_hooks_tdd040.jl",   # the 0.3.0 x 0.4.0 interactions (the merge of main into feat/f040)
+    "test_bash_guard.jl",
+    "test_dod.jl",
+    "test_ratchet.jl",
+    "test_check_docs.jl",
+    "test_contract_usage.jl",
+    "test_ci.jl",
+    "test_ci_format.jl",   # 0.3.1 finding 1: format job selects files, fixtures excluded, Runic-clean
+    "test_lane.jl",
+    "test_lane_040.jl",
+    "test_lane_040b.jl",
+    "test_changelog.jl",
+    "test_check_claims.jl",
+    "test_evidence.jl",
+    "test_sync_factory.jl",
+    "test_runtests_template.jl",
+    "test_tdd.jl",
+    "test_tdd_rename.jl",   # renamed red item must not deadlock green (0.3.0)
+    "test_tdd_backfill.jl",
+    "test_tdd_classify2.jl",
+    "test_tdd_review.jl",
+    "test_tdd_c1.jl",   # critic C1: test-side roles (law/property/differential) author test phases
+    "test_tdd_c2.jl",   # critic C2: one trailer parser (git's), phase-less role commits
+    "test_tdd_c3.jl",   # critic C3/C6: skip separators, lead-only modes, per-merge segments
+    "test_tdd_c4.jl",   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
+    "test_tdd_c5.jl",   # review of the critic fixes: sub-lane merged twice, trailer forms
+    "test_tdd_testfix_delete.jl",   # 0.3.1 finding 4: a deletion-only test-fix records what it removed
+    "test_tdd_ledger.jl",   # 0.3.1 finding 2: tdd-commit records and audit use the owning repo's main ledger
+    "test_docs_031.jl",   # 0.3.1 findings 3, 5, 6: unnamed TDD dispatches, stale claims, blind spots
+    "test_profile_coordinator.jl",   # tw-032: the dod and tdd tests pass in a coordinator-profile sync
+]
+# FACTORY_TEST_ONLY=a.jl,b.jl runs only those of TEST_FILES (test_profile_coordinator.jl uses it).
+# A name not in TEST_FILES (a nested file would run nothing) is an error, never an empty pass.
+const ONLY = filter(!isempty, strip.(split(get(ENV, "FACTORY_TEST_ONLY", ""), ',')))
+for f in ONLY
+    f in TEST_FILES || error("FACTORY_TEST_ONLY: $f is not a top-level file of scripts/test/runtests.jl")
+end
+"Parse the command line: (selected names, hooks dir or \"\"). An unknown option is an error, never ignored."
+function runtests_args(argv)
+    names, hooks = String[], ""
+    i = 1
+    while i <= length(argv)
+        a = argv[i]
+        if a == "--hooks-dir" && i < length(argv)
+            hooks = abspath(argv[i += 1])
+        elseif startswith(a, "--hooks-dir=")
+            hooks = abspath(a[(length("--hooks-dir=") + 1):end])
+        elseif startswith(a, "-")
+            error("usage: runtests.jl [NAME...] [--hooks-dir DIR]; unknown option `$a`")
+        else
+            push!(names, a)
+        end
+        i += 1
+    end
+    return names, hooks
+end
+"The test files NAME... select: test_<name>.jl and test_<name>_*.jl; none selects every file."
+function selected_files(names)
+    isempty(names) && return TEST_FILES
+    files = String[]
+    for n in names
+        hit = filter(f -> f == "test_$n.jl" || startswith(f, "test_$(n)_"), TEST_FILES)
+        isempty(hit) && error("runtests.jl: no test file for `$n` (names: $(join(replace.(TEST_FILES, r"^test_|\.jl$" => ""), ", ")))")
+        append!(files, hit)
+    end
+    return files
+end
+const SELECTED, HOOKS_DIR = runtests_args(ARGS)
+const HOOKS = isempty(HOOKS_DIR) ? joinpath(ROOT, ".claude", "hooks") : HOOKS_DIR
 const FACTORY = normpath(joinpath(ROOT, ".."))           # set when run inside factory/template
 const IN_FACTORY = isfile(joinpath(FACTORY, "MANIFEST.toml")) && isfile(joinpath(FACTORY, "VERSION"))
 const JULIA = [Base.julia_cmd().exec; "--startup-file=no"]
@@ -63,51 +142,10 @@ the fixtures equal factory/template's seeds.
 """
 seed_fixture(name) = read(joinpath(@__DIR__, "fixtures", "seed", name), String)
 
-"The top-level test files, in order. Others (test_tdd_cli.jl, test_tdd_history*.jl, ...) are included by these."
-const TEST_FILES = [
-    "test_gen.jl",
-    "test_hooks.jl",
-    "test_env_isolation.jl",
-    "test_hooks_lifecycle.jl",
-    "test_hooks_tdd.jl",   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
-    "test_bash_guard.jl",
-    "test_dod.jl",
-    "test_ratchet.jl",
-    "test_check_docs.jl",
-    "test_contract_usage.jl",
-    "test_ci.jl",
-    "test_ci_format.jl",   # 0.3.1 finding 1: format job selects files, fixtures excluded, Runic-clean
-    "test_lane.jl",
-    "test_changelog.jl",
-    "test_check_claims.jl",
-    "test_evidence.jl",
-    "test_sync_factory.jl",
-    "test_runtests_template.jl",
-    "test_tdd.jl",
-    "test_tdd_rename.jl",   # renamed red item must not deadlock green (0.3.0)
-    "test_tdd_backfill.jl",
-    "test_tdd_classify2.jl",
-    "test_tdd_review.jl",
-    "test_tdd_c1.jl",   # critic C1: test-side roles (law/property/differential) author test phases
-    "test_tdd_c2.jl",   # critic C2: one trailer parser (git's), phase-less role commits
-    "test_tdd_c3.jl",   # critic C3/C6: skip separators, lead-only modes, per-merge segments
-    "test_tdd_c4.jl",   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
-    "test_tdd_c5.jl",   # review of the critic fixes: sub-lane merged twice, trailer forms
-    "test_tdd_testfix_delete.jl",   # 0.3.1 finding 4: a deletion-only test-fix records what it removed
-    "test_tdd_ledger.jl",   # 0.3.1 finding 2: tdd-commit records and audit use the owning repo's main ledger
-    "test_docs_031.jl",   # 0.3.1 findings 3, 5, 6: unnamed TDD dispatches, stale claims, blind spots
-    "test_profile_coordinator.jl",   # tw-032: the dod and tdd tests pass in a coordinator-profile sync
-]
-# FACTORY_TEST_ONLY=a.jl,b.jl runs only those of TEST_FILES (test_profile_coordinator.jl uses it).
-# A name not in TEST_FILES (a nested file would run nothing) is an error, never an empty pass.
-const ONLY = filter(!isempty, strip.(split(get(ENV, "FACTORY_TEST_ONLY", ""), ',')))
-for f in ONLY
-    f in TEST_FILES || error("FACTORY_TEST_ONLY: $f is not a top-level file of scripts/test/runtests.jl")
-end
-
 @testset "factory" begin
     t0 = time()
-    for f in TEST_FILES
+    isempty(HOOKS_DIR) || println("hooks under test: $HOOKS")
+    for f in selected_files(SELECTED)   # NAME selection (0.4.0), then FACTORY_TEST_ONLY (tw-032)
         (isempty(ONLY) || f in ONLY) && include(f)
     end
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")

@@ -12,14 +12,36 @@
         @test occursin("idle-unreported", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         @test hook("teammate_idle.sh", idle("beta"), root)[1] == 2
         mkpath(joinpath(root, ".lanes/reports"))
-        write(joinpath(root, ".lanes/reports/gamma.md"), "report\n")
+        write(joinpath(root, ".lanes/reports/gamma.md"), "Verdict: MAY MERGE\nreport\n")
         @test hook("teammate_idle.sh", idle("gamma"), root)[1] == 0          # report on disk
         @test hook("teammate_idle.sh", "{}", root)[1] == 0
+        # 0.4.0 (critic): a report counts only with a verdict first line (D5), by name `<name>.md` or
+        # `<name>--r<digits>.md` (final review M2); anything else is partial and the idle is blocked once, as with no report
+        write(joinpath(root, ".lanes/reports/partial.md"), "Findings so far\n- one\n")
+        rc, _, err = hook("teammate_idle.sh", idle("partial"), root)
+        @test rc == 2 && occursin("partial", err) && occursin("Verdict:", err) || (println("partial: $rc $err"); false)
+        @test hook("teammate_idle.sh", idle("partial"), root)[1] == 0         # second idle: no loop
+        write(joinpath(root, ".lanes/reports/wrongcase.md"), "verdict: may merge\n")
+        @test hook("teammate_idle.sh", idle("wrongcase"), root)[1] == 2
+        write(joinpath(root, ".lanes/reports/other-verdict.md"), "Verdict: APPROVE\n")
+        @test hook("teammate_idle.sh", idle("other"), root)[1] == 2
+        for (n, v) in (("fixes", "MERGE WITH FIXES"), ("fixfirst", "FIX FIRST"))
+            write(joinpath(root, ".lanes/reports/$n--r2.md"), "Verdict: $v\n\n- x\n")   # <name>--r<round>.md
+            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n--r2.md not counted"); false)
+        end
+        # (review round 1 m3) `<name>--r<digits>.md` only: `f040-hooks.md` is the f040-hooks lane's, not f040's
+        write(joinpath(root, ".lanes/reports/f040-hooks.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("f040"), root)[1] == 2 || (println("f040 claimed f040-hooks.md"); false)
+        write(joinpath(root, ".lanes/reports/rev-1a.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("rev"), root)[1] == 2 || (println("rev claimed rev-1a.md"); false)
+        write(joinpath(root, ".lanes/reports/reviewer--r2.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("reviewer"), root)[1] == 0 || (println("reviewer--r2.md not counted"); false)
+        @test occursin("\"idle-reported\"", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         # 0.2.6 (factory-026 item 5): a lane's session (root = its worktree) writes the report there; it counts
         for wt in (".worktrees/delta", ".claude/worktrees/epsilon")
             n = basename(wt)
             @test hook("teammate_idle.sh", idle(n), root)[1] == 2
-            mkpath(joinpath(root, wt, ".lanes/reports")); write(joinpath(root, wt, ".lanes/reports/$n.md"), "report\n")
+            mkpath(joinpath(root, wt, ".lanes/reports")); write(joinpath(root, wt, ".lanes/reports/$n.md"), "Verdict: MAY MERGE\nreport\n")
             @test hook("teammate_idle.sh", idle(n * "x"), root)[1] == 2      # another teammate's report does not count
             rc, _, _ = hook("teammate_idle.sh", replace(idle(n), "s1" => "s9"), root)
             @test rc == 0 || (println("teammate_idle ignored $wt/.lanes/reports/$n.md"); false)
@@ -249,6 +271,8 @@
         @test denied(pre("e1"), r, 1)
     end
 
+    # 0.4.0 testsets (quiet stops, once-per-key idle, the ledger lock, the big-ledger denial): test_hooks_040.jl
+
     @testset "precompact writes a snapshot; session_start re-injects it" begin
         repo = tmp_repo()
         @test hook("dispatch_limit.sh", "{\"session_id\":\"s3\",\"tool_input\":{\"name\":\"lane-pc\"}}", repo)[1] == 0
@@ -260,6 +284,41 @@
         rc, out, _ = hook("session_start.sh", "{\"source\":\"compact\"}", repo)
         @test rc == 0 && occursin("Pre-compaction snapshot", out)
         @test hook("session_start.sh", "{}", root)[1] == 0     # no snapshot: silent
+        # 0.4.0 (D2): a ledger over 2,000 lines is compacted by `scripts/lane compact` (a sibling lane's
+        # work): the call is checked with a `julia` stub on PATH that records its arguments. The compaction
+        # runs DETACHED (review round 1 m4): the hook returns at once (here: before the stub's 1.5 s), so the
+        # host's hook timeout never kills a compaction half-way and leaves its .dispatch.lock behind.
+        stub = mktempdir()
+        argf = joinpath(stub, "args.txt")
+        startf = joinpath(stub, "started")
+        write(joinpath(stub, "julia"), "#!/bin/sh\n: >\"$startf\"\nsleep 1.5\nprintf '%s\\n' \"\$@\" >\"$argf\"\n")
+        chmod(joinpath(stub, "julia"), 0o755)
+        env = Dict("PATH" => stub * ":" * ENV["PATH"])
+        waitfile(f) = (
+            for _ in 1:100
+                isfile(f) && return true; sleep(0.05)
+            end; false
+        )
+        repo = tmp_repo(Dict("scripts/lane.jl" => "# stub\n"))
+        mkpath(joinpath(repo, ".lanes"))
+        pc = "{\"session_id\":\"s3\",\"trigger\":\"manual\"}"
+        write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2000)
+        @test hook("precompact.sh", pc, repo; env)[1] == 0
+        sleep(0.3)
+        @test !isfile(startf)                                                 # 2,000 lines: not over the limit
+        write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2001)
+        t = @elapsed (rc = hook("precompact.sh", pc, repo; env)[1])
+        @test rc == 0
+        @test t < 1 || (println("precompact waited for the compaction: $t s"); false)
+        @test waitfile(argf) || (println("julia not called for 2,001 lines"); false)
+        args = isfile(argf) ? readlines(argf) : String[]
+        @test any(a -> endswith(a, "scripts/lane.jl"), args) && "compact" in args || (println("args: $args"); false)
+        @test isfile(joinpath(repo, ".lanes/precompact.md"))                 # the snapshot is written first
+        rm(argf); rm(startf)
+        rm(joinpath(repo, "scripts/lane.jl"))                                # no lane.jl (a seeded repo without it): no call
+        @test hook("precompact.sh", pc, repo; env)[1] == 0
+        sleep(0.3)
+        @test !isfile(startf)
     end
 
     @testset "a denial from a factory/template session root says so" begin
@@ -281,7 +340,7 @@
         @test all(g -> any(contains(g), cmds), guards)
         @test count(contains("tdd_boundary.sh"), cmds) == 2
         tdd_m = readlines(pipeline(`jq -r '.hooks.PreToolUse[] | select(.hooks[].command | contains("tdd_boundary.sh")) | .matcher' $settings`))
-        @test sort(tdd_m) == sort(["Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash", "Agent|Task"])
+        @test sort(tdd_m) == sort(["Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task"])
         empty_root = realpath(mktempdir())                       # no .claude/hooks/ at all
         shells = filter(s -> Sys.which(s) !== nothing, ["sh", "bash", "zsh", "fish"])
         for c in cmds, s in shells                               # the command must not depend on the user's shell
@@ -296,6 +355,19 @@
         run1(payload) = run(pipeline(ignorestatus(addenv(`sh -c $bg`, "CLAUDE_PROJECT_DIR" => proj)); stdin = IOBuffer(payload), stdout = devnull, stderr = devnull)).exitcode
         @test run1(bash("ls")) == 0
         @test run1(bash("git reset --hard")) == 2
+        # 0.4.0 (D9): Monitor runs commands outside the Bash matcher, so bash_guard sees it too; MultiEdit
+        # names a tool that no longer exists. Probe 2026-10-27 (the Monitor tool's schema): its input is
+        # `command` (a string, as for Bash) or `ws` (a WebSocket, no command), so a command Monitor is
+        # checked like Bash and a ws Monitor is denied by the no-command rule (fails closed).
+        matchers = readlines(pipeline(`jq -r '.hooks.PreToolUse[].matcher' $settings`))
+        @test matchers == [
+            "Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task",
+            "Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task",
+        ] || (println("PreToolUse matchers: $matchers"); false)
+        mon(ti) = "{\"session_id\":\"s1\",\"tool_name\":\"Monitor\",\"cwd\":\"$(json(proj))\",\"tool_input\":$ti}"
+        @test run1(mon("{\"command\":\"tail -f app.log\",\"description\":\"d\",\"timeout_ms\":1000}")) == 0
+        @test run1(mon("{\"command\":\"git reset --hard\",\"description\":\"d\",\"timeout_ms\":1000}")) == 2
+        @test run1(mon("{\"ws\":{\"url\":\"wss://x\"},\"description\":\"d\",\"timeout_ms\":1000}")) == 2
         # 0.2.8: lane_ledger.sh also sees Agent/Task/TaskStop results and failures
         for ev in ("PostToolUse", "PostToolUseFailure")
             m = readlines(pipeline(`jq -r ".hooks.$ev[]? | select(.hooks[].command | contains(\"lane_ledger.sh\")) | .matcher" $settings`))

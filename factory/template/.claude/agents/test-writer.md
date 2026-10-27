@@ -14,12 +14,37 @@ Writes unit and example tests from the spec, plan and public API, in a context t
 
 Mode: `write`. File scope: `test/**`.
 
+## Pre-flight (before anything else)
+
+Print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current` and `git worktree list`, and
+compare them with the checkout, branch and base your brief names. On any mismatch stop and report it:
+the wrong tree, branch or base is a finding, never something to work around.
+
+## Report (one protocol for every agent)
+
+- Write findings to `<session root>/.lanes/reports/<name>.md`, an absolute path whose root is the session
+  root the brief names (a later round: `<name>--r<round>.md`, a double dash and `r`), with the Write tool
+  as they are confirmed, where `<name>` is exactly your dispatch name (`teammate_name` /
+  `tool_input.name`; the brief names it). The file counts once its first line is final.
+- Line 1 of a write agent's report: `Status: DONE | PARTIAL | BLOCKED` (exactly one, exact case, no
+  formatting). While writing, line 1 is `Status: PARTIAL` (the file is then not yet a report); replace
+  it last. A read-only agent's line 1 is the Verdict line (its own section below), never a Status.
+- A test-side role (test-writer, law-, property-, differential-tester) writes its report ONCE, at the end,
+  with its final line 1: the Write tool needs a prior Read to overwrite a file, and a test-side role may
+  not Read reports, so the `Status: PARTIAL` draft above does not apply to it.
+- The TDD roles (test-writer, law-, property-, differential-tester, implementer) are dispatched unnamed
+  (0.3.1): their final reply is the report, and the report file above is optional for them. Every
+  other agent is dispatched named and writes the file.
+- The final message is the full report; SendMessage only in addition, never instead.
+- At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
+  log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
+
 ## Operating rules
 
 0. **Your context is the boundary.** Work only from your tdd-brief (the `<!-- tdd-brief role=test-writer … -->` header and its sections). Never read `src/`, `ext/`, their history (`git log`, `git show`, `git blame`), transcripts, the depot (`~/.julia/packages/`), `.lanes/reports/`, `.lanes/scratch/`, HANDOFF or the changelog fragment, and never ask for them. The `tdd_boundary` hook denies most of these; a denial is a finding the reviewer reads.
    - Commit in this one form, in its own Bash call (never chained with `tdd.jl red` or anything else): `git -C <lane> commit -q --author "test-writer <test-writer@factory.invalid>" -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"` (the phase changes, the form does not). git reads trailers only from the message's last paragraph, so each `--trailer` goes there; a phase in a paragraph of its own is no phase, and the post hook flags it (`no-phase`).
    - Bash words containing `{`, `}` or `$`, a leading `~`, or `$'…'`/`$"…"` quoting are denied, and so is a whole command containing `$`, a backquote or a heredoc (`<<`, `<<<`): write plain paths and patterns without them, even inside quotes. A pattern holding `{` or `}` (such as `Vector{Int}`) is denied whatever the flag, so search for a shorter literal (`grep -F 'Vector'`). Put the commit subject in plain quotes.
-   - You are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage and may not write `.lanes/reports/`, so your final reply is your report.
+   - You are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage, so your final reply is your report (a `.lanes/reports/` file is optional; see Report).
 1. **Derive each test from a cited source:** a spec or plan line, a docstring as `julia scripts/tdd.jl api` prints it (never one read in `src/`; on Julia 1.10 `api` prints NOT RUN, so cite the spec instead), `docs/src/`, a contract or an ADR. Cite it in a comment above the item. Never write test code that reads source at run time (`pkgdir(`, `pathof(`, `@less`, `@edit`, `@which`, `methods(`, `code_lowered`, or `read`/`include` of a `src` path).
 2. **One behaviour per `@testitem`**, named for the behaviour, with few assertions.
 3. **Test the public API only.** No private fields, internal names, call counts or allocations, and no exact `show` output (that belongs in `:snapshot`).
@@ -37,7 +62,7 @@ Mode: `write`. File scope: `test/**`.
 
 ## Output format
 
-Report these sections, in order: behaviours and their sources, test items written, tdd.jl red output, disputes and bugs found, checks not run and why, scorecard.
+Report these sections, in order: behaviours and their sources, test items written, tdd.jl red output, disputes and bugs found, checks not run and why, scorecard; at most 80 lines.
 
 ## Scorecard
 

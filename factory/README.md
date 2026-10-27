@@ -89,7 +89,7 @@ Either way the change lands through a reviewed PR labelled T3.
 | Path | What | Owner |
 |---|---|---|
 | `CLAUDE.md` → `AGENTS.md` | short instructions; AGENTS.md generated | seeded → generated |
-| `.agents/agent-registry.toml`, `.agents/bodies/*.md` | 13 roles: data + prose; the 13th, `test-writer` (0.3.0, ADR-0015), writes a test-first lane's red tests and the narrowed `implementer` the code | seeded / managed |
+| `.agents/agent-registry.toml`, `.agents/bodies/*.md` | 14 roles: data + prose; the 13th, `test-writer` (0.3.0, ADR-0015), writes a test-first lane's red tests and the narrowed `implementer` the code; the 14th, `verifier` (0.4.0, ADR-0016), runs the gates read-only | seeded / managed |
 | `.agents/factory.toml` (+ `.agents/factory.local.toml`) → `.claude/hooks/read-only-roots.txt`, `limits.env` | read-only roots, check_docs settings; the local file and the roots file are gitignored | seeded (per profile) / local → generated |
 | `.claude/agents/*.md`, `.codex/agents/*.toml` | generated agent files | generated |
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |

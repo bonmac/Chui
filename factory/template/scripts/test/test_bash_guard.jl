@@ -268,7 +268,8 @@
         lib = joinpath(TEST_HOOKS, "_lib.sh")
         function inmain(p; root = x)
             script = ". '$lib'; in_main '$p' && echo \"in \$IN_MAIN\" || echo out"
-            return readchomp(pipeline(addenv(`sh -c $script`, "CLAUDE_PROJECT_DIR" => root); stdin = devnull))
+            # $0 = the library, so _lib.sh finds _paths.sh beside it (HOOKS_DIR is dirname $0)
+            return readchomp(pipeline(addenv(`sh -c $script $lib`, "CLAUDE_PROJECT_DIR" => root); stdin = devnull))
         end
         @test inmain("$r/.worktrees/s/a.md") == "in $r" && inmain("$r/.claude/worktrees/w/a.md") == "in $r"
         @test inmain("$r/.lanes/reports/x.md") == "in $r"

@@ -62,6 +62,18 @@ Intake → Classify → Design → Plan → Execute → Verify → Review → Fi
 - Roles and their output formats: `.agents/agent-registry.toml` (prose in `.agents/bodies/`).
 
 
+## Precedence
+
+The factory's `scripts/lane`, its `reviewer` and `critic`, the `[lanes] max_open` cap and the
+intake tiers win over the superpowers equivalents (`using-git-worktrees`,
+`subagent-driven-development`, `brainstorming`). Plugin skills are used only for brainstorming at T2+ and for executing a plan.
+
+## Writing files under the guard
+
+Change files with Edit/Write, never heredocs or `sed -i`. No bare `cd`: use `(cd dir && cmd)`.
+A probe the guard refuses is reported `NOT RUN`, never routed around. A variable or literal
+spelled like a gated word is refused inside a Bash command: put such text in a file instead.
+
 ## Commands (one entry point; CI calls the same jobs)
 
 ```sh
@@ -130,6 +142,7 @@ the command's whole process group and exits 124 (TIMED OUT, not a pass); Ctrl-C 
 | `benchmarker` | write | inherit | Writes and runs reproducible benchmarks; reports losses as well as wins. |
 | `reviewer` | read_only | opus | Read-only review of a lane's diff for correctness, scope, tests and the definition of done. |
 | `critic` | read_only | opus | Red-team: attacks a design, a claim, or a test suite's coverage before it is accepted. |
+| `verifier` | read_only | inherit | Runs the gates (scripts/ci.jl jobs, dod.jl, the factory suite) on a named checkout through scripts/evidence.jl and reports the counts from the evidence files; never edits. |
 | `docs-writer` | write | inherit | Writes Documenter.jl pages and docstrings with doctests. |
 | `release-manager` | write | inherit | Prepares a release: version bump, CHANGELOG, compat bounds, release-check; never tags or registers without the user. |
 | `contract-steward` | write | inherit | Owns test/contracts/ and cross-repo requests; keeps contract tests matching the upstream API used. |

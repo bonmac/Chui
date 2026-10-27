@@ -71,4 +71,8 @@ exclude = [
   ".github/workflows/TagBot.yml",
   "test/*",
   "JuliaTestItems.toml",
+  # 0.4.0 (D12): package-only commands (they need test/contracts/, Pkg.test and a release)
+  ".claude/commands/contract-check.md",
+  ".claude/commands/release-check.md",
+  ".claude/commands/test-changed.md",
 ]
