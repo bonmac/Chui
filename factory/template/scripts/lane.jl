@@ -6,9 +6,14 @@
 #   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE]
 #   scripts/lane remove <name> [--repo DIR] [--allow-ignored]
 #   scripts/lane release <agent name or lane key> [--repo DIR]
+#   scripts/lane compact [--repo DIR] [--keep N]
 #
 # release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
 #         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
+# compact (0.4.0, D2) rewrites the ledger keeping every line of an open dispatch chain, in every
+#         session, plus the last N (200) other lines; atomically, under the cap's lock. The open
+#         set is the hooks' own query (_lanes.sh), run before and after: if it would change, nothing
+#         is replaced. precompact.sh runs it past 2,000 lines. Code: scripts/_lane_stats.jl.
 #
 # new     refuses past the cap ([lanes] max_open in the repo's .agents/agent-registry.toml,
 #         default 4) and when .worktrees/ is not gitignored; branch <prefix>/<name> from base;
@@ -32,6 +37,7 @@ module Lane
 
     using TOML, Dates
     include(joinpath(@__DIR__, "_common.jl"))
+    include(joinpath(@__DIR__, "_lane_stats.jl"))   # 0.4.0: compact, stats, handoff (the ledger side)
 
     const NAME = r"^[a-z0-9][a-z0-9-]{0,39}$"
     const PREFIXES = ("feat", "fix", "chore", "docs", "test")
@@ -290,9 +296,9 @@ module Lane
     end
 
     function main(args)
-        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR]"
+        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N]"
         opts, pos = try
-            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported"))
+            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--keep"))
         catch e
             println(stderr, "lane: ", e isa ErrorException ? e.msg : e)
             return 2
@@ -309,6 +315,7 @@ module Lane
         sub == "audit" && length(pos) == 2 && return cmd_audit(repo, pos[2], opts)
         sub == "release" && length(pos) == 2 && !isempty(pos[2]) && return cmd_release(repo, pos[2])
         sub == "remove" && length(pos) == 2 && return cmd_remove(repo, pos[2]; allow_ignored = get(opts, "--allow-ignored", false))
+        sub == "compact" && length(pos) == 1 && return cmd_compact(repo, opts)
         println(stderr, usage)
         return 2
     end

@@ -1,0 +1,7 @@
+- **factory 0.4.0, lane.jl** (`factory/template/`; not yet versioned or synced), plan
+  `docs/superpowers/plans/2026-10-27-factory-040.md` Tasks 2, 5 and 9 (the `lane.jl` parts):
+  - `scripts/lane compact [--keep N]` (D2): rewrites the ledger keeping every line of an open
+    dispatch chain in every session plus the last N (200) other lines, under the cap's lock,
+    through a temp file and a rename; the open set comes from the hooks' own `_lanes.sh` query
+    (one copy), run before and after, and nothing is replaced if it would change. Code in the new
+    `scripts/_lane_stats.jl`, included by `lane.jl`.

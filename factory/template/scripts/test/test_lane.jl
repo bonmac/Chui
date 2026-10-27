@@ -202,3 +202,67 @@ end
     rc, out = capture(() -> Lane.main(["new", "none", "--owns", "x", "--repo", d]))
     @test rc == 0 && !occursin("copied", out) && !isfile(joinpath(d, ".worktrees/none/.agents/factory.local.toml"))
 end
+
+# 0.4.0 (D2): one JSON line per ledger event, as the hooks' `ledger` writes it (session, then the pairs).
+ledger_ev(ts, ev; session = "s1", kw...) =
+    "{\"ts\":\"$ts\",\"ev\":\"$ev\",\"session\":\"$session\"" * join(",\"$k\":\"$v\"" for (k, v) in kw) * "}"
+"The open-lane count of `file` for `session`, by the hooks' own query (OPEN_LANES_JQ from _lanes.sh), as dispatch_limit.sh runs it."
+function open_count(file, session; lanes_sh = joinpath(HOOKS, "_lanes.sh"))
+    q = ". \"\$1\" && jq -Rrn --arg s \"\$2\" --argjson ttl \"\$LANE_TTL_SECS\" \"[inputs | fromjson? // empty | objects] | \$OPEN_LANES_JQ | .count\" \"\$3\""
+    return parse(Int, readchomp(`sh -c $q sh $lanes_sh $session $file`))
+end
+
+@testset "lane compact keeps open chains (0.4.0)" begin
+    withenv("FACTORY_LANE_TTL_HOURS" => "0") do                                 # 0 = a dispatch never expires (the hooks' rule)
+        d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n"))
+        led = joinpath(d, ".lanes/ledger.jsonl")
+        mkpath(dirname(led))
+        at(i) = "2026-10-27T$(lpad(div(i, 3600), 2, '0')):$(lpad(div(i, 60) % 60, 2, '0')):$(lpad(i % 60, 2, '0'))Z"
+        ls = [
+            ledger_ev(at(1), "dispatch"; key = "open1", name = "open1", desc = "d1"),
+            ledger_ev(at(2), "spawned"; key = "open1", agent_id = "a-open1"),
+            ledger_ev(at(3), "dispatch"; key = "done1", name = "done1", desc = "d2"),
+            ledger_ev(at(4), "spawned"; key = "done1", agent_id = "a-done1"),
+            ledger_ev(at(5), "close"; key = "done1", why = "returned"),
+            ledger_ev(at(6), "dispatch"; key = "open2", name = "open2", desc = "d3"),  # no spawn record
+            ledger_ev(at(7), "dispatch"; session = "s2", key = "other", name = "other", desc = "d4"),  # another session's lane
+            ledger_ev(at(8), "stop"; agent_id = "a-open1"),                          # its own stop closes open1 (background agent)
+            ledger_ev(at(9), "dispatch"; key = "open1", name = "open1", desc = "d1"),  # re-dispatched: open again
+        ]
+        append!(ls, (ledger_ev(at(10 + i), "stop"; agent_id = "ac$i", agent_type = "-") for i in 1:3000))
+        push!(ls, "{\"ts\":\"" * at(3011) * "\",\"ev\":\"dispatch\",\"session\":\"s1\",\"key\":\"torn")   # a crash mid-write
+        write(led, join(ls, "\n") * "\n")
+        @test open_count(led, "s1") == 2 && open_count(led, "s2") == 1
+        lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
+        rc, out = lane("compact")
+        @test rc == 0 && occursin(r"compacted 3010 -> \d+ lines, 3 open lanes kept", out) || (print(out); false)
+        after = readlines(led)
+        @test open_count(led, "s1") == 2 && open_count(led, "s2") == 1          # the same jq query the cap runs
+        # the last 200 others + the 6 chain lines (open1: dispatch, spawned, its stop, re-dispatch; open2; other)
+        @test 200 <= length(after) <= 200 + 6
+        @test all(l -> success(pipeline(`jq -e .`; stdin = IOBuffer(l), stdout = devnull, stderr = devnull)), after)  # valid JSONL
+        @test !any(l -> occursin("done1", l), after)                            # the closed chain is gone
+        @test any(l -> occursin("\"key\":\"other\"", l), after)                 # another session's open lane is kept
+        @test !any(l -> occursin("torn", l), after)                             # the torn line is dropped, not kept as a fragment
+        @test !isfile(led * ".tmp")
+        @test count(l -> occursin("\"key\":\"open1\"", l), after) == 3           # dispatch, spawned, re-dispatch
+        # --keep bounds the others; the chains are always kept
+        rc, out = lane("compact", "--keep", "10")
+        @test rc == 0 && occursin("3 open lanes kept", out)
+        after = readlines(led)
+        @test 10 <= length(after) <= 16 && open_count(led, "s1") == 2 && open_count(led, "s2") == 1
+        # the dispatch lock (as dispatch_limit.sh takes it) is honoured: held => exit 1, nothing written
+        lock = joinpath(d, ".lanes/.dispatch.lock")
+        mkdir(lock)
+        was = read(led, String)
+        rc, out = lane("compact")
+        @test rc == 1 && read(led, String) == was
+        rm(lock)
+        @test lane("compact")[1] == 0 && !isdir(lock)                            # released afterwards
+        # an empty or missing ledger: nothing to do, exit 0
+        rm(led)
+        rc, out = lane("compact")
+        @test rc == 0 && occursin("compacted 0 -> 0 lines, 0 open lanes kept", out)
+        @test lane("compact", "--keep", "x")[1] == 2
+    end
+end
