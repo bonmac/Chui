@@ -64,9 +64,11 @@ D3. **Read-only is enforced by the hooks.** `gen.jl` renders `READ_ONLY_AGENTS` 
     root), `find` without `-delete`/`-exec`/`-fprint`, `git` with no `-c`/`--output` and only
     `log show diff status blame ls-files merge-base rev-parse`, `branch --show-current|--list`,
     `worktree list`; `julia scripts/dod.jl`; `julia scripts/ci.jl {test,guards,quality,docs}`;
-    `scripts/lane audit`; `julia scripts/evidence.jl latest`; `julia scripts/test/runtests.jl`.
-    `evidence.jl <kind> -- <cmd>` and `tdd.jl mutate` are NOT allowed (both run arbitrary commands or
-    write worktrees). write_guard allows `.lanes/reports/**` and `.lanes/scratch/<agent_type>/**`,
+    `scripts/lane audit`; `julia scripts/evidence.jl latest`, and `julia scripts/evidence.jl <kind>
+    -- <cmd>` only when `<cmd>` itself passes this same allowlist (the verifier records its runs
+    that way; `evidence.jl x -- sed -i ...` stays denied); `julia scripts/test/runtests.jl`.
+    `tdd.jl mutate` is NOT allowed (it writes worktrees). Inline assignments (`GIT_PAGER=x git log`)
+    and command names given by path are refused for these agents. write_guard allows `.lanes/reports/**` and `.lanes/scratch/<agent_type>/**`,
     and bash_guard allows `cp`/`mkdir` whose targets are under that scratch. The registry rule
     becomes: a read-only agent's `file_scope` is empty or a subset of those two globs. The critic's
     gate audit of a hook: copy `.claude/hooks` into its scratch, mutate the copy with Write, run
