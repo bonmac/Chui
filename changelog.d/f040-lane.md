@@ -4,7 +4,7 @@
     dispatch chain in every session plus the last N (200) other lines, under the cap's lock,
     through a temp file and a rename; the open set comes from the hooks' own `_lanes.sh` query
     (one copy), run before and after, and nothing is replaced if it would change. Code in the new
-    `scripts/_lane_stats.jl`, included by `lane.jl`.
+    `factory/template/scripts/_lane_stats.jl`, included by `lane.jl`.
   - `scripts/lane audit <name> --report FILE` (D5): the report's first line must be exactly
     `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three, exact case, nothing
     else on the line), else the audit fails; a passing audit records `{ev: verdict, lane, verdict,
