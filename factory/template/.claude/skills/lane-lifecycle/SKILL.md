@@ -72,10 +72,23 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   own (a separate `-m`, a heredoc) is no phase. The post hook flags a role commit with no phase
   (`no-phase`, exit 2) while it is still HEAD: amend it then with
   `git -C <lane> commit -q --amend --no-edit` plus `--trailer` and the phase.
+- **A cancelled commit call (critic C4).** A commit whose Bash call was cancelled (Esc) fires no post
+  event; the sweep records it `tdd-commit-late`, which E5 rejects. The lead's recovery: while that
+  commit is HEAD, have its role amend it through the hooks (`--amend --no-edit`); otherwise reset the
+  lane to before the commit and re-dispatch the role, or attest the commit with a lead waiver:
+  `git -C <lane> commit -q --allow-empty --author "lead <lead@factory.invalid>" -m "chore: waive E5" --trailer "TDD-Waiver: E5 <sha> — <reason>"`
+  (sha full or at least 7 hex; a reason; the waiver covers only a late-only record, never a sha with
+  no record or a violation; the guard denies the trailer to role callers).
+- **Sub-leads (critic C3).** A sub-lead teammate has an `agent_type`, so it can neither dispatch the
+  TDD roles nor write a mode commit: a sub-lead asks the lead for the TDD dispatch and the mode commit
+  (a `TDD-Mode: skip — <reason>` for its non-TDD code lanes too).
 - **Mode.** The lead records it as a `TDD-Mode: required|refactor|skip — <reason>` trailer on a
   commit authored `lead <lead@factory.invalid>` (e.g. `git commit --allow-empty --author "lead
   <lead@factory.invalid>"`). The commit guard denies the lead identity to any caller with an
   `agent_type`, and a `TDD-Mode:` trailer line to the role callers (the test-side roles, implementer). Default `required`; no `src/`/`ext/` change needs none.
+  The reason separator is ` — `, ` - ` or ` -- `. On an integration branch the mode is per merged
+  sub-lane (critic C6): each `--no-ff` merge's `M^1..M^2` follows its own mode commit, and the commits
+  made directly on the branch follow the branch's own.
 - Before the merge: `/change-review` runs `tdd.jl audit --ledger` and `dod.jl`.
   **Merge, never rebase:** evidence is keyed by sha; after a rebase run `tdd.jl green` at the tip, and audit
   lists the missing reds for the lead to decide.

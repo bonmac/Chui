@@ -524,6 +524,15 @@ The mode comes from the `TDD-Mode:` trailer of the oldest commit that carries on
 be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and the mode is
 `required`. With no such trailer the mode is `required`.
 
+2026-10-27 note (critic C3/C4/C6): the reason separator is ` — `, ` - ` or ` -- ` (its first
+occurrence; later separators stay in the reason), so `TDD-Mode: skip - format fix` is skip with a
+reason; a bare `skip` or `skip -` still fails H8. "Oldest" is per segment: for each `--no-ff` merge M on
+the first-parent chain of base..head, the commits of `M^1..M^2` are a segment with their own mode; the
+commits made directly on the integration branch are one segment under the branch's own mode commit.
+H1–H9 run per segment (`lane_segments`, `segment_rules`) in audit and in dod's `tdd`; E1–E5 still read
+the whole lane. TDD dispatches and mode commits are the lead's (main session): a sub-lead teammate has
+an `agent_type`, so it can do neither and asks the lead.
+
 | Rule | Check |
 |---|---|
 | H1 | No commit changes code: PASS, and H2–H8 do not apply (H9 still does). Otherwise every code-changing commit has a phase trailer. |
@@ -545,6 +554,13 @@ be authored `lead <lead@factory.invalid>`; otherwise the trailer is ignored and 
 | E3 | Each item a `backfill` adds has a passing `mutate-<slug>` or `mutexp-<slug>`. Items whose only assertions are `@test_broken` are listed, not proved. |
 | E4 | No evidence file is dirty or killed. |
 | E5 | Every role-authored lane commit has a `tdd-commit` record in **the TDD ledger** (§0.5: `<session root>/.lanes/ledger.jsonl`, passed as `--ledger`; R4-M2) with the same sha and the matching `agent_type`. There is no `tdd-commit-violation` record for the lane (R3-M2). |
+
+2026-10-27 note (critic C3/C4/C6): E5 has one lead waiver. A lane commit authored exactly
+`lead <lead@factory.invalid>` with the git trailer `TDD-Waiver: E5 <sha> — <reason>` (sha full or a
+prefix of at least 7 hex naming one lane commit; any TDD-Mode separator; a non-empty reason) lets a
+role commit whose only record is `tdd-commit-late` (a cancelled commit call) pass E5. It never covers a
+sha with no record, and never a `tdd-commit-violation`. The commit guard denies a `TDD-Waiver:` trailer
+to role callers (rule `waiver-trailer`). Every role commits in its own Bash call, never chained.
 
 ### 4.4 Where it runs; merges and rebases
 

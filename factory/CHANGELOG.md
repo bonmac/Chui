@@ -176,25 +176,68 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     git 2.32 or later.
   - Existing tests that encoded the old behaviour (a role commit with no phase passing the post
     hook, the `-m "TDD: red"` form) are listed in the C1/C2 lane report for a test-fix lane.
-- **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the four tdd
+- **Critic fixes C3, C4, C6, C7 and C8** (`.lanes/reports/critic-030.md`; red tests `test_tdd_c3.jl`,
+  `test_tdd_c4.jl`):
+  - **C3: skip separators.** `parse_mode` takes ` — `, ` - ` or ` -- ` as the reason separator (its
+    first occurrence; later ones stay in the reason). `skip`, `skip -` and `skip —` with no reason
+    still fail H8. Before, `TDD-Mode: skip - format fix` had reason "" and failed H8, and since the
+    oldest mode trailer decides, only a rewrite fixed it. The migration list below names the skip
+    commit and the sub-lead limit.
+  - **C4: a cancelled commit call.** Every role body and the lane-lifecycle skill say to run
+    `git commit` in its own Bash call, never chained. The skill names the lead's recovery: amend
+    while the commit is HEAD; otherwise reset the lane to before it and re-dispatch, or attest it
+    with an **E5 lead waiver**: a lane commit authored `lead <lead@factory.invalid>` with the git
+    trailer `TDD-Waiver: E5 <sha> — <reason>` (sha full or ≥ 7 hex, naming one lane commit; any
+    `parse_mode` separator; a non-empty reason). It lets a role commit whose only ledger record is
+    `tdd-commit-late` pass E5. It never covers a sha with no record or a `tdd-commit-violation`.
+    The commit guard denies a role caller's commit that carries a `TDD-Waiver:` trailer (rule
+    `waiver-trailer`); the lead may write one.
+  - **C6: modes per merged sub-lane** (option a). `lane_segments` splits `base..head`: for each
+    merge M on the first-parent chain, the commits of `M^1..M^2` form a segment under that
+    sub-lane's own mode commit; the commits made directly on the integration branch form one
+    segment under the branch's own mode commit. `tdd.jl audit` and dod's `tdd` apply H1–H9 per
+    segment (`segment_rules`). Before, a refactor-mode sub-lane merged before a required-mode one
+    turned the latter's red and green into H8 failures. The E rules still read the whole lane.
+  - **C7: named blind spots** (`checks.toml`, `docs/CHECK_COVERAGE.md`): merge commits are
+    invisible to H1/H3/H4 (`--no-merges`; only the reviewer's `git show --cc` sees a merge
+    resolution); a git alias (`git ci`) bypasses the commit guard; E5 catches alias commits by role
+    identities, dod does not.
+  - **C8:** `test_writer.md` rule 1 cites the API as `julia scripts/tdd.jl api` prints it (on Julia
+    1.10 `api` prints NOT RUN), never a docstring read in `src/`.
+  - `scripts/_tdd_history.jl` was at its 400-line budget: the evidence rules E1–E5, the ledger
+    and `audit` move to a new managed, T3 `scripts/_tdd_evidence.jl`, which only `tdd.jl` includes.
+- **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the five tdd
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
   them by hand (below).
-- **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the four tdd
+- **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the five tdd
   scripts, the four tdd hook files (`tdd_boundary.sh`, `_tdd_allow.sh`, `_tdd_commit_guard.sh`,
   `tdd_commit_post.sh`) and the changed `_lib.sh`, `_lanes.sh`, `dispatch_limit.sh`, `settings.json`, `test_writer.md` and the
   changed bodies, `checks.toml`, `dod.jl`, `/change-review`, `lane-lifecycle`. The seeded hand
   edits (T3, `FACTORY_ALLOW_T3=1`):
   - **coordinator:** `.agents/agent-registry.toml` gains the `test_writer` and `implementer`
     entries as in the template (D7 reversed; both use the vendored template bodies); `risk.toml`
-    adds `scripts/tdd.jl`, `scripts/_tdd_classify.jl`, `scripts/_tdd_history.jl` and
-    `scripts/_tdd_backfill.jl` to the T3 globs. No `tdd` in its tiers: it has no `src/`.
+    adds `scripts/tdd.jl`, `scripts/_tdd_classify.jl`, `scripts/_tdd_history.jl`,
+    `scripts/_tdd_evidence.jl` and `scripts/_tdd_backfill.jl` to the T3 globs. No `tdd` in its
+    tiers: it has no `src/`.
   - **ChuiCore.jl** (after v0.0.1), **ChuiTypes.jl, ChuiFrames.jl** (after their open branches
     merge): the registry `test_writer` entry and the `implementer` change (`file_scope`, `tools`,
     `disallowed_tools`, role, scorecard), and the `law_tester`, `property_tester` and
-  `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the four
+  `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the five
     tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
     the template.
   - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.
+  - **Non-TDD code lanes need a lead skip commit** (critic C3). Once `tdd` is in a tier, every lane
+    that changes `src/` or `ext/` without the test-writer and implementer roles (a format fix, a perf
+    lane, a release fix, sub-lead work) fails dod (H1/H2) unless it carries a `TDD-Mode: skip`
+    commit authored by the lead. The lead runs, once per lane, before its first code commit:
+  - `git -C <lane> commit -q --allow-empty --author "lead <lead@factory.invalid>" -m "chore: tdd skip" --trailer "TDD-Mode: skip — <reason>"`
+  - **TDD dispatches and mode commits are the lead's** (the main session). A sub-lead teammate has an
+    `agent_type`, so `tdd_dispatch` denies its TDD dispatches (`dispatch-not-lead`) and the commit
+    guard denies it the lead identity: it can neither dispatch the TDD roles nor set a mode. A
+    sub-lead asks the lead for both.
+  - **In-flight branches:** add the skip commit to a branch that changes code before merging main
+    into it: the merge brings main's `risk.toml` with `tdd` in its tiers, and the branch's code
+    commits then fail H1 without it.
 - **Dogfood numbers (spec §6, plan Task 9 step 5).** Handoffs per task in lane tw-031, counted by
   its sub-lead: item a 2 (test writer, implementer), item b 2, item c 2 (the three fixes above),
   Task 8 3 (test writer, implementer, one test-fix), Task 9 2. So 2 handoffs per task, 3 with a
