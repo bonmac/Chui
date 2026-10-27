@@ -77,7 +77,7 @@ ledger() {
         shift 2
     done
     # 0.4.0 (final review M1): never appends to the ledger itself (`lane compact` rewrites it under .lanes/.dispatch.lock).
-    # Critic round 3 M1: every event goes to PENDING_FILE and a lock holder then folds it (fold_pending), so the ledger's
+    # Critic round 3 M1: every event goes to the pending file beside the CURRENT LEDGER_FILE and a lock holder then folds it (fold_pending), so the ledger's
     # order is arrival order (a holder's direct append overtook a line that had timed out into pending meanwhile). The lock
     # is waited for about 1 s; without it the event waits in pending. FACTORY_LEDGER_LOCKED=1: the caller holds the lock
     # (dispatch_limit); =pending: append only (the watchdog, which may fire during the lock wait: n1). Not its lock: it stays.
