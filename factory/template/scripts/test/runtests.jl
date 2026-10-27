@@ -78,5 +78,9 @@ end
     include("test_tdd_backfill.jl")
     include("test_tdd_classify2.jl")
     include("test_tdd_review.jl")
+    include("test_tdd_c1.jl")   # critic C1: test-side roles (law/property/differential) author test phases
+    include("test_tdd_c2.jl")   # critic C2: one trailer parser (git's), phase-less role commits
+    include("test_tdd_c3.jl")   # critic C3/C6: skip separators, lead-only modes, per-merge segments
+    include("test_tdd_c4.jl")   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end
