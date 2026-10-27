@@ -13,7 +13,7 @@ impl_libs() { # bash_guard's write-target model, with outside() redefined: a tar
     # shellcheck disable=SC2329 # both are called by check_cmd (_bash_guard_cmd.sh)
     read_only_check() { :; } # bash_guard.sh checks the read-only roots
     outside() {
-        case $1 in '' | -* | '&'*) return 0 ;; esac
+        case $1 in '' | -* | '&'*) return 0 ;; *'{'* | *'}'*) tdeny impl-brace-write §0.6 "an implementer's Bash write target may not contain { or } (brace expansion can reach test/): $1" ;; esac
         co_of "$(abspath "$1" "$cwd")"
         case $REL in test | test/*) tdeny impl-test-write §0.6 "an implementer never writes test/** (here through Bash: $1); send the lead a written test-fix request" ;; esac
     }

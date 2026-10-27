@@ -9,10 +9,11 @@
 # Exit 2 = deny (logged as tdd-boundary-denied). Fails closed, for every caller, without jq, a library or a
 # parseable payload. Blind spots: docs/CHECK_COVERAGE.md.
 case $0 in */*) d=${0%/*} ;; *) d=. ;; esac
-for _l in _lib.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
+for _l in _lib.sh _lanes.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; tdd_boundary fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
+. "$d/_lanes.sh"
 . "$d/_bash_guard_lib.sh"
 . "$d/_tdd_commit_guard.sh"
 . "$d/_tdd_allow.sh"
@@ -30,29 +31,11 @@ for _f in "$PEND"/*; do # the sweep (§0.5): an entry left by a cancelled call (
         printf '%s' "$PAYLOAD" | sh "$d/tdd_commit_post.sh" sweep >/dev/null 2>&1
     break
 done
-dispatch() { # the lead dispatches a role only on a clean lane worktree with a current tdd-brief; the prompt is saved
+dispatch() { # the lead dispatches a role only on a clean lane worktree with a current tdd-brief (_lanes.sh); the prompt is saved
     case $sub in test-writer | implementer) ;; *) exit 0 ;; esac
-    [ -z "$at" ] || tdeny dispatch-not-lead §0.6 "only the lead (no agent_type) dispatches a $sub; this caller is $at"
-    _pr=$(field '.tool_input.prompt | strings')
-    _hd=${_pr%%"$NL"*} _ro="" _ln="" _co="" _he=""
-    case $_hd in '<!-- tdd-brief '*' -->') ;; *) tdeny brief-header §0.6 "a $sub prompt starts with <!-- tdd-brief role=$sub lane=<lane> checkout=<abs path> head=<sha> --> (julia scripts/tdd.jl brief prints it)" ;; esac
-    set -f
-    for _w in $_hd; do case $_w in role=*) _ro=${_w#*=} ;; lane=*) _ln=${_w#*=} ;; checkout=*) _co=${_w#*=} ;; head=*) _he=${_w#*=} ;; esac; done
-    set +f
-    [ "$_ro" = "$sub" ] || tdeny brief-role §0.6 "the brief says role=$_ro but the dispatch is a $sub"
-    case $_ln in '' | .* | *[!A-Za-z0-9._-]*) tdeny brief-lane §0.6 "lane=$_ln is not a lane name" ;; esac
-    case $_co in /*) phys "$_co" ;; *) tdeny brief-checkout §0.6 "checkout= must be an absolute path: $_co" ;; esac
-    case $RP in "$ROOT_P"/?*) ;; *) tdeny brief-checkout §0.6 "checkout=$_co is not under the session root $ROOT" ;; esac
-    _gl="" _bk=""
-    [ ! -f "$RP/.git" ] || read -r _gl <"$RP/.git"
-    case $_gl in "gitdir: /"*/.git/worktrees/?*) read -r _bk <"${_gl#gitdir: }/gitdir" 2>/dev/null ;; esac
-    case $_bk in "$RP/.git" | "$_co/.git") ;; *) tdeny brief-checkout §0.6 "checkout=$_co is not a lane worktree (git worktree add), so it has no main checkout to save the brief in" ;; esac
-    _main=${_gl#gitdir: }
-    _main=${_main%/.git/worktrees/*}
-    [ -n "$_he" ] && [ "$(git -C "$RP" rev-parse HEAD 2>/dev/null)" = "$_he" ] || tdeny brief-head §0.6 "head=$_he is not the HEAD of $_co: write the brief again (julia scripts/tdd.jl brief)"
-    [ -z "$(git -C "$RP" status --porcelain 2>/dev/null)" ] || tdeny brief-dirty §0.6 "$_co has uncommitted changes: commit or clean them before dispatching a $sub"
-    _dir="$_main/.lanes/briefs/$_ln/dispatched"
-    { mkdir -p "$_dir" && printf '%s\n' "$_pr" >"$_dir/$(date -u +%Y%m%dT%H%M%SZ)-$sub-$tu.md"; } 2>/dev/null ||
+    tdd_dispatch "$sub" "$at" || tdeny "$TD_RULE" §0.6 "$TD_MSG"
+    _dir="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
+    { mkdir -p "$_dir" && printf '%s\n' "$TD_PR" >"$_dir/$(date -u +%Y%m%dT%H%M%SZ)-$sub-$tu.md"; } 2>/dev/null ||
         tdeny brief-save §0.6 "cannot save the prompt under $_dir (fails closed)"
 }
 
@@ -69,6 +52,7 @@ case $tool in
         exit 0 ;;
     Edit | Write | MultiEdit | NotebookEdit)
         case $at in test-writer | implementer) co_of "$(abspath "$fp" "$cwd")" ;; *) exit 0 ;; esac
+        case /$fp/ in */.git/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
         if [ -n "$TW" ]; then
             in_root && case $REL in test/runtests.jl | test/Project.toml) ;; test/?*) exit 0 ;; esac
             tdeny tw-write §0.6 "a test-writer writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
@@ -98,7 +82,7 @@ while IFS= read -r seg; do
             shift
             case $_pv in *'>') [ "$_w" = /dev/null ] || tdeny tw-redirect §0.6 "a test-writer redirects only to /dev/null"; _pv=""; continue ;; esac
             case $_w in
-                *'$'* | *'`'*) tdeny tw-expansion §0.6 "an expansion cannot be checked against the allowlist: $_w" ;;
+                *'$'* | *'`'* | *'{'* | *'}'* | '~'*) tdeny tw-expansion §0.6 "an expansion (\$, \`, {}, ~) cannot be checked against the allowlist: $_w" ;;
                 *'>') _pv=$_w; continue ;;
                 *'>/dev/null') continue ;;
                 *'<'* | *'>'*) tdeny tw-redirect §0.6 "a test-writer redirects only to /dev/null: $_w" ;;
@@ -130,8 +114,9 @@ while IFS= read -r seg; do
             gsub "$@"
             [ "$GS" != commit ] || guard_commit "$@" ;;
         *)
-            _sg=""
-            for _w; do case $_w in git | */git) _sg=1 ;; commit) [ -z "$_sg" ] || cdeny unmodelled "a git commit run through ${1##*/} is not modelled; run git commit directly" ;; esac; done
+            _sg="" # echo/printf only mention git commit (Minor 6); a wrapper (xargs, sh) running it is unmodelled
+            case ${1##*/} in echo | printf) _sg=x ;; esac
+            [ "$_sg" = x ] || for _w; do case $_w in git | */git) _sg=1 ;; commit) [ -z "$_sg" ] || cdeny unmodelled "a git commit run through ${1##*/} is not modelled; run git commit directly" ;; esac; done
             [ -z "$TW" ] || tw_cmd "$@" ;;
     esac
 done <<EOF

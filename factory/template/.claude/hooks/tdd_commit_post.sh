@@ -3,13 +3,16 @@
 # tdd_commit_post.sh (factory 0.3.0, spec §0.5): PostToolUse(Bash) and PostToolUseFailure(Bash), the
 # authoritative half of the commit guard. A call that commits and then fails fires only PostToolUseFailure,
 # so both events run it. For the call's .lanes/tdd-pending/<tool_use_id> entry (written by tdd_boundary.sh
-# before every allowed `git commit`), each commit since the recorded HEAD (`git rev-list <before>..HEAD`; an
-# amend yields the amended commit) is checked: author against the caller, the `TDD:` phase against its role,
-# a role's `TDD-Mode:` line, and the changed paths against the role. Each is appended to the session ledger
-# as tdd-commit {agent_id, agent_type, checkout, sha}; a broken rule also as tdd-commit-violation {..., rule,
-# reason} and printed (exit 2: PostToolUse cannot undo a commit; audit E5 fails the lane). First, entries
-# of other calls older than TDD_STALE_MIN minutes (a cancelled call fires neither event) are swept: recorded
-# with late=true and deleted. `tdd_commit_post.sh sweep` (run by tdd_boundary.sh) only sweeps.
+# before every allowed `git commit`), each commit of the call is checked: author against the caller, the
+# `TDD:` phase against its role, a role's `TDD-Mode:` line, and the changed paths against the role. A commit
+# of the call (review 1 B2, B3) is on `git log --first-parent <before>..HEAD` (an amend yields the amended
+# commit; a merge's second parent is main's history, never re-checked) with its COMMITTER time within
+# [entry mtime - 5 s, entry mtime + 600 s] (600 s: the Bash tool's maximum). Each is appended to the session
+# ledger as tdd-commit {agent_id, agent_type, checkout, sha}; a broken rule also as tdd-commit-violation
+# {..., rule, reason} and printed (exit 2: PostToolUse cannot undo a commit; audit E5 fails the lane). First,
+# entries of other calls older than TDD_STALE_MIN minutes (a cancelled call fires neither event) are swept:
+# each in-window commit gets only tdd-commit-late {agent_id, agent_type, checkout, sha}, which E5 does not
+# accept (no tdd-commit, no violation, nothing printed), and the entry is deleted. `... sweep` only sweeps.
 # Advisory: it fails open (exit 1) without jq or a library; E5 then fails the unrecorded commits.
 case $0 in */*) d=${0%/*} ;; *) d=. ;; esac
 for _l in _lib.sh _bash_guard_lib.sh _tdd_commit_guard.sh; do
@@ -24,7 +27,7 @@ tu=$(field '.tool_use_id | strings')
 case $tu in *[!A-Za-z0-9_-]*) tu="" ;; esac
 VIOL=""
 
-# check_commit CHECKOUT SHA AGENT_TYPE AGENT_ID LATE: record one commit, and any rule it breaks
+# check_commit CHECKOUT SHA AGENT_TYPE AGENT_ID: record one commit, and any rule it breaks
 check_commit() {
     _id=$(git -C "$1" log -1 --format='%an <%ae>' "$2" 2>/dev/null)
     _msg=$(git -C "$1" log -1 --format=%B "$2" 2>/dev/null)
@@ -41,27 +44,33 @@ check_commit() {
         [ -z "$_md" ] || _rule=${_rule:-mode-trailer}
         [ -z "$(git -C "$1" diff-tree --no-commit-id --name-only -r --root "$2" 2>/dev/null | role_paths "$3")" ] || _rule=${_rule:-path-not-role} ;;
     esac
-    if [ -n "$5" ]; then
-        ledger tdd-commit agent_id "$4" agent_type "$3" checkout "$1" sha "$2" late true
-    else
-        ledger tdd-commit agent_id "$4" agent_type "$3" checkout "$1" sha "$2"
-    fi
+    ledger tdd-commit agent_id "$4" agent_type "$3" checkout "$1" sha "$2"
     [ -n "$_rule" ] || return 0
     ledger tdd-commit-violation agent_id "$4" agent_type "$3" checkout "$1" sha "$2" rule "$_rule" reason "$_rule"
     VIOL="$VIOL $_rule: $2 (author $_id, caller $3, in $1);"
 }
-# record FILE LATE: every commit made since the entry's HEADs, then delete the entry (claimed by mv first,
-# so a sweep and a post hook never record one entry twice)
+# record FILE LATE: the call's commits (first parent since the entry's HEADs, committer time in the entry's
+# window), then delete the entry (claimed by mv first, so a sweep and a post hook never record one entry twice).
+# LATE (the sweep): tdd-commit-late only. A missing mtime records nothing (E5 then fails the commits).
 record() {
-    _c="$1.claim$$"
+    _c="$1.claim$$" _lt=$2
     mv "$1" "$_c" 2>/dev/null || return 0
+    _m=$(stat -c %Y "$_c" 2>/dev/null || stat -f %m "$_c" 2>/dev/null)
+    case $_m in '' | *[!0-9]*) rm -f "$_c"; return 0 ;; esac
     _at=- _aid=-
     while read -r _h _co; do
         case $_h in @) _at=${_co%% *} _aid=${_co#* }; continue ;; esac
         [ -d "$_co" ] || continue
         case $_h in none) _r=HEAD ;; *) _r="$_h..HEAD" ;; esac
-        for _s in $(git -C "$_co" rev-list --max-count=100 "$_r" 2>/dev/null); do
-            check_commit "$_co" "$_s" "${_at:--}" "${_aid:--}" "$2"
+        # shellcheck disable=SC2046 # "<sha> <committer time>" pairs, split on purpose
+        set -- $(git -C "$_co" log --first-parent --max-count=100 --format='%H %ct' "$_r" 2>/dev/null)
+        while [ $# -ge 2 ]; do
+            if [ "$2" -ge $((_m - 5)) ] 2>/dev/null && [ "$2" -le $((_m + 600)) ]; then
+                if [ -n "$_lt" ]; then
+                    ledger tdd-commit-late agent_id "${_aid:--}" agent_type "${_at:--}" checkout "$_co" sha "$1"
+                else check_commit "$_co" "$1" "${_at:--}" "${_aid:--}"; fi
+            fi
+            shift 2
         done
     done <"$_c"
     rm -f "$_c"

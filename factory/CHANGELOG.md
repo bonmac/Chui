@@ -67,6 +67,43 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   **Deviation from the spec:** its single `tdd_boundary` register row is split into
   `tdd_boundary` and `tdd_commit_post`, because every hook must be its own `prevented_by` file
   (the `test_gen` register invariant).
+- **Deviations from the spec and plan in the hooks** (the full list, after review round 1):
+  - **A fourth hook file.** The plan named `tdd_boundary.sh` and `tdd_commit_post.sh`; the
+    150-line hook cap adds the sourced `_tdd_allow.sh` (allowlists, the implementer's Bash write
+    check) and `_tdd_commit_guard.sh` (the Pre half of the commit guard). The `tdd_boundary` row's
+    rule names both. The dispatch check (`tdd_dispatch`) lives in `_lanes.sh`, because
+    `dispatch_limit.sh` runs it too (below).
+  - **The register split** into `tdd_boundary` and `tdd_commit_post` (above).
+  - **The sweep** (§0.5 left it open). A pending entry `.lanes/tdd-pending/<tool_use_id>` older
+    than 11 minutes (the Bash tool's 10-minute maximum, plus one) belonged to a call that fired
+    no post event: a later call sweeps and deletes it, and records each of its commits only as
+    `tdd-commit-late {agent_id, agent_type, checkout, sha}`, never `tdd-commit` and never
+    `tdd-commit-violation`, and prints nothing. E5 accepts only `tdd-commit`, so a cancelled
+    call's commit fails E5 with "(only a late swept record: re-make or amend it through the
+    hooks)". Both the post hook and the sweep attribute to a call only the commits on
+    `git log --first-parent <HEAD before>..HEAD` (at most 100) whose committer time is within
+    [entry mtime − 5 s, entry mtime + 600 s]: a commit forged outside the hooks in a stale
+    entry's window is never recorded as the role's, and a merge of main records only the merge
+    commit, never main's role commits.
+  - **E5 matches `tdd-commit-violation` records by the lane's commit shas only** (not also by
+    checkout), so a violation stops failing the lane once the commit is replaced.
+  - **Stricter role-commit rules than §0.5:** a role caller's `git commit` takes no `-a`/`-i`/
+    `-o`/`-p`/pathspecs (it commits the staged index); `--author` must be a full `Name <email>`;
+    a `git commit` after a `cd` the guard cannot follow needs `git -C <absolute checkout>`; a
+    commit run through a wrapper (`xargs git commit`, `sh -c`) is denied as unmodelled, while a
+    plain mention (`echo … git commit`, `printf`) is allowed; a test-writer's `-F`/`--file`/
+    `-t`/`--template` file is `-` (stdin) or on its read allowlist; only a `TDD-Mode:` trailer
+    line (case-insensitive key and colon) is denied to the role callers, not "tdd-mode" in prose.
+  - **The post hook exits 2 on a violation** (the message reaches the caller; PostToolUse cannot
+    undo the commit), not 0.
+  - **Test-writer Bash extras:** `true`, `false`, `echo`, `printf` and `pwd`; any word with `$`,
+    a backquote, `{`, `}` or a leading `~` is denied (brace expansion escaped `test/`), and an
+    implementer's Bash write target with `{` or `}` is denied.
+  - **A `.git` marks a checkout** only as a directory or as a `gitdir:` file whose worktree record
+    points back; a role never Writes/Edits a `.git` path (a planted `test/.git` moved the root).
+  - **A denied TDD dispatch opens no lane.** `dispatch_limit.sh` runs the same dispatch check and
+    denies without recording, since the two hooks run in parallel; the brief's `lane=` must be the
+    lane of a `.worktrees/<lane>` `checkout=`.
 - **Tasks 1–7** (merged earlier as part 1): the failure-output fixtures for Julia 1.13.2 and
   1.10.12; the seeded `test/runtests.jl` `item=` selection and the `TDD_MATCHED` record;
   `scripts/_tdd_classify.jl` (ASSERTION, BEHAVIOUR, WRONG-REASON, PASSED, NOT-RUN, COLLATERAL,
@@ -84,7 +121,8 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
   them by hand (below).
 - **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the four tdd
-  scripts, the three hook files plus `_tdd_allow.sh`, `settings.json`, `test_writer.md` and the
+  scripts, the four tdd hook files (`tdd_boundary.sh`, `_tdd_allow.sh`, `_tdd_commit_guard.sh`,
+  `tdd_commit_post.sh`) and the changed `_lib.sh`, `_lanes.sh`, `dispatch_limit.sh`, `settings.json`, `test_writer.md` and the
   changed bodies, `checks.toml`, `dod.jl`, `/change-review`, `lane-lifecycle`. The seeded hand
   edits (T3, `FACTORY_ALLOW_T3=1`):
   - **coordinator:** `.agents/agent-registry.toml` gains the `test_writer` and `implementer`

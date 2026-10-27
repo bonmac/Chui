@@ -5,7 +5,7 @@
 # Sourced after _lib.sh and _bash_guard_lib.sh (git_dir). The role is agent_type ONLY (plan Task 0).
 TW_ID='test-writer <test-writer@factory.invalid>'
 PEND="$ROOT/.lanes/tdd-pending" # <tool_use_id>: "@ <agent_type> <agent_id>", then "<HEAD before> <checkout>" lines
-TDD_STALE_MIN=15                # a pending entry older than this (minutes) was left by a cancelled call: swept
+TDD_STALE_MIN=11                # older (minutes) than the Bash tool's 10-minute maximum: a cancelled call's, swept
 NL='
 '
 cdeny() { tdeny "$1" "§0.5" "$2"; }
@@ -78,10 +78,10 @@ guard_commit() {
             *) shift ;;
         esac
     done
-    _au="" _ra="" _am="" _src="" _ru="" _fx="" _md="" _all="" _p=""
-    for _w in "$@"; do
-        case $_w in *[Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]*) _md=1 ;; esac
-        if [ -n "$_p" ]; then case $_p in a) _au=$_w ;; s) _src=$_w ;; esac; _p=""; continue; fi
+    _au="" _ra="" _am="" _src="" _ru="" _fx="" _md="" _all="" _p="" _mf=""
+    for _w in "$@"; do # a TDD-Mode: trailer line starts a word, or follows a blank/newline (_ in segments) or =
+        case $_w in [Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:* | *[_=][Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:* | -m[Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:*) _md=1 ;; esac
+        if [ -n "$_p" ]; then case $_p in a) _au=$_w ;; s) _src=$_w ;; f) _mf="$_mf$_w$NL" ;; esac; _p=""; continue; fi
         case $_w in
             --author) _p=a ;;
             --author=*) _au=${_w#*=} ;;
@@ -92,9 +92,14 @@ guard_commit() {
             --reuse-message=* | --reedit-message=*) _src=${_w#*=} _ru=1 ;;
             --fixup | --squash) _p=x _fx=1 ;;
             --fixup=* | --squash=*) _fx=1 ;;
-            -m | -F | --message | --file | -t | --template | --trailer | --date | --cleanup) _p=x ;;
+            -m | --message | --trailer | --date | --cleanup) _p=x ;;
+            -F | --file | -t | --template) _p=f ;; # a message file: the test-writer's must pass its read allowlist
+            -F?* | -t?*) _mf="$_mf${_w#-?}$NL" ;;
+            --file=* | --template=*) _mf="$_mf${_w#*=}$NL" ;;
+            -m?*) ;;
             -a | --all | -i | --include | -o | --only | -p | --patch | --interactive | --pathspec-from-file*) _all=1 ;;
-            -[!-]*m | -[!-]*F) _p=x; case $_w in *a*) _all=1 ;; esac ;;
+            -[!-]*m) _p=x; case $_w in *a*) _all=1 ;; esac ;;
+            -[!-]*F | -[!-]*t) _p=f; case $_w in *a*) _all=1 ;; esac ;;
             -[!-]*) case $_w in *a*) _all=1 ;; esac ;;
             -*) ;;
             *) _all=1 ;; # a pathspec: commits those paths, staged or not
@@ -109,6 +114,11 @@ guard_commit() {
     [ -n "$CWD_OK" ] || case $_gd in /*) ;; *) cdeny cwd-unknown "this git commit runs after a cd the guard cannot follow; use git -C <absolute checkout> commit" ;; esac
     _rd=$cwd
     [ -z "$_gd" ] || _rd=$(abspath "$_gd" "$cwd")
+    if [ "$at" = test-writer ] && [ -n "$_mf" ]; then # Minor 5: -F - (stdin) or an allowlisted file only
+        _o=$IFS IFS=$NL
+        for _w in $_mf; do [ "$_w" = - ] || tw_read_ok "$(abspath "$_w" "$_rd")" || cdeny tw-message-file "$TW_READ; not the message file $_w"; done
+        IFS=$_o
+    fi
     co_of "$_rd"
     [ -n "$CO" ] || return 0 # not a checkout: git refuses on its own
     if [ -n "$_au" ]; then

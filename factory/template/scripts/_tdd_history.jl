@@ -360,13 +360,15 @@ function evidence_rules(root, commits::AbstractVector; ledger, base = nothing)
     end
     for c in roles
         t = first(split(c.author, ' '))
-        any(r -> get(r, "ev", "") == "tdd-commit" && get(r, "sha", "") == c.sha && get(r, "agent_type", "") == t, recs) ||
-            fail("E5", c, "no tdd-commit record with this sha and agent_type $t in $ledger")
+        any(r -> get(r, "ev", "") == "tdd-commit" && get(r, "sha", "") == c.sha && get(r, "agent_type", "") == t, recs) && continue
+        late = any(r -> get(r, "ev", "") == "tdd-commit-late" && get(r, "sha", "") == c.sha, recs)   # B2: a sweep's record
+        fail("E5", c, "no tdd-commit record with this sha and agent_type $t in $ledger" *
+            (late ? " (only a late swept record: re-make or amend it through the hooks)" : ""))
     end
-    shas, me = Set(c.sha for c in commits), canon(root)
+    shas = Set(c.sha for c in commits)   # B2: a violation is this lane's only by sha
     for r in recs
         get(r, "ev", "") == "tdd-commit-violation" || continue
-        (get(r, "sha", "") in shas || canon(get(r, "checkout", "")) == me) &&
+        get(r, "sha", "") in shas &&
             push!(out, "E5 tdd-commit-violation for $(sha7(get(r, "sha", "?"))): $(get(r, "reason", "(no reason)"))")
     end
     return out

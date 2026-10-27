@@ -61,8 +61,8 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   test-writer's report or messages.
 - **Mode.** The lead records it as a `TDD-Mode: required|refactor|skip — <reason>` trailer on a
   commit authored `lead <lead@factory.invalid>` (e.g. `git commit --allow-empty --author "lead
-  <lead@factory.invalid>"`). The commit guard denies that identity and trailer to any caller with
-  an `agent_type`. Default `required`; no `src/`/`ext/` change needs none.
+  <lead@factory.invalid>"`). The commit guard denies the lead identity to any caller with an
+  `agent_type`, and a `TDD-Mode:` trailer line to the role callers (test-writer, implementer). Default `required`; no `src/`/`ext/` change needs none.
 - Before the merge: `/change-review` runs `tdd.jl audit --ledger` and `dod.jl`.
   **Merge, never rebase:** evidence is keyed by sha; after a rebase run `tdd.jl green` at the tip, and audit
   lists the missing reds for the lead to decide.
