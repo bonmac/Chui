@@ -76,8 +76,13 @@ module Gen
             a["model"] in MODELS || fail("registry: `$s` model must be one of $(MODELS)")
             a["default_mode"] in MODES || fail("registry: `$s` default_mode must be one of $(MODES)")
             isempty(a["scorecard"]) && fail("registry: `$s` has an empty scorecard")
-            if a["default_mode"] == "read_only" && !isempty(a["file_scope"])
-                fail("registry: read_only agent `$s` must have an empty file_scope")
+            endswith(a["output_format"], "; at most 80 lines") || # 0.4.0 D4: the report cap, stated in every format
+                fail("registry: `$s` output_format must end with `; at most 80 lines` (D4: a report is at most 80 lines)")
+            if a["default_mode"] == "read_only" # 0.4.0 D3: its reports and its own scratch, which the guards allow by agent_type
+                for g in a["file_scope"]
+                    g in (".lanes/reports/**", ".lanes/scratch/$n/**") ||
+                        fail("registry: read_only agent '$s' may own only .lanes/reports/** and .lanes/scratch/$n/** (file_scope names `$g`)")
+                end
             end
             isfile(joinpath(root, ".agents/bodies/$s.md")) || fail("registry: missing body .agents/bodies/$s.md")
         end
@@ -87,11 +92,20 @@ module Gen
     yq(s) = "\"" * replace(s, "\\" => "\\\\", "\"" => "\\\"") * "\""
     body(root, a) = rstrip(read(joinpath(root, ".agents/bodies/$(a["slug"]).md"), String))
     scope_text(a) = isempty(a["file_scope"]) ? "none (read-only)" : join(("`$g`" for g in a["file_scope"]), ", ")
+    # 0.4.0 D4: fragments, rendered verbatim into EVERY agent between the "Mode:" line and its body. An
+    # underscore-prefixed body is a fragment, never an agent (the slug rule forbids a leading `_`).
+    const FRAGMENTS = ("_preflight", "_report")
+    function fragment(root, f)
+        p = joinpath(root, ".agents/bodies/$f.md")
+        isfile(p) || fail("missing fragment .agents/bodies/$f.md (rendered into every agent)")
+        return rstrip(read(p, String))
+    end
 
     function instructions(root, a)
         io = IOBuffer()
         println(io, "## Role\n\n", a["role"], "\n")
         println(io, "Mode: `", a["default_mode"], "`. File scope: ", scope_text(a), ".\n")
+        foreach(f -> println(io, fragment(root, f), "\n"), FRAGMENTS)
         println(io, body(root, a), "\n")
         println(io, "## Output format\n\nReport these sections, in order: ", a["output_format"], ".\n")
         println(io, "## Scorecard\n")
@@ -147,10 +161,13 @@ module Gen
     function limits_env(reg, cfg = Dict{String, Any}())
         lanes = get(reg, "lanes", Dict{String, Any}())
         req = get(get(cfg, "bash_guard", Dict{String, Any}()), "require_read_only_roots", false)
-        return banner_hash(".agents/agent-registry.toml [lanes] + .agents/factory.toml [bash_guard]") * "\n" *
+        # 0.4.0 D3: the names (the payload's agent_type) of every read_only agent, space-delimited for a sh `case`
+        ro = sort!([a["name"] for a in get(reg, "agents", Any[]) if a["default_mode"] == "read_only"])
+        return banner_hash(".agents/agent-registry.toml [lanes], [[agents]] + .agents/factory.toml [bash_guard]") * "\n" *
             "MAX_OPEN_LANES=$(get(lanes, "max_open", 4))\n" *
             "LEDGER=$(get(lanes, "ledger", ".lanes/ledger.jsonl"))\n" *
-            "READ_ONLY_ROOTS_REQUIRED=$(req ? 1 : 0)\n"
+            "READ_ONLY_ROOTS_REQUIRED=$(req ? 1 : 0)\n" *
+            "READ_ONLY_AGENTS=\" $(join(ro, " ")) \"\n"
     end
 
     function load_risk(root)
