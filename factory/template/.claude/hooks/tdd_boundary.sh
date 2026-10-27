@@ -10,11 +10,12 @@
 # Exit 2 = deny (logged as tdd-boundary-denied). Fails closed, for every caller, without jq, a library or a
 # parseable payload. Blind spots: docs/CHECK_COVERAGE.md.
 case $0 in */*) d=${0%/*} ;; *) d=. ;; esac
-for _l in _lib.sh _lanes.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
+for _l in _lib.sh _lanes.sh _watchdog.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; tdd_boundary fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
 . "$d/_lanes.sh"
+. "$d/_watchdog.sh" # fix7 (review m1): the dispatch check's git reads run under the watchdog, as in dispatch_limit
 . "$d/_bash_guard_lib.sh"
 . "$d/_tdd_commit_guard.sh"
 . "$d/_tdd_allow.sh"
@@ -34,6 +35,7 @@ for _f in "$PEND"/*; do # the sweep (§0.5): an entry left by a cancelled call (
 done
 dispatch() { # the lead dispatches a role only on a clean lane worktree with a current tdd-brief (_lanes.sh); the prompt is saved
     tdd_role "$sub" || exit 0
+    watchdog "${FACTORY_WATCHDOG_SECS:-8}"; trap 'watchdog_stop; rm -f "${TD_OUT:-}"' EXIT # a slow git read is killed: deny
     tdd_dispatch "$sub" "$at" || tdeny "$TD_RULE" §0.6 "$TD_MSG"
     _dir="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
     { mkdir -p "$_dir" && printf '%s\n' "$TD_PR" >"$_dir/$(date -u +%Y%m%dT%H%M%SZ)-$sub-$tu.md"; } 2>/dev/null ||
