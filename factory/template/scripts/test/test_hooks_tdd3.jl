@@ -262,4 +262,32 @@ end
         @test tb_ok(t, imb("cp src/P.jl src/b.jl"))
         @test tb_ok(t, tb_bash("echo x | tee src/{a,b}.jl"; agent = nothing, cwd = L))   # the lead is unaffected
     end
+
+    # ---- review round 2 ----
+    # R2-B1: a role caller's raw Bash command containing $' or $" is denied (bash and zsh expand the escapes).
+    @testset "R2-B1 ANSI-C or locale quoting denied for role callers" begin
+        t = tb_topo(); L = t.lane
+        @test isfile("$L/src/P.jl") && isfile("$L/test/t.jl")   # precondition
+        for c in (raw"cat test/$'\x2e\x2e'/src/P.jl", raw"cat test/$'\056\056'/src/P.jl",
+                raw"grep -rn secret test/$'\x2e\x2e'/src", "cat test/\$\"t.jl\"")
+            @test tb_no(t, twb(t, c))
+        end
+        @test tb_no(t, tb_bash(raw"cp src/P.jl $'\x74est'/x_tests.jl"; agent = "implementer", cwd = L))
+        @test tb_ok(t, twb(t, "cat test/t.jl"))
+        @test tb_ok(t, tb_bash(raw"printf $'a\tb\n'"; agent = nothing, cwd = L))   # the lead is unaffected
+    end
+
+    # R2-M1: the role-write .git component check ignores case; only an entry named exactly .git marks a checkout.
+    @testset "R2-M1 .GIT case variant neither writable nor a checkout marker" begin
+        t = tb_topo(); L = t.lane
+        @test tb_no(t, tb_write("$L/test/.GIT/HEAD"))
+        @test tb_no(t, tb_write("$L/test/.Git/config"; tool = "Edit"))
+        probe = mktempdir(); mkpath(joinpath(probe, "x", ".GIT"))
+        ci = isdir(joinpath(probe, "x", ".git"))   # case-insensitive filesystem: .GIT aliases .git
+        @info "R2-M1 filesystem case-insensitive: $ci"
+        mkpath(joinpath(L, "test", ".GIT"))   # planted directly, as the reviewer's probe does
+        tb_write!(L, Dict("test/scripts/tdd.jl" => "print(read(\"../src/P.jl\", String))\n"))
+        @test tb_no(t, tb_write("$L/test/x_tests.jl"; agent = "implementer"))
+        @test tb_no(t, twb(t, "julia test/scripts/tdd.jl red"))
+    end
 end
