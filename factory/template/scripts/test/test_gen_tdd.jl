@@ -192,9 +192,12 @@ end
     end
 
     if IN_FACTORY
-        @testset "factory VERSION 0.3.1; the 0.3.1 and 0.3.0 CHANGELOG migration lists (§9.2, §6)" begin
-            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.3.1"
+        @testset "factory VERSION 0.4.0; the 0.4.0, 0.3.1 and 0.3.0 CHANGELOG migration lists (§9.2, §6)" begin
+            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.4.0"
             cl = read(joinpath(FACTORY, "CHANGELOG.md"), String)
+            sec4 = changelog_section(cl, "0.4.0")
+            @test occursin("**Migration**", sec4) && occursin("julia scripts/gen.jl", sec4) && occursin("ADR-0016", sec4)
+            @test findfirst("## 0.4.0 (", cl) < findfirst("## 0.3.1 (", cl)   # newest first
             sec1 = changelog_section(cl, "0.3.1")
             @test occursin("**Migration.**", sec1) && occursin("julia scripts/gen.jl", sec1)
             sec = changelog_section(cl, "0.3.0")   # 0.3.0's section keeps its migration items
