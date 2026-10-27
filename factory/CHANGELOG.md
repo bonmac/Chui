@@ -8,8 +8,11 @@ version while below 1.0.
 ## 0.3.1 (2026-10-27)
 
 Fixes what the first live test-first lane (ChuiTypes smoke lane `scan-widen`) exposed in 0.3.0
-(lane tw-034). A patch: every change is in managed files, no seeded hand edit. Each fix went
-test-first: a fresh test agent committed failing tests, then a fresh factory-maintainer implemented.
+(lane tw-034). A patch: every change is in managed files, no seeded hand edit. Each finding
+went test-first: a fresh test agent committed failing tests, then a fresh factory-maintainer
+implemented. There was one exception. The F4 implementer added an untested condition, and its
+removal (2ec8012) was also untested. A later test commit pins the result, and was shown to fail
+with 2ec8012 reverted (see the deletion-only bullet).
 
 - **Format job (BLOCKER).** `julia scripts/ci.jl format` failed in every package that synced
   0.3.0 (ChuiTypes main c69a784). There were two causes. First, 17 template scripts were not
@@ -59,7 +62,11 @@ test-first: a fresh test agent committed failing tests, then a fresh factory-mai
   evidence file per red/test-fix sha, so E1 stays a per-commit check. A removal leaves a written
   trace for the reviewer. The deletion-only test is re-derived from git, so hand-written evidence
   cannot hide an added item. Option B would have made E1 depend on the evidence of other commits.
-  A deletion-only `TDD: red` still exits 2. Guard: `test_tdd_testfix_delete.jl`, plus the reworked
+  A deletion-only `TDD: red` still exits 2. Deletion-only means the commit adds or changes no
+  `@testitem` and removes at least one. A test-fix that also edits a `@testsnippet`/`@testmodule`
+  still qualifies. Its red does not run the users of that setup; `tdd.jl green` runs them. Requiring
+  an unchanged setup would have sent that commit back to exit 2, the deadlock this fix removes.
+  Guard: `test_tdd_testfix_delete.jl` (including the setup-edit case), plus the reworked
   `test_tdd_rename.jl` case (a test-fix commit).
 - **Skill and brief text (MINOR).**
   - Removed the false claim that a new agent type is "not dispatchable until the session
@@ -79,8 +86,13 @@ test-first: a fresh test agent committed failing tests, then a fresh factory-mai
   stable Julia.
 - **Process notes (lane tw-034).** The F2 implementer edited `tdd_commit_post.sh` with a
   `uv run python` script instead of the Edit tool, bypassing the Edit/Write hooks. The edit was
-  kept, and that file's diff in commit 1fc4bcd was reviewed line by line. The rule was repeated in
-  every later brief.
+  kept. The lane's reviewer reviewed that file's whole diff in 1fc4bcd line by line and found only
+  the intended hunks: no encoding or whitespace damage, and the mode was kept. The rule was
+  repeated in every later brief. The Runic style commit 73338a3 touches test and non-test files
+  together; it holds formatting only (`git diff -w`).
+- **Known limits (review notes).** `owning_ledger` hard-codes `.lanes/ledger.jsonl` and ignores a
+  renamed `LEDGER`. Without git 2.31 (`--path-format=absolute`), or for a checkout git cannot read,
+  the hook silently falls back to the session ledger, and that path is untested.
 - **Migration.** Every changed file is managed, so a sync brings it all: `ci.jl`, the tdd scripts,
   `_lib.sh`, `tdd_commit_post.sh`, the skill, the bodies and their generated agents, `checks.toml`,
   `/change-review`, `CHECK_COVERAGE.md` and the reformatted test scripts. Then:
