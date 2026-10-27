@@ -141,6 +141,41 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   - The factory test runner unsets `FACTORY_ALLOW_T3`, `FACTORY_ALLOW_PUSH` and
     `FACTORY_ALLOW_OUTWARD` for child processes; the hook tests failed when the caller had T3 set
     (bd1de78).
+- **Critic fixes C1 and C2** (`.lanes/reports/critic-030.md`; red tests `test_tdd_c1.jl`,
+  `test_tdd_c2.jl`):
+  - **C1: the test-side roles are a class.** `test-writer`, `law-tester`, `property-tester` and
+    `differential-tester` may each author `TDD: red`, `test-fix`, `test-refactor` and `backfill`,
+    under their own identity `<role> <<role>@factory.invalid>` (`TEST_ROLES`, `phase_authors` in
+    `_tdd_history.jl`: H9, H4, E5). One shell list, `test_role`/`tdd_role` in `_lib.sh`, keys
+    every hook on `agent_type`: all four get the test-writer's boundary (no `src/` reads, writes
+    under `test/` minus the seeded runners, the same Bash allowlist, and only their own
+    `.lanes/briefs/<lane>/<role>-*`); the commit guard's `role_of`/`id_rule`/`role_paths` and the
+    post hook's phase check accept any of them for the test phases. Before, a law-tester obeying
+    its body ("commit new items with `TDD: red`") failed H9 (or H4 without a phase) permanently.
+    Dispatch stays the lead's alone, with a tdd-brief header `role=<role>`;
+    `tdd.jl brief --role law-tester|property-tester|differential-tester` writes the test-writer's
+    sections. Bodies: the three tester bodies say how they work in a test-first lane (their
+    tdd-brief, the boundary, their identity, `TDD: red`); `test_writer.md` no longer lists their
+    items as "not yours" and points to the dedicated roles. Registry: the three gain
+    `disallowed_tools` Agent, Task, SendMessage (as the test-writer: no channel to the
+    implementer), a description and a scorecard line for test-first lanes.
+  - **C2: git's trailer semantics are the one parser.** `tdd_commit_post.sh` reads the phase and
+    mode with `git log -1 --format=%(trailers:key=TDD,valueonly)` (and `key=TDD-Mode`), as
+    `lane_commits` (new `git_trailer`) and `tdd.jl phase()` do; `trailers(msg)` is
+    `git interpret-trailers --parse`. Before, the post hook took a `TDD:` line from anywhere,
+    while H1/H9 read only the last paragraph, so `-m "test: x" -m "TDD: red" -m "Co-Authored-By: …"`
+    passed the hook and failed dod later. Now a role commit with no phase as git reads it is a
+    post-hook violation (rule `no-phase`, exit 2) while it is still HEAD, and the message gives
+    the repair: `git -C <checkout> commit -q --amend --no-edit --trailer "TDD: <phase>"`. A lead
+    commit with no phase stays clean.
+  - **The one commit form**, in every role body (test-writer, implementer, the three testers) and
+    the lane-lifecycle skill: `git -C <lane> commit -q --author "<role> <<role>@factory.invalid>"
+    -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5
+    <noreply@anthropic.com>"`, run in its own Bash call, never chained with `tdd.jl red` or
+    anything else (a cancelled chained call leaves a late commit, critic C4). `--trailer` needs
+    git 2.32 or later.
+  - Existing tests that encoded the old behaviour (a role commit with no phase passing the post
+    hook, the `-m "TDD: red"` form) are listed in the C1/C2 lane report for a test-fix lane.
 - **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the four tdd
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
   them by hand (below).
@@ -155,7 +190,8 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     `scripts/_tdd_backfill.jl` to the T3 globs. No `tdd` in its tiers: it has no `src/`.
   - **ChuiCore.jl** (after v0.0.1), **ChuiTypes.jl, ChuiFrames.jl** (after their open branches
     merge): the registry `test_writer` entry and the `implementer` change (`file_scope`, `tools`,
-    `disallowed_tools`, role, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the four
+    `disallowed_tools`, role, scorecard), and the `law_tester`, `property_tester` and
+  `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the four
     tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
     the template.
   - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.

@@ -38,7 +38,7 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   relies on them.
 - A new agent type added mid-session is not dispatchable until the session restarts: after
   syncing 0.3.0 and adding the registry entries, restart the session before the first TDD dispatch.
-- Dispatch only on a clean lane. `julia scripts/tdd.jl brief --role test-writer|implementer --root
+- Dispatch only on a clean lane. `julia scripts/tdd.jl brief --role <role> --root
   <lane checkout>` prints the header, the public API and the stub diffs, and saves the brief under
   `<main>/.lanes/briefs/<lane>/`; add the rest by hand. `tdd_boundary` checks the header (role,
   `checkout=` a lane worktree, `head=` its HEAD) and saves the prompt under `dispatched/`.
@@ -59,10 +59,23 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
 - implementer brief: the same header with `role=implementer`, then `## Task`, `## Spec`,
   `## Red tests` (paths and shas), `## Red evidence` (paths) and `## Boundary`. Never the
   test-writer's report or messages.
+- **Test-side roles (critic C1).** `law-tester`, `property-tester` and `differential-tester` are
+  test-side roles like the test-writer: each may author `red`, `test-fix`, `test-refactor` and
+  `backfill` under its own identity (`<role> <<role>@factory.invalid>`), gets the test-writer's
+  boundary, reads only its own `.lanes/briefs/<lane>/<role>-*`, and is dispatched by the lead with
+  `julia scripts/tdd.jl brief --role <role>` (header `role=<role>`, the test-writer's sections).
+- **The one commit form (critic C2).** Every role commits with
+  `git -C <lane> commit -q --author "<role> <<role>@factory.invalid>" -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`
+  (the phase varies), in its own Bash call, never chained with `tdd.jl red` or anything else (a
+  cancelled chained call leaves a late commit). git reads trailers only from the last paragraph, and
+  git's `%(trailers)` is the one parser (post hook, H1/H9, `tdd.jl`): a phase in a paragraph of its
+  own (a separate `-m`, a heredoc) is no phase. The post hook flags a role commit with no phase
+  (`no-phase`, exit 2) while it is still HEAD: amend it then with
+  `git -C <lane> commit -q --amend --no-edit` plus `--trailer` and the phase.
 - **Mode.** The lead records it as a `TDD-Mode: required|refactor|skip — <reason>` trailer on a
   commit authored `lead <lead@factory.invalid>` (e.g. `git commit --allow-empty --author "lead
   <lead@factory.invalid>"`). The commit guard denies the lead identity to any caller with an
-  `agent_type`, and a `TDD-Mode:` trailer line to the role callers (test-writer, implementer). Default `required`; no `src/`/`ext/` change needs none.
+  `agent_type`, and a `TDD-Mode:` trailer line to the role callers (the test-side roles, implementer). Default `required`; no `src/`/`ext/` change needs none.
 - Before the merge: `/change-review` runs `tdd.jl audit --ledger` and `dod.jl`.
   **Merge, never rebase:** evidence is keyed by sha; after a rebase run `tdd.jl green` at the tip, and audit
   lists the missing reds for the lead to decide.

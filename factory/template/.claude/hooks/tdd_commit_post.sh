@@ -4,7 +4,8 @@
 # authoritative half of the commit guard. A call that commits and then fails fires only PostToolUseFailure,
 # so both events run it. For the call's .lanes/tdd-pending/<tool_use_id> entry (written by tdd_boundary.sh
 # before every allowed `git commit`), each commit of the call is checked: author against the caller, the
-# `TDD:` phase against its role, a role's `TDD-Mode:` line, and the changed paths against the role. A commit
+# `TDD:` phase against its role (none: rule no-phase), a role's `TDD-Mode:` trailer, and the changed paths
+# against the role; phase and mode as git's %(trailers) reads them, as H1/H9 and tdd.jl do (critic C2). A commit
 # of the call (review 1 B2, B3) is on `git log --first-parent <before>..HEAD` (an amend yields the amended
 # commit; a merge's second parent is main's history, never re-checked) with its COMMITTER time within
 # [entry mtime - 5 s, entry mtime + 600 s] (600 s: the Bash tool's maximum). Each is appended to the session
@@ -25,25 +26,26 @@ for _f in "$PEND"/*; do [ -e "$_f" ] || exit 0; break; done # the common path: n
 have_jq || { printf '[factory] jq not found: tdd_commit_post cannot record commits (audit E5 will fail them).\n' >&2; exit 1; }
 tu=$(field '.tool_use_id | strings')
 case $tu in *[!A-Za-z0-9_-]*) tu="" ;; esac
-VIOL=""
+VIOL="" NOPH=""
 
 # check_commit CHECKOUT SHA AGENT_TYPE AGENT_ID: record one commit, and any rule it breaks
 check_commit() {
     _id=$(git -C "$1" log -1 --format='%an <%ae>' "$2" 2>/dev/null)
-    _msg=$(git -C "$1" log -1 --format=%B "$2" 2>/dev/null)
     id_rule "$3" "$_id"
     _rule=$IDR
-    case $3 in test-writer | implementer)
-        _ph=$(printf '%s\n' "$_msg" | awk 'tolower($1) == "tdd:" { print $2; exit }')
-        _md=$(printf '%s\n' "$_msg" | awk 'tolower($1) == "tdd-mode:" { print "m"; exit }')
+    if tdd_role "$3"; then # critic C2: git's own trailer parse (the last paragraph), as H1/H9 and tdd.jl read it
+        _ph=$(git -C "$1" log -1 --format='%(trailers:key=TDD,valueonly)' "$2" 2>/dev/null) && _ph=${_ph%%"$NL"*}
+        _md=$(git -C "$1" log -1 --format='%(trailers:key=TDD-Mode,valueonly)' "$2" 2>/dev/null)
         case "$3:$_ph" in
-            *: | test-writer:red | test-writer:test-fix | test-writer:test-refactor | test-writer:backfill) ;;
+            *:) _rule=${_rule:-no-phase} && NOPH=1 ;;
             implementer:stub | implementer:green | implementer:refactor) ;;
+            implementer:*) _rule=${_rule:-phase-not-role} ;;
+            *:red | *:test-fix | *:test-refactor | *:backfill) ;; # a test-side role (critic C1)
             *) _rule=${_rule:-phase-not-role} ;;
         esac
         [ -z "$_md" ] || _rule=${_rule:-mode-trailer}
-        [ -z "$(git -C "$1" diff-tree --no-commit-id --name-only -r --root "$2" 2>/dev/null | role_paths "$3")" ] || _rule=${_rule:-path-not-role} ;;
-    esac
+        [ -z "$(git -C "$1" diff-tree --no-commit-id --name-only -r --root "$2" 2>/dev/null | role_paths "$3")" ] || _rule=${_rule:-path-not-role}
+    fi
     ledger tdd-commit agent_id "$4" agent_type "$3" checkout "$1" sha "$2"
     [ -n "$_rule" ] || return 0
     ledger tdd-commit-violation agent_id "$4" agent_type "$3" checkout "$1" sha "$2" rule "$_rule" reason "$_rule"
@@ -83,4 +85,5 @@ done
 [ "${1:-}" = sweep ] || [ -z "$tu" ] || [ ! -f "$PEND/$tu" ] || record "$PEND/$tu" ""
 [ -z "$VIOL" ] && exit 0
 printf '[factory] tdd commit violation (spec §0.5):%s PostToolUse cannot undo a commit: tdd.jl audit (E5) fails this lane until it is replaced by a commit that fits the role.\n' "$VIOL" >&2
+[ -z "$NOPH" ] || printf '[factory] no-phase: git reads trailers only from the last paragraph, so -m "TDD: ..." in its own paragraph is no phase. While it is still HEAD, amend it in its own Bash call: git -C <checkout> commit -q --amend --no-edit --trailer "TDD: <phase>". Next time: git -C <checkout> commit -q --author "<role> <<role>@factory.invalid>" -m "<subject>" --trailer "TDD: <phase>" --trailer "Co-Authored-By: ...".\n' >&2
 exit 2

@@ -17,11 +17,15 @@ end
 
 const LEAD_AUTHOR = "lead <lead@factory.invalid>"
 role_author(role) = "$role <$role@factory.invalid>"
+"The test-side roles (critic C1): each may author the test phases, under its own identity."
+const TEST_ROLES = ("test-writer", "law-tester", "property-tester", "differential-tester")
+"The side of each phase: \"implementer\" or \"test-writer\" (the test side, any of TEST_ROLES)."
 const PHASE_ROLE = Dict(
     "stub" => "implementer", "green" => "implementer", "refactor" => "implementer",
     "red" => "test-writer", "test-fix" => "test-writer", "test-refactor" => "test-writer", "backfill" => "test-writer",
 )
-const ROLE_AUTHORS = (role_author("test-writer"), role_author("implementer"))
+phase_authors(ph) = PHASE_ROLE[ph] == "implementer" ? (role_author("implementer"),) : role_author.(TEST_ROLES)
+const ROLE_AUTHORS = (role_author.(TEST_ROLES)..., role_author("implementer"))
 const SEEDED_RUNNERS = ("test/runtests.jl", "test/Project.toml")
 is_code_path(p) = startswith(p, "src/") || startswith(p, "ext/")
 is_test_path(p) = startswith(p, "test/")
@@ -29,12 +33,18 @@ sha7(s) = first(s, 7)
 
 # ---- Commits
 
-"The `Key: value` lines of the last paragraph of a commit message."
+"""The trailers of a commit message as git parses them (`git interpret-trailers --parse`, critic C2: git is
+the one parser): key => its first value; `TDD` and `TDD-Mode` matched case-insensitively, as `%(trailers:key=)`."""
 function trailers(msg)
-    paras = filter(p -> !isempty(strip(p)), split(msg, r"\n[ \t]*\n"))
-    ms = isempty(paras) ? [] : [match(r"^([A-Za-z0-9][A-Za-z0-9-]*):\s*(.*?)\s*$", l) for l in split(last(paras), '\n')]
-    return Dict{String, String}(m.captures[1] => m.captures[2] for m in ms if m !== nothing)
+    out, canon_key = Dict{String, String}(), k -> get(Dict("tdd" => "TDD", "tdd-mode" => "TDD-Mode"), lowercase(k), k)
+    for l in eachline(pipeline(`git interpret-trailers --parse`; stdin = IOBuffer(msg)))
+        m = match(r"^([^:]+):\s*(.*)$", l)
+        m === nothing || get!(out, canon_key(m.captures[1]), String(strip(m.captures[2])))
+    end
+    return out
 end
+"Trailer `key` of commit `sha` as git's `%(trailers:key=…,valueonly)` reads it: the first value, \"\" when none."
+git_trailer(root, sha, key) = String(strip(first(split(something(git(root, "log", "-1", "--format=%(trailers:key=$key,valueonly)", sha), ""), '\n'))))
 "`TDD-Mode: <mode> — <reason>` (em dash) as (mode, reason); the reason is \"\" when there is none."
 parse_mode(v) = (p = split(v, " — "; limit = 2); (String(strip(p[1])), length(p) == 2 ? String(strip(p[2])) : ""))
 
@@ -48,12 +58,9 @@ function lane_commits(root, base, head = "HEAD")
     mb === nothing && return nothing
     shas = split(something(git(root, "rev-list", "--no-merges", "--reverse", "$mb..$head"), ""), '\n'; keepempty = false)
     return map(shas) do s
-        info = something(git(root, "log", "-1", "--format=%an <%ae>%x00%B", s), "\0")
-        author, msg = split(info, '\0'; limit = 2)
-        t = trailers(msg)
-        ph = strip(get(t, "TDD", ""))
-        mode = haskey(t, "TDD-Mode") ? parse_mode(t["TDD-Mode"]) : nothing
-        LaneCommit(String(s), String(author), isempty(ph) ? nothing : String(ph), mode, [p for (_, p) in changed(root, s)])
+        author = something(git(root, "log", "-1", "--format=%an <%ae>", s), "")
+        ph, md = git_trailer(root, s, "TDD"), git_trailer(root, s, "TDD-Mode")
+        LaneCommit(String(s), author, isempty(ph) ? nothing : ph, isempty(md) ? nothing : parse_mode(md), [p for (_, p) in changed(root, s)])
     end
 end
 
@@ -86,8 +93,8 @@ function history_rules(commits::AbstractVector; stub_ok::Function)
             c.author in ROLE_AUTHORS && fail("H9", c, "a phase-less commit authored $(c.author)")
         elseif !haskey(PHASE_ROLE, c.phase)
             fail("H1", c, "unknown phase `$(c.phase)`")
-        elseif c.author != role_author(PHASE_ROLE[c.phase])
-            fail("H9", c, "authored $(c.author), not $(role_author(PHASE_ROLE[c.phase]))")
+        elseif !(c.author in phase_authors(c.phase))
+            fail("H9", c, "authored $(c.author), not $(join(phase_authors(c.phase), " or "))")
         end
     end
     mode, mode_fails = lane_mode(commits)

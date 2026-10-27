@@ -219,6 +219,15 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
   - the changed paths against the role (the test-writer changes only `test/**`, outside the seeded
     runners; the implementer changes no `test/**`).
 
+  2026-10-27 note (critic C1/C2): the phase and mode are read with git's own trailer parser,
+  `git log -1 --format=%(trailers:key=TDD,valueonly)` (and `key=TDD-Mode`), the same parse that
+  `lane_commits` (H1/H9) and `tdd.jl phase()` use: only the message's last paragraph holds
+  trailers. A role commit with no phase in that parse is a violation (rule `no-phase`, exit 2) while
+  it is still HEAD; the message gives the amend (`git commit --amend --no-edit --trailer "TDD:
+  <phase>"`). The one commit form for every role is `git -C <lane> commit -q --author "<role>
+  <<role>@factory.invalid>" -m "<subject>" --trailer "TDD: <phase>" --trailer "Co-Authored-By: …"`,
+  in its own Bash call. The test-side roles (below, §0.6) are checked as the test-writer.
+
   It appends `{ev: "tdd-commit", agent_id, agent_type, checkout, sha}` with the **resulting sha** to
   **the TDD ledger**. The TDD ledger is defined once, here (R4-M2): it is the session's ledger,
   `<session root>/.lanes/ledger.jsonl`, the file `_lib.sh` already writes (`$ROOT/.lanes/ledger.jsonl`).
@@ -383,6 +392,15 @@ critic and the reviewer are read-only. The user asked for this one, and ADR-0015
 | implementer | Role line: "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged." Rules: work from your tdd-brief; commit with `--author "implementer <implementer@factory.invalid>"`; never touch `test/**`; disputes go to the lead as a written test-fix request with no source code; you write the lane's changelog fragment; STUB declares only (H5); GREEN is minimal; REFACTOR comes only after a green. Scorecard: "failing test written first" becomes "tdd.jl audit OK". |
 | law-tester, property-tester, differential-tester | One line: "In a test-first lane, commit new items with `TDD: red` before the code." |
 | reviewer | The §4.5 checklist. |
+
+2026-10-27 note (critic C1/C2): that one line had no legal author under H9 (only the test-writer
+could author `red`). The lead's ruling: test-writer, law-tester, property-tester and
+differential-tester are one class of test-side roles. Each may author `red`, `test-fix`,
+`test-refactor` and `backfill` under its own identity `<role> <<role>@factory.invalid>`, gets the
+test-writer's §0.6 boundary keyed on `agent_type`, reads only its own `.lanes/briefs/<lane>/<role>-*`,
+and is dispatched by the lead alone with a tdd-brief `role=<role>` (`tdd.jl brief --role <role>`,
+the test-writer's sections). The three tester bodies say so and give the one `--trailer` commit form;
+test_writer.md points to them instead of calling their items "not yours".
 
 ## 3. TDD protocol inside one lane (D2, D3)
 
