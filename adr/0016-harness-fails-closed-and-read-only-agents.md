@@ -60,9 +60,9 @@ D2 and D6–D12 are implementation choices that live in the spec.
      `julia scripts/test/runtests.jl hooks --hooks-dir <copy>`; a gate script is audited by
      specification, run by the lead in a scratch copy.
    - Enforcement keys on the dispatch's `agent_type`: an agent of another type briefed as a
-     reviewer is unrestricted (a stated blind spot). The property holds against a mistaken agent
-     and against every adversarial route the four review rounds tried; `checks.toml` lists what
-     remains unmodelled.
+     reviewer is unrestricted (a stated blind spot). The property is proved against every route
+     the review rounds found, not in general: `checks.toml` lists what remains unmodelled
+     (including that `runtests.jl --hooks-dir` runs the critic's own hook copies).
 3. **D4: one review protocol in every body** (spec §2 D4).
    - `gen.jl` must insert `_preflight` and `_report` (in `.agents/bodies/`) between the Mode line
      and each body, and `_verdict` only into read-only agents *(amended 2026-10-27, critic round 2:
@@ -121,10 +121,11 @@ D2 and D6–D12 are implementation choices that live in the spec.
 
 - Spec §1 records the measurements (ledger size, wrapper behaviour, `bash_guard.sh:41`).
 - Spec §5 lists the acceptance tests that will prove D1, D3, D4 and D5 (plan Tasks 1, 3, 4, 5).
-- Fourteen review rounds on the sub-lanes (reports in `.lanes/reports/f040-*.md`) each closed
-  their findings with the same reproducer quoted RED then GREEN: two heredoc bypasses, four
-  read-only escapes, three option-spelling bypasses, one `rg` program-execution route, one
-  `cp -s` symlink write.
+- Twenty-two review rounds on the sub-lanes, two critic rounds and a whole-branch review (reports
+  in `.lanes/reports/f040-*.md`, gitignored) each closed their findings with the same reproducer
+  quoted RED then GREEN: two heredoc bypasses, four read-only escapes, three option-spelling
+  bypasses, one `rg` program-execution route, and five routes in the scratch-copy rule (`cp -s`,
+  `..` through a copied link, expansions, globs, space-flattened operands).
 - **UNVERIFIED:** PreToolUse `agent_type` for a tmux-pane teammate; whether frontmatter
   `Bash(...)` allowlists work for subagents; `onFailure: "block"` on a PreToolUse timeout; whether
   tmux-pane teammates honour the registry `tools:` list.

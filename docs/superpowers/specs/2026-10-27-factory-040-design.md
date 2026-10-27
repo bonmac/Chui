@@ -81,10 +81,12 @@ D4. **One review protocol, rendered into every body.** Two fragments, `_prefligh
     beside the agent bodies under `.agents/bodies/`, are inserted by `gen.jl` before each body. Pre-flight: print `pwd`,
     `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list`; compare with
     the brief's checkout, branch and base; stop on mismatch. Report: write findings to
-    `.lanes/reports/<name>.md` or `<name>-<round>.md` as they are confirmed, where `<name>` is the
-    dispatch name (`teammate_name` / `tool_input.name`), else the agent type; the one rule is shared
-    by write_guard, teammate_idle and `/lane-review`. A file counts as a report only once its first
-    line is the Verdict line (teammate_idle reads it), so a partial file is not "reported". The final
+    `.lanes/reports/<name>.md` or `<name>--r<round>.md` as they are confirmed, where `<name>` is the
+    dispatch name (`teammate_name` / `tool_input.name`), matched exactly; a dispatch must be named
+    (an unnamed one cannot pass the audit); the one rule is shared by teammate_idle, `lane audit
+    --report` and `/lane-review` *(revised after the final review, M2)*. A file counts as a report
+    only once its first line is final: `Verdict: <word>` for a read-only agent, `Status: DONE |
+    BLOCKED` for a write agent; `Verdict: PENDING` and `Status: PARTIAL` are not reports. The final
     message is the full report; SendMessage only in addition. Reports are at most 80 lines; a
     command is quoted as the command, its exit code and its last 20 lines, with the full log under
     `.lanes/evidence/`.
