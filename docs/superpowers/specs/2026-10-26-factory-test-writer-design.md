@@ -256,8 +256,14 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
     i.e. the main checkout of the repo that owns the lane.
   - One resolver per language, with a parity test: `owning_ledger CHECKOUT` in `.claude/hooks/_lib.sh`
     and `owning_ledger(root)` in `scripts/_tdd_evidence.jl`.
-  - `tdd_commit_post` writes each `tdd-commit` record there, whatever the dispatch shape (teammate,
-    named or unnamed subagent). If git fails, it falls back to the session ledger.
+  - `tdd_commit_post` writes all three of its records there: `tdd-commit`, `tdd-commit-violation`,
+    and the sweep's `tdd-commit-late`. This holds whatever the dispatch shape (teammate, named or
+    unnamed subagent). If git fails, it falls back to the session ledger.
+  - Every other event stays in the **session** ledger: `tdd-boundary-denied`, the dispatch records
+    (`dispatch`, `dispatch-denied`), the lane records (`start`, `stop`, `close`, `spawned`,
+    `unknown-result`) and the idle records. For an unnamed subagent, that ledger is the
+    coordinator's. So the §4.5 check "every `tdd_boundary` denial is a finding" reads the session
+    ledger, while E5 reads the owning ledger.
   - `tdd.jl audit`'s default `--ledger` is `owning_ledger(root)`. `/change-review` passes
     `--ledger <owning repo main>/.lanes/ledger.jsonl`.
   - Records written under 0.3.0 by unnamed subagents are in the coordinator ledger. Audit those lanes
