@@ -242,6 +242,14 @@ lead adds the task text and the rest by hand. A lint of brief contents was cut (
   machine that holds the ledger, this also detects the unmodelled forms (`git commit-tree`, julia
   code), because they leave no record.
 
+  *Dated note (2026-10-27, the lead's E5 ruling from lane tw-031; synced as factory 0.3.0, ADR-0015):*
+  - E5 matches `tdd-commit-violation` records by the lane's commit shas only, never by checkout. A
+    violation therefore stops failing the lane once its commit is replaced (amended, or reset and
+    re-made).
+  - A `tdd-commit-late` record (a pending entry swept after a call that fired no post event) does
+    **not** satisfy E5. The only exception is the lead's `TDD-Waiver: E5 <sha> — <reason>` commit
+    described in the §4.3 note: a late record plus that waiver passes, and a late record alone fails.
+
 **What this proves, and what it does not.** A commit that passes H9 and E5 was made through a
 `git commit` that the hooks saw, by a process the harness reported as that role. The commit itself
 was checked after it was made. That partly closes the "one git identity" blind spot, because one
