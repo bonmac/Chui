@@ -240,6 +240,67 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         @test hook("lane_ledger.sh", "{\"hook_event_name\":\"SubagentStop\"}", root; hooks = h)[1] == 0   # advisory: fails open
     end
 
+    @testset "guards fail CLOSED on any non-zero exit (0.4.0)" begin
+        settings = joinpath(ROOT, ".claude/settings.json")
+        cmds = readlines(pipeline(`jq -r '.hooks.PreToolUse[].hooks[].command' $settings`))
+        shells = filter(s -> Sys.which(s) !== nothing, ["sh", "bash", "zsh", "fish"])
+        # wrapper_exit(name, code): the settings.json command for guard `name`, run by `shell`, with a
+        # stub guard that exits `code`; 143 is a guard killed by SIGTERM mid-run (a real signal here)
+        function wrapper_exit(name, code; shell = "sh")
+            proj = realpath(mktempdir())
+            mkpath(joinpath(proj, ".claude/hooks"))
+            write(joinpath(proj, ".claude/hooks", name), code == 143 ? "kill -TERM \$\$\n" : "exit $code\n")
+            c = only(filter(contains(name), cmds))
+            return run(pipeline(ignorestatus(addenv(`$shell -c $c`, "CLAUDE_PROJECT_DIR" => proj)); stdin = IOBuffer("{}"), stdout = devnull, stderr = devnull)).exitcode
+        end
+        for g in ("bash_guard.sh", "write_guard.sh", "dispatch_limit.sh"), s in shells
+            @test wrapper_exit(g, 0; shell = s) == 0 || (println("$s $g: exit 0 -> blocked"); false)
+            for code in (1, 3, 143)                 # 0.3.0 and before: only a MISSING guard was exit 2; 1 and 143 passed
+                @test wrapper_exit(g, code; shell = s) == 2 || (println("$s $g: exit $code passed"); false)
+            end
+        end
+        # the splitter fails: an awk that crashes, or no awk at all (jq and the other tools still found).
+        # Before 0.4.0 the empty segment list was "nothing to check" and the command passed.
+        shim = mktempdir()
+        write(joinpath(shim, "awk"), "#!/bin/sh\nexit 1\n")
+        chmod(joinpath(shim, "awk"), 0o755)
+        rc, _, err = hook("bash_guard.sh", bash("ls"), root; env = Dict("PATH" => shim * ":" * ENV["PATH"]))
+        @test rc == 2 && occursin("splitter", err) || (println("crashing awk: rc=$rc $err"); false)
+        noawk = mktempdir()
+        for t in ("sh", "cat", "dirname", "grep", "jq", "sed", "tr", "date")
+            symlink(Sys.which(t), joinpath(noawk, t))
+        end
+        rc, _, err = hook("bash_guard.sh", bash("ls"), root; env = Dict("PATH" => noawk))
+        @test rc == 2 && occursin("splitter", err) || (println("no awk: rc=$rc $err"); false)
+        @test !blocked("bash_guard.sh", bash("ls"), root; env = Dict("PATH" => noawk * ":" * ENV["PATH"]))
+        # the watchdog: a count that would take 5 s with FACTORY_WATCHDOG_SECS=1 is denied within 3 s,
+        # logged as guard-timeout, and the lock is released. The slow path exists only under FACTORY_TEST=1.
+        r = realpath(mktempdir())
+        mkpath(joinpath(r, ".lanes"))
+        open(joinpath(r, ".lanes/ledger.jsonl"), "w") do io
+            for i in 1:20_000
+                println(io, "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"ac$i\",\"agent_type\":\"-\"}")
+            end
+        end
+        agent_payload = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"wd1\",\"description\":\"d\"}}"
+        slow = Dict("FACTORY_WATCHDOG_SECS" => "1", "FACTORY_SLOW_JQ" => "5", "FACTORY_TEST" => "1")
+        t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = slow))
+        @test res[1] == 2 && occursin("dispatch_limit.sh exceeded 1 s", res[3]) || (println("watchdog: ", res); false)
+        @test t < 3 || (println("watchdog took $t s"); false)
+        @test any(l -> occursin("\"guard-timeout\"", l) && occursin("dispatch_limit.sh", l), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test !isdir(joinpath(r, ".lanes/.dispatch.lock"))
+        @test !any(l -> occursin("\"ev\":\"dispatch\"", l), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        delete!(slow, "FACTORY_TEST")                                      # not a test run: the slow path is ignored
+        t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = slow))
+        @test res[1] == 0 && t < 3 || (println("no FACTORY_TEST: ", res, " in $t s"); false)
+        t = @elapsed hook("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd2"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "8"))
+        @test t < 3                                                        # no sleeper holds the hook's stdout open
+        @test !blocked("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd3"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "0"))
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_watchdog.sh"))
+        rc, _, err = hook("dispatch_limit.sh", agent_payload, realpath(mktempdir()); hooks = h)
+        @test rc == 2 && occursin("_watchdog.sh is missing", err)
+    end
+
     @testset "write_guard" begin
         @test blocked("write_guard.sh", write_payload("$OUT/x.jl"), root)
         @test blocked("write_guard.sh", write_payload(expanduser("~/x.md")), root)

@@ -38,7 +38,8 @@ fi
 # One simple command per line (_bash_guard_lib.sh): heredoc bodies dropped, quoted text one
 # word with its quotes removed, `\`+newline joined. The denylist and the per-command checks
 # both read it, so a quoted commit message is not a command and `"git" reset` is.
-segs=$(printf '%s\n' "$raw" | segments)
+# 0.4.0: a splitter that fails (no awk, or awk crashed) gave an EMPTY list, which passed everything.
+segs=$(printf '%s\n' "$raw" | segments) || deny "the command splitter failed (awk missing or crashed, status $?); bash_guard fails closed. Check PATH for awk."
 has() { printf '%s\n' "$segs" | grep -Eq -- "$1"; }
 S='(^|[;&|(`[:space:]])'                          # start of a command word
 G="${S}git([[:space:]]+(-[Cc][[:space:]]+[^[:space:]]+|--(git-dir|work-tree|namespace)[[:space:]]+[^[:space:]]+|-[[:alpha:]]|--[a-z-]+(=[^[:space:]]+)?))*[[:space:]]+" # git + global options

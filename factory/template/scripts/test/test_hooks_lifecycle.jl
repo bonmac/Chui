@@ -291,6 +291,16 @@
         run1(payload) = run(pipeline(ignorestatus(addenv(`sh -c $bg`, "CLAUDE_PROJECT_DIR" => proj)); stdin = IOBuffer(payload), stdout = devnull, stderr = devnull)).exitcode
         @test run1(bash("ls")) == 0
         @test run1(bash("git reset --hard")) == 2
+        # 0.4.0 (D9): Monitor runs commands outside the Bash matcher, so bash_guard sees it too; MultiEdit
+        # names a tool that no longer exists. Probe 2026-10-27 (the Monitor tool's schema): its input is
+        # `command` (a string, as for Bash) or `ws` (a WebSocket, no command), so a command Monitor is
+        # checked like Bash and a ws Monitor is denied by the no-command rule (fails closed).
+        matchers = readlines(pipeline(`jq -r '.hooks.PreToolUse[].matcher' $settings`))
+        @test matchers == ["Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task"] || (println("PreToolUse matchers: $matchers"); false)
+        mon(ti) = "{\"session_id\":\"s1\",\"tool_name\":\"Monitor\",\"cwd\":\"$(json(proj))\",\"tool_input\":$ti}"
+        @test run1(mon("{\"command\":\"tail -f app.log\",\"description\":\"d\",\"timeout_ms\":1000}")) == 0
+        @test run1(mon("{\"command\":\"git reset --hard\",\"description\":\"d\",\"timeout_ms\":1000}")) == 2
+        @test run1(mon("{\"ws\":{\"url\":\"wss://x\"},\"description\":\"d\",\"timeout_ms\":1000}")) == 2
         # 0.2.8: lane_ledger.sh also sees Agent/Task/TaskStop results and failures
         for ev in ("PostToolUse", "PostToolUseFailure")
             m = readlines(pipeline(`jq -r ".hooks.$ev[]? | select(.hooks[].command | contains(\"lane_ledger.sh\")) | .matcher" $settings`))

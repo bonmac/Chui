@@ -11,11 +11,12 @@
 # FACTORY_MAX_OPEN_LANES in the session env overrides it. Fails closed without jq, a library,
 # a writable .lanes/ or the lock.
 d=$(dirname -- "$0") # a missing library must block (exit 2), not fail open
-for _f in _lib.sh _lanes.sh; do
+for _f in _lib.sh _lanes.sh _watchdog.sh; do
     [ -f "$d/$_f" ] || { printf '[factory] %s is missing; dispatch_limit fails closed.\n' "$d/$_f" >&2; exit 2; }
 done
 . "$d/_lib.sh"
 . "$d/_lanes.sh"
+. "$d/_watchdog.sh"
 need_jq
 payload_ok || deny "cannot parse the hook payload as a JSON object, so the dispatch cannot be keyed or counted (fails closed)."
 max=${FACTORY_MAX_OPEN_LANES:-${MAX_OPEN_LANES:-4}}
@@ -44,13 +45,20 @@ until mkdir "$lock" 2>/dev/null; do
     [ "$_n" -lt 50 ] || deny "the lane ledger lock $lock is held (waited 5 s), so the open-lane cap cannot be checked (fails closed). Retry; if no hook is running, remove that directory."
     sleep 0.1
 done
-trap 'rmdir "$lock" 2>/dev/null' EXIT
+_out="$lock.out.$$"
+trap 'rmdir "$lock" 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT
 trap 'exit 2' INT TERM HUP
+# 0.4.0: the count runs under an in-hook watchdog (_watchdog.sh): denied at FACTORY_WATCHDOG_SECS
+# (default 8), inside the host's 10 s budget, which fails OPEN. FACTORY_SLOW_JQ (seconds) is a
+# test-only slow count, honoured only under FACTORY_TEST=1.
+watchdog "${FACTORY_WATCHDOG_SECS:-8}"
 open=0 names=""
 if [ -f "$LEDGER_FILE" ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
-    out=$(jq -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" \
-        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$LEDGER_FILE" 2>/dev/null) ||
+    [ "${FACTORY_TEST:-}" != 1 ] || [ -z "${FACTORY_SLOW_JQ:-}" ] || watched /dev/null sleep "$FACTORY_SLOW_JQ"
+    watched "$_out" jq -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" \
+        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$LEDGER_FILE" ||
         deny "cannot read the lane ledger $LEDGER_FILE, so the open-lane cap cannot be checked (fails closed). Repair or move the file."
+    out=$(cat "$_out" 2>/dev/null)
     open=${out%% *} names=${out#* }
 fi
 case $open in '' | *[!0-9]*) deny "the lane ledger $LEDGER_FILE gave no open-lane count ($open); dispatch_limit fails closed." ;; esac
