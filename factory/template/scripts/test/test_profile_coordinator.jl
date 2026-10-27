@@ -2,7 +2,9 @@
 #
 # 0.3.0 shipped tests that read the HOST repo's seeded risk.toml (expecting `tdd` in T1-T3) and
 # test/runtests.jl (the seeded package runner). A coordinator has neither: no `tdd` in its tiers
-# (migration list) and no test/. A coordinator synced to 0.3.0 had 16-20 fails and 35 errors.
+# (migration list) and no test/. The lead's coordinator synced to 0.3.0 had 20 fails and 35 errors
+# (4 more fails there: its own risk.toml did not yet protect the tdd scripts); a fresh scratch
+# coordinator sync had 16 fails and 35 errors in the whole suite, 16 and 30 in this guard's selection.
 # This syncs the template into a scratch git repo with --profile coordinator and runs the
 # scratch's own scripts/test/runtests.jl there on the files that exercise the seeded content,
 # selected with FACTORY_TEST_ONLY (runtests.jl). Expects no Fail and no Error.
@@ -10,7 +12,8 @@
 # Only inside factory/ (it needs the factory to sync from). Cost: by default test_dod.jl only,
 # about 30 s with the sync. FACTORY_GUARD_FULL=1 adds the tdd files that build scratch repos from
 # the seeds; their package runs make it about 4.5 min (measured on 1.13, tw-032), over the suite's
-# budget for one guard, so it is opt-in: run it before a factory release.
+# budget for one guard, so it is opt-in. Every factory change that touches scripts/test/ or the tdd
+# scripts runs it before merge, with 0 fail and 0 error (factory/README.md "Test it").
 # (test_tdd_c1/c2/c4/c5 need the hook tests' helpers, so they do not run alone; c5's seeded risk.toml
 # comes through c3_repo, which test_tdd_c3.jl exercises.)
 const GUARD_FILES = get(ENV, "FACTORY_GUARD_FULL", "") == "1" ?
@@ -45,7 +48,7 @@ function guard_report(txt)
     println("coordinator-profile guard: failing sites in the scratch run")
     foreach(((k, v),) -> println("  $v  $k"), sort(collect(at); by = last, rev = true))
     e = findfirst("Error During Test", txt)
-    e === nothing || println(txt[first(e):min(end, first(e) + 1200)])
+    e === nothing || println(first(SubString(txt, first(e)), 1200))
     return nothing
 end
 
@@ -62,17 +65,22 @@ end
         sh(`git -C $c commit -q -m sync`)
         log = joinpath(c, ".lanes", "guard.log")
         mkpath(dirname(log))
-        cmd = Cmd(`$JULIA scripts/test/runtests.jl`; dir = c)
+        # --color=no: a parent run with --color=yes passes it on, and escapes break the summary parse
+        cmd = Cmd(`$JULIA --color=no scripts/test/runtests.jl`; dir = c)
         cmd = addenv(cmd, "FACTORY_TEST_ONLY" => join(GUARD_FILES, ","), "JULIA_PKG_OFFLINE" => "true")
         t = time()
-        ok = success(pipeline(ignorestatus(cmd); stdout = log, stderr = log))
+        # one handle for both streams: two truncating opens of the same path overwrite each other
+        ok = open(log, "w") do io
+            success(pipeline(ignorestatus(cmd); stdout = io, stderr = io))
+        end
         txt = read(log, String)
         n = factory_counts(txt)
         @info "coordinator-profile guard" seconds = round(time() - t; digits = 1) counts = n
-        @test n !== nothing || (print(txt[max(1, end - 4000):end]); false)
+        @test n !== nothing || (print(last(txt, 4000)); false)
         if n !== nothing
             @test n.pass > 0
             @test n.fail == 0 && n.error == 0 || (guard_report(txt); false)
+            @test ok == (n.fail == 0 && n.error == 0) || (println("guard: exit status disagrees with the summary"); print(last(txt, 4000)); false)
         end
     end
 end

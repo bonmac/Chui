@@ -63,42 +63,48 @@ the fixtures equal factory/template's seeds.
 """
 seed_fixture(name) = read(joinpath(@__DIR__, "fixtures", "seed", name), String)
 
-# FACTORY_TEST_ONLY=a.jl,b.jl runs only those files below (test_profile_coordinator.jl uses it).
-const ONLY = filter(!isempty, split(get(ENV, "FACTORY_TEST_ONLY", ""), ','))
+"The top-level test files, in order. Others (test_tdd_cli.jl, test_tdd_history*.jl, ...) are included by these."
+const TEST_FILES = [
+    "test_gen.jl",
+    "test_hooks.jl",
+    "test_env_isolation.jl",
+    "test_hooks_lifecycle.jl",
+    "test_hooks_tdd.jl",   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
+    "test_bash_guard.jl",
+    "test_dod.jl",
+    "test_ratchet.jl",
+    "test_check_docs.jl",
+    "test_contract_usage.jl",
+    "test_ci.jl",
+    "test_lane.jl",
+    "test_changelog.jl",
+    "test_check_claims.jl",
+    "test_evidence.jl",
+    "test_sync_factory.jl",
+    "test_runtests_template.jl",
+    "test_tdd.jl",
+    "test_tdd_rename.jl",   # renamed red item must not deadlock green (0.3.0)
+    "test_tdd_backfill.jl",
+    "test_tdd_classify2.jl",
+    "test_tdd_review.jl",
+    "test_tdd_c1.jl",   # critic C1: test-side roles (law/property/differential) author test phases
+    "test_tdd_c2.jl",   # critic C2: one trailer parser (git's), phase-less role commits
+    "test_tdd_c3.jl",   # critic C3/C6: skip separators, lead-only modes, per-merge segments
+    "test_tdd_c4.jl",   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
+    "test_tdd_c5.jl",   # review of the critic fixes: sub-lane merged twice, trailer forms
+    "test_profile_coordinator.jl",   # tw-032: the dod and tdd tests pass in a coordinator-profile sync
+]
+# FACTORY_TEST_ONLY=a.jl,b.jl runs only those of TEST_FILES (test_profile_coordinator.jl uses it).
+# A name not in TEST_FILES (a nested file would run nothing) is an error, never an empty pass.
+const ONLY = filter(!isempty, strip.(split(get(ENV, "FACTORY_TEST_ONLY", ""), ',')))
 for f in ONLY
-    isfile(joinpath(@__DIR__, f)) || error("FACTORY_TEST_ONLY: no scripts/test/$f")
+    f in TEST_FILES || error("FACTORY_TEST_ONLY: $f is not a top-level file of scripts/test/runtests.jl")
 end
-inc(f) = (isempty(ONLY) || f in ONLY) && include(f)
 
 @testset "factory" begin
     t0 = time()
-    inc("test_gen.jl")
-    inc("test_hooks.jl")
-    inc("test_env_isolation.jl")
-    inc("test_hooks_lifecycle.jl")
-    inc("test_hooks_tdd.jl")   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
-    inc("test_bash_guard.jl")
-    inc("test_dod.jl")
-    inc("test_ratchet.jl")
-    inc("test_check_docs.jl")
-    inc("test_contract_usage.jl")
-    inc("test_ci.jl")
-    inc("test_lane.jl")
-    inc("test_changelog.jl")
-    inc("test_check_claims.jl")
-    inc("test_evidence.jl")
-    inc("test_sync_factory.jl")
-    inc("test_runtests_template.jl")
-    inc("test_tdd.jl")
-    inc("test_tdd_rename.jl")   # renamed red item must not deadlock green (0.3.0)
-    inc("test_tdd_backfill.jl")
-    inc("test_tdd_classify2.jl")
-    inc("test_tdd_review.jl")
-    inc("test_tdd_c1.jl")   # critic C1: test-side roles (law/property/differential) author test phases
-    inc("test_tdd_c2.jl")   # critic C2: one trailer parser (git's), phase-less role commits
-    inc("test_tdd_c3.jl")   # critic C3/C6: skip separators, lead-only modes, per-merge segments
-    inc("test_tdd_c4.jl")   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
-    inc("test_tdd_c5.jl")   # review of the critic fixes: sub-lane merged twice, trailer forms
-    inc("test_profile_coordinator.jl")   # tw-032: the dod and tdd tests pass in a coordinator-profile sync
+    for f in TEST_FILES
+        (isempty(ONLY) || f in ONLY) && include(f)
+    end
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end
