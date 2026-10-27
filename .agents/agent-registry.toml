@@ -19,9 +19,13 @@
 #   output_format  the sections the report must contain, in order
 #
 # COORDINATOR registry (profile `coordinator`; seeded from factory 0.1.0, repo-owned since).
-# The roles are the ones the lead dispatches from <root>. Package-only roles (implementer,
-# law-tester, property-tester, differential-tester) are dropped; their factory-managed bodies
-# stay in .agents/bodies/ unused, so re-adding one is a registry stanza. Roles whose rules
+# The roles are the ones the lead dispatches from <root>. Package-only roles (law-tester,
+# property-tester, differential-tester) are dropped; their factory-managed bodies stay in
+# .agents/bodies/ unused, so re-adding one is a registry stanza. Factory 0.3.0 (ADR-0015, spec
+# docs/superpowers/specs/2026-10-26-factory-test-writer-design.md §2.1; plan D7 reversed) adds
+# `test_writer` and `implementer` at the end, as in the template, with the managed bodies: the
+# lead dispatches both from <root> into package lanes, and an agent type is loaded only from the
+# session's own .claude/agents/. Their file_scope is relative to the package checkout. Roles whose rules
 # differ in the coordinator use `coord_*` slugs: their bodies are repo-owned files, not edits
 # to managed ones, so a later sync_factory never conflicts on them. critic and reviewer reuse
 # the managed bodies unchanged. Paths in file_scope are relative to <root>.
@@ -159,3 +163,31 @@ default_mode = "write"
 file_scope = ["README.md", "docs/**", "requests/README.md", "integration/README.md", "benchmarks/README.md"]
 scorecard = ["links instead of restating", "every path named exists or is marked as planned", "check_docs.jl output pasted"]
 output_format = "files changed, stale references fixed, check_docs.jl output, scorecard"
+
+[[agents]]
+slug = "implementer"
+name = "implementer"
+role = "Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged."
+description = "Use to implement one task from an approved plan, in one worktree lane, with a tdd-brief naming the test-writer's red tests, inside a declared file scope."
+model = "inherit"
+color = "green"
+default_mode = "write"
+tools = ["Read", "Grep", "Glob", "Bash", "Edit", "Write", "WebFetch", "WebSearch"]
+disallowed_tools = ["Agent", "Task", "SendMessage"]
+file_scope = ["src/**", "ext/**", "changelog.d/**"]
+scorecard = ["tdd.jl audit OK", "tests pass with output pasted", "stays in file scope", "CHANGELOG entry"]
+output_format = "summary, files changed, commands run with output, checks not run and why, scorecard"
+
+[[agents]]
+slug = "test_writer"
+name = "test-writer"
+role = "Writes unit and example tests from the spec, plan and public API, in a context that never sees the implementation (RED); and characterization tests for untested code."
+description = "Use in a test-first lane before the implementer writes code, with a tdd-brief, to write the failing tests for one planned behaviour; or to backfill missing tests."
+model = "inherit"
+color = "yellow"
+default_mode = "write"
+tools = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
+disallowed_tools = ["Agent", "Task", "SendMessage", "WebFetch", "WebSearch", "NotebookEdit"]
+file_scope = ["test/**"]
+scorecard = ["worked only from its tdd-brief: no src beyond the stub diffs", "each test derived from the spec or public docs, cited", "RED evidence: every new item fails for the right reason (tdd.jl red)", "one behaviour per test item, no implementation details asserted", "commits authored test-writer"]
+output_format = "behaviours and their sources, test items written, tdd.jl red output, disputes and bugs found, checks not run and why, scorecard"
