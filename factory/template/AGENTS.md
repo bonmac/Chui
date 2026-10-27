@@ -60,6 +60,18 @@ Intake → Classify → Design → Plan → Execute → Verify → Review → Fi
 - Roles and their output formats: `.agents/agent-registry.toml` (prose in `.agents/bodies/`).
 
 
+## Precedence
+
+The factory's `scripts/lane`, its `reviewer` and `critic`, the `[lanes] max_open` cap and the
+intake tiers win over the superpowers equivalents (`using-git-worktrees`,
+`subagent-driven-development`, `brainstorming`). Plugin skills are used only for brainstorming at T2+ and for executing a plan.
+
+## Writing files under the guard
+
+Change files with Edit/Write, never heredocs or `sed -i`. No bare `cd`: use `(cd dir && cmd)`.
+A probe the guard refuses is reported `NOT RUN`, never routed around. A variable or literal
+spelled like a gated word is refused inside a Bash command: put such text in a file instead.
+
 ## Commands (one entry point; CI calls the same jobs)
 
 ```sh

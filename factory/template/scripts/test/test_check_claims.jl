@@ -74,4 +74,27 @@
         @test CheckClaims.derive(ROOT)("factory_version") == strip(read(joinpath(FACTORY, "VERSION"), String))
         @test "check_claims" in keys(CheckClaims.CONFIG_KEYS)
     end
+
+    @testset "the lane-lifecycle skill carries the cap's marker (0.4.0, D7)" begin
+        # a copy of this checkout's skill, whose line says the registry's cap, against a registry of 6
+        skill = ".claude/skills/lane-lifecycle/SKILL.md"
+        text = read(joinpath(ROOT, skill), String)
+        reg_cap = string(get(get(TOML.parsefile(joinpath(ROOT, ".agents/agent-registry.toml")), "lanes", Dict()), "max_open", 4))
+        @test occursin("<!-- claim: max_open=$reg_cap -->", text)                # the skill states the registry's number once
+        @test !occursin("default 4", text)                                       # and no second, unmarked number
+        cfg = "version = 1\n[check_claims]\nrequired = [\"max_open\"]\n"
+        other = reg_cap == "6" ? "7" : "6"
+        t = tmp_repo(
+            Dict(
+                ".gitignore" => "/.lanes/\n", skill => text, ".agents/factory.toml" => cfg,
+                ".agents/agent-registry.toml" => "version = 1\n[lanes]\nmax_open = $other\n", "CLAUDE.md" => "x\n",
+            )
+        )
+        rc, out = capture(() -> CheckClaims.main(["--strict", "--root", t]))
+        @test rc == 1 && occursin(r"\[FAIL\] \.claude/skills/lane-lifecycle/SKILL\.md:\d+: max_open=\d+ but the derived value is \d+", out) ||
+            (print(out); false)
+        write(joinpath(t, ".agents/agent-registry.toml"), "version = 1\n[lanes]\nmax_open = $reg_cap\n")
+        rc, out = capture(() -> CheckClaims.main(["--strict", "--root", t]))
+        @test rc == 0 || (print(out); false)
+    end
 end
