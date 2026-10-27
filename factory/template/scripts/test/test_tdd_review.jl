@@ -133,7 +133,7 @@ const TRV_RISK = Dict{String, Any}(
     end
 
     @testset "dod tdd with --head reads the head's commits" begin
-        d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
+        d = tmp_repo(Dict("risk.toml" => seed_fixture("risk.toml"), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
         commit!(d, Dict("src/A.jl" => "y\n"), "feat: A, no TDD trailer")
         rc, out = capture(() -> DoD.main(["--root", d, "--base", "main", "--labels", "T1"]))

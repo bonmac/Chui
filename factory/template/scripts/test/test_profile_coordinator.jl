@@ -7,12 +7,15 @@
 # scratch's own scripts/test/runtests.jl there on the files that exercise the seeded content,
 # selected with FACTORY_TEST_ONLY (runtests.jl). Expects no Fail and no Error.
 #
-# Only inside factory/ (it needs the factory to sync from). The selection leaves out the
-# package-run-heavy and unrelated files to keep the cost down (see GUARD_FILES).
-# (test_tdd_c1/c2/c4 need the hook tests' helpers, so they do not run alone; they read no seeded file.)
-const GUARD_FILES = [
-    "test_dod.jl", "test_tdd.jl", "test_tdd_backfill.jl", "test_tdd_review.jl", "test_tdd_c3.jl", "test_tdd_c5.jl",
-]
+# Only inside factory/ (it needs the factory to sync from). Cost: by default test_dod.jl only,
+# about 30 s with the sync. FACTORY_GUARD_FULL=1 adds the tdd files that build scratch repos from
+# the seeds; their package runs make it about 4.5 min (measured on 1.13, tw-032), over the suite's
+# budget for one guard, so it is opt-in: run it before a factory release.
+# (test_tdd_c1/c2/c4/c5 need the hook tests' helpers, so they do not run alone; c5's seeded risk.toml
+# comes through c3_repo, which test_tdd_c3.jl exercises.)
+const GUARD_FILES = get(ENV, "FACTORY_GUARD_FULL", "") == "1" ?
+    ["test_dod.jl", "test_tdd.jl", "test_tdd_backfill.jl", "test_tdd_review.jl", "test_tdd_c3.jl"] :
+    ["test_dod.jl"]
 
 "`(pass, fail, error)` of the outermost `factory` row of a Test Summary in `out`, or nothing."
 function factory_counts(out)

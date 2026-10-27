@@ -93,7 +93,7 @@ end
 "A repo whose main has the template risk.toml and src/P.jl, checked out on branch `int`."
 function c3_repo()
     d = tmp_repo(Dict(".gitignore" => "/.lanes/\n/.worktrees/\n", "src/P.jl" => "module P\nf(x) = x\nend\n",
-        "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "Project.toml" => "name = \"P\"\n"))
+        "risk.toml" => seed_fixture("risk.toml"), "Project.toml" => "name = \"P\"\n"))
     sh(`git -C $d checkout -q -b int`)
     return d
 end
