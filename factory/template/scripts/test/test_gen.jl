@@ -151,6 +151,34 @@ end
         @test wired == hooks
     end
 
+    @testset "read-only agents: READ_ONLY_AGENTS in limits.env; file_scope rule (0.4.0 Task 3)" begin
+        reg = TOML.parsefile(joinpath(ROOT, ".agents/agent-registry.toml"))
+        ro = sort([a["name"] for a in reg["agents"] if a["default_mode"] == "read_only"])
+        env = read(joinpath(ROOT, ".claude/hooks/limits.env"), String)
+        @test occursin("\nREAD_ONLY_AGENTS=\" $(join(ro, " ")) \"\n", env)
+        @test "reviewer" in ro && "critic" in ro
+        for a in reg["agents"]
+            a["default_mode"] == "read_only" || continue
+            @test issubset(a["file_scope"], [".lanes/reports/**", ".lanes/scratch/$(a["name"])/**"])
+            @test "Write" in get(a, "tools", String[]) && !("Edit" in get(a, "tools", String[]))
+        end
+        d = gen_sandbox()
+        regp = joinpath(d, ".agents/agent-registry.toml")
+        txt = read(regp, String)
+        i = first(findfirst("slug = \"critic\"", txt))
+        j = findnext("[[agents]]", txt, i)
+        blk = txt[i:(j === nothing ? end : first(j) - 1)]                       # the critic's entry, renamed x
+        write(regp, replace(txt, blk => replace(blk, "slug = \"critic\"" => "slug = \"x\"", "name = \"critic\"" => "name = \"x\"", r"file_scope = \[[^\]]*\]" => "file_scope = [\"src/**\"]")))
+        mv(joinpath(d, ".agents/bodies/critic.md"), joinpath(d, ".agents/bodies/x.md"))
+        e = try; Gen.outputs(d); nothing; catch e; e; end
+        @test e isa Gen.GenError && occursin("read_only agent 'x' may own only .lanes/reports/**", e.msg)
+        write(regp, replace(read(regp, String), "[\"src/**\"]" => "[\".lanes/reports/**\", \".lanes/scratch/x/**\"]"; count = 1))
+        ro_x = sort([n == "critic" ? "x" : n for n in ro])
+        @test occursin("READ_ONLY_AGENTS=\" $(join(ro_x, " ")) \"", Gen.outputs(d)[".claude/hooks/limits.env"])   # sorted by name
+        write(regp, replace(read(regp, String), "[\".lanes/reports/**\", \".lanes/scratch/x/**\"]" => "[\".lanes/scratch/critic/**\"]"; count = 1))
+        @test_throws Gen.GenError Gen.outputs(d)                                    # another agent's scratch is not its own
+    end
+
     if IN_FACTORY
         @testset "MANIFEST [generated] matches gen.jl outputs" begin
             gen = TOML.parsefile(joinpath(FACTORY, "MANIFEST.toml"))["generated"]["paths"]

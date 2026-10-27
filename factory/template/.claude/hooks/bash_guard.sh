@@ -9,7 +9,7 @@
 #   FACTORY_ALLOW_OUTWARD=1  allow gh actions that create or change things on GitHub
 #   FACTORY_ALLOW_T3=1       allow modelled Bash writes to T3 paths (as for write_guard; 0.2.4)
 d=$(dirname -- "$0")
-for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh _bash_guard_write.sh; do # a missing library must block (exit 2), not fail open
+for _l in _lib.sh _bash_guard_lib.sh _read_only_roots.sh _bash_guard_cmd.sh _bash_guard_write.sh _bash_guard_agents.sh; do # a missing library must block (exit 2), not fail open
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; bash_guard fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
@@ -17,6 +17,7 @@ done
 . "$d/_read_only_roots.sh"
 . "$d/_bash_guard_cmd.sh"
 . "$d/_bash_guard_write.sh"
+. "$d/_bash_guard_agents.sh" # 0.4.0 D3: a read-only agent (payload agent_type in READ_ONLY_AGENTS) runs only an allowlist
 T3_HINT=" For other files use the Edit/Write tools, not sed -i, redirects or heredocs."
 need_jq
 raw=$(field '.tool_input.command | strings')
@@ -86,6 +87,7 @@ printf '%s\n' "$segs" | {
             case $tok in *'>'?*) outside "${tok##*>}" ;; esac
             prev=$tok
         done
+        [ -z "$RO_AGENT" ] || ro_agent_check "$@" # the allowlist first, so the denial names it; the lead's rules still apply below
         check_cmd "$@"
     done
 }

@@ -14,7 +14,8 @@
 #   default_mode   read_only | write
 #   tools          optional allowlist (omit = inherit all tools)
 #   disallowed_tools  optional denylist
-#   file_scope     globs the agent may write (empty for read_only agents)
+#   file_scope     globs the agent may write (a read_only agent: none, or only .lanes/reports/** and
+#                  .lanes/scratch/<name>/**, which the guards allow it by agent_type; 0.4.0 D3)
 #   scorecard      what the lead grades the report on
 #   output_format  the sections the report must contain, in order
 #
@@ -122,9 +123,9 @@ description = "Use before any lane lands on main. Reads the diff and the gates; 
 model = "opus"
 color = "blue"
 default_mode = "read_only"
-tools = ["Read", "Grep", "Glob", "Bash", "SendMessage"]
-disallowed_tools = ["Edit", "Write", "NotebookEdit"]
-file_scope = []
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/reviewer/**"]
 scorecard = ["each finding has file:line and evidence", "severity ranked", "definition of done checked", "final report sent, not only a preview"]
 output_format = "verdict (approve | changes requested), findings with severity and evidence, DoD checklist, scorecard"
 
@@ -136,9 +137,9 @@ description = "Use on every major design (ADR, spec) and on any claim that a che
 model = "opus"
 color = "red"
 default_mode = "read_only"
-tools = ["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch", "SendMessage"]
-disallowed_tools = ["Edit", "Write", "NotebookEdit"]
-file_scope = []
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "WebSearch", "WebFetch", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/critic/**"]
 scorecard = ["attacks the strongest version of the design", "separates errors from disagreements", "each attack has a concrete failure case", "never invents a citation"]
 output_format = "attacks ranked by impact, concrete failure cases, what would change my mind, scorecard"
 

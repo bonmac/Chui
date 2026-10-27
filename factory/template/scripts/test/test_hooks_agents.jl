@@ -1,0 +1,150 @@
+# Factory 0.4.0 read-only agents (plan Task 3, spec D3, ADR-0016): when the hook payload's
+# `agent_type` is in READ_ONLY_AGENTS (limits.env, rendered by gen.jl from default_mode = "read_only"),
+# bash_guard allows only the D3 allowlist and write_guard only .lanes/reports/** and
+# .lanes/scratch/<agent_type>/**. Included from test_hooks.jl (helpers hook, bash, json, blocked,
+# write_payload, TEST_HOOKS, hooks_with_roots); split out for the 400-line budget of ratchets.toml.
+bash_as(agent, cmd; cwd = "") = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\",\"cwd\":\"$(json(cwd))\",\"tool_input\":{\"command\":\"$(json(cmd))\"}}"
+write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\",\"tool_input\":{\"file_path\":\"$(json(path))\"}}"
+
+@testset "read-only agents (0.4.0)" begin
+    r = realpath(mktempdir())
+    env = read(joinpath(TEST_HOOKS, "limits.env"), String)
+    @test occursin(r"^READ_ONLY_AGENTS=\" .* \"$"m, env)      # gen.jl renders the list, space-delimited
+
+    @testset "the plan's Task 3 contract" begin
+        @test blocked("bash_guard.sh", bash_as("reviewer", "sed -i s/a/b/ src/x.jl"), r)
+        @test blocked("bash_guard.sh", bash_as("reviewer", "git commit -m x"), r)
+        @test blocked("bash_guard.sh", bash_as("reviewer", "echo x | tee .lanes/reports/reviewer.md"), r)
+        @test blocked("bash_guard.sh", bash_as("critic", "julia -e 'write(\"a\",\"b\")'"), r)
+        @test !blocked("bash_guard.sh", bash_as("reviewer", "git diff \$(git merge-base HEAD main)"), r)
+        @test !blocked("bash_guard.sh", bash_as("reviewer", "julia scripts/ci.jl test --timeout 900"), r)
+        @test !blocked("write_guard.sh", write_as("reviewer", "$r/.lanes/reports/reviewer-f040.md"), r)
+        @test !blocked("write_guard.sh", write_as("critic", "$r/.lanes/scratch/critic/hooks/bash_guard.sh"), r)
+        @test blocked("write_guard.sh", write_as("reviewer", "$r/src/x.jl"), r)
+        @test !blocked("bash_guard.sh", bash_as("", "sed -i s/a/b/ src/x.jl"), r)  # the lead is unchanged
+        # critic round 1 (B1, B2): each of these is blocked for a read-only agent
+        for c in [
+                "julia scripts/evidence.jl x -- sed -i s/a/b/ src/x.jl", "julia scripts/tdd.jl mutate --root /x --item i --src a:1 --from a --to b",
+                "julia scripts/ci.jl test --root /x", "cat a > src/x.jl", "find . -name x -delete", "git -c core.fsmonitor='touch p' status",
+                "git log --output=f", "rg --pre cat x", "git branch -f main HEAD~3", "git worktree remove .worktrees/f040", "cp a src/b",
+            ]
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        @test !blocked("bash_guard.sh", bash_as("critic", "cp -R .claude/hooks .lanes/scratch/critic/hooks"), r)
+        @test !blocked("bash_guard.sh", bash_as("critic", "julia scripts/test/runtests.jl hooks --hooks-dir .lanes/scratch/critic/hooks"), r)
+    end
+
+    @testset "allowed: the read-only commands, the gate scripts, the scratch" begin
+        for c in (
+                "cat src/x.jl", "head -n 20 f", "grep -rn foo src", "rg foo", "ls -la .lanes", "wc -l f", "find . -name '*.jl'",
+                "cd .worktrees/f040 && git status", "pwd", "git log --oneline -5", "git show HEAD --stat", "git blame src/x.jl",
+                "git ls-files", "git merge-base HEAD main", "git rev-parse --short HEAD", "git branch --show-current",
+                "git branch --list", "git branch --list 'feat/*'", "git worktree list", "git worktree list --porcelain",
+                "git -C .worktrees/f040 diff --stat", "git --no-pager log -1", "julia scripts/dod.jl --base main",
+                "julia --startup-file=no scripts/ci.jl guards --timeout 900", "julia +lts scripts/ci.jl test",
+                "julia scripts/ci.jl quality", "julia scripts/ci.jl docs", "scripts/lane audit f040 --reported r.txt",
+                "./scripts/lane audit f040", "julia scripts/lane.jl audit f040", "julia scripts/evidence.jl latest test",
+                "julia scripts/test/runtests.jl", "julia scripts/test/runtests.jl gen hooks", "mkdir -p .lanes/scratch/reviewer/x",
+                "cp f .lanes/scratch/reviewer/", "cp -R .claude/hooks .lanes/scratch/reviewer/hooks",
+                "git diff 2>&1 | head -50", "echo done", "diff a b", "jq -r .x f.json", "sort f | uniq -c",
+                # D8: evidence.jl may wrap a command that is itself allowed (the verifier records a gate run)
+                "julia scripts/evidence.jl test -- julia scripts/ci.jl test --timeout 900",
+                "timeout 900 julia scripts/ci.jl test", "time julia scripts/dod.jl",
+            )
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+    end
+
+    @testset "denied: writes, other tools, options that run or write" begin
+        for c in (
+                "touch x", "rm f", "mv a b", "mkdir src/new", "cp f src/", "cp -t src f", "tee f", "sed -i.bak s/a/b/ f",
+                "perl -pi -e s/a/b/ f", "sh -c 'echo x'", "bash x.sh", "python3 -c 'print(1)'", "julia -E '1+1'",
+                "julia -L x.jl scripts/ci.jl test", "julia .lanes/scratch/reviewer/x.jl", "julia /abs/scripts/ci.jl test",
+                "julia scripts/ci.jl bench", "julia scripts/ci.jl", "julia scripts/tdd.jl gaps", "julia scripts/lane.jl new x",
+                "scripts/lane new x", "scripts/lane remove f040", "julia scripts/evidence.jl", "julia scripts/evidence.jl x",
+                "julia scripts/evidence.jl x -- julia scripts/ci.jl bench", "julia scripts/gen.jl", "julia scripts/dod.jl --root /x",
+                "julia scripts/test/runtests.jl --root /x", "cat f > out", "cat f >> out", "cat f 2> err", "cat f 2>/dev/null",
+                "echo x > /dev/null", "git diff > d.patch", "find . -exec rm {} \\;", "find . -execdir cat {} +", "find . -ok rm {} \\;",
+                "find . -fprint f", "find . -fprint0 f", "find . -fls f", "git -c x=y log", "git -cx=y log", "git --config-env=x=Y log",
+                "git --exec-path=.lanes/scratch/reviewer log", "git --git-dir=/x log", "git diff --output=f", "git status --output f",
+                "git branch", "git branch x", "git branch -d x", "git branch --list -D x", "git worktree add x", "git worktree",
+                "git add f", "git checkout x", "git restore f", "git stash list", "git push", "git fetch", "git config x y",
+                "git log -c", "GIT_PAGER='touch p' git log", "GIT_EXTERNAL_DIFF=cmd git diff", "FOO=1 cat f", "env FOO=1 cat f",
+                "sudo cat f", "xargs rm", "nohup cat f", "exec cat f", "eval cat", "rg --pre=cat x", "sort -o f f", "sort --output=f f",
+                "mkdir .lanes/scratch/critic/x", "cp f .lanes/scratch/critic/", "mkdir .lanes/scratch", "mkdir .lanes/scratch/reviewer/../x",
+                "cp f .lanes/reports/r.md", "mkdir /tmp/x", "ls && touch x", "cat f | tee g", "`touch x`", "cat \$(touch x)",
+                "/usr/bin/git log", ".lanes/scratch/reviewer/git log", "./cat f", "timeout -s KILL 5 cat f", "less f && touch g",
+                "git -C .lanes/scratch/reviewer --exec-path=. log",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        # the denial names the allowlist and the agent type, and says where reports go
+        rc, _, err = hook("bash_guard.sh", bash_as("critic", "touch x"), r)
+        @test rc == 2 && occursin("'critic'", err) && occursin("scripts/dod.jl", err) && occursin(".lanes/reports/", err) &&
+            occursin("merge-base", err) && occursin(".lanes/scratch/critic/", err)
+        # the scratch is the agent's own; another agent's scratch is a write like any other
+        @test !blocked("bash_guard.sh", bash_as("critic", "mkdir -p .lanes/scratch/critic/x"), r)
+        # a write agent, and an unknown agent type, keep the lead's rules (writes modelled, T3 checked)
+        for a in ("implementer", "nobody", "verifier-2")
+            @test !blocked("bash_guard.sh", bash_as(a, "sed -i s/a/b/ src/x.jl"), r)
+            @test blocked("bash_guard.sh", bash_as(a, "git reset --hard"), r)
+        end
+        # the lead's rules still apply underneath: a denylisted command is denied with its own message
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "git reset --hard"), r)
+        @test rc == 2 && occursin("discards work", err)
+    end
+
+    @testset "write_guard: reports and the agent's scratch only" begin
+        @test !blocked("write_guard.sh", write_as("critic", "$r/.lanes/reports/critic-2.md"), r)
+        @test !blocked("write_guard.sh", write_as("reviewer", "$r/.lanes/scratch/reviewer/notes.md"), r)
+        for p in (
+                "$r/.lanes/scratch/critic/x", "$r/.lanes/scratch/reviewer", "$r/.lanes/scratch", "$r/.lanes/reports",
+                "$r/.lanes/ledger.jsonl", "$r/.lanes/evidence/test-abc.txt", "$r/README.md", "$r/.lanes/scratch/reviewer/../../x",
+                "/tmp/scratch.md", "$r/.lanes/reportsx/a.md",
+            )
+            @test blocked("write_guard.sh", write_as("reviewer", p), r) || (println("not blocked for reviewer: $p"); false)
+        end
+        rc, _, err = hook("write_guard.sh", write_as("reviewer", "$r/src/x.jl"), r)
+        @test rc == 2 && occursin("'reviewer'", err) && occursin(".lanes/reports/**", err) && occursin(".lanes/scratch/reviewer/**", err)
+        @test !blocked("write_guard.sh", write_as("", "$r/src/x.jl"), r)
+        @test !blocked("write_guard.sh", write_as("implementer", "$r/src/x.jl"), r)
+        @test blocked("write_guard.sh", write_as("reviewer", "$r/.claude/hooks/bash_guard.sh"), r)   # T3 under the lead's rules too
+        # a lane worktree root: the main checkout's .lanes/reports/ counts (0.2.6 in_main), its tree does not
+        main = tmp_repo(Dict("a" => "x\n"))
+        sh(`git -C $main worktree add -q $main/.worktrees/l1 -b l1`)
+        lane = joinpath(main, ".worktrees", "l1")
+        @test !blocked("write_guard.sh", write_as("reviewer", "$main/.lanes/reports/reviewer.md"), lane)
+        @test !blocked("write_guard.sh", write_as("reviewer", "$lane/.lanes/reports/reviewer.md"), lane)
+        @test blocked("write_guard.sh", write_as("reviewer", "$main/a"), lane)
+        @test blocked("write_guard.sh", write_as("reviewer", "$main/.lanes/scratch/reviewer/x"), lane)   # the scratch is the session root's
+    end
+
+    @testset "fails closed: a missing library, a limits.env without the list" begin
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_bash_guard_agents.sh"))
+        for (g, p) in (("bash_guard.sh", bash("ls")), ("write_guard.sh", write_payload("$r/src/x.jl")))
+            rc, _, err = hook(g, p, r; hooks = h)
+            @test rc == 2 && occursin("_bash_guard_agents.sh", err)
+        end
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h)
+        env = joinpath(h, "limits.env")
+        write(env, replace(read(env, String), r"^READ_ONLY_AGENTS=.*\n"m => ""))
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "ls"), r; hooks = h)
+        @test rc == 2 && occursin("READ_ONLY_AGENTS", err) && occursin("gen.jl", err)
+        @test blocked("write_guard.sh", write_as("reviewer", "$r/.lanes/reports/r.md"), r; hooks = h)
+        @test !blocked("bash_guard.sh", bash("ls"), r; hooks = h)                            # the lead: no agent_type, no list needed
+        @test blocked("bash_guard.sh", bash_as("implementer", "ls"), r; hooks = h)           # any agent: the guard cannot tell
+    end
+
+    @testset "runtests.jl: NAME... selects test files; --hooks-dir DIR overrides HOOKS (0.4.0)" begin
+        @test runtests_args(String[]) == (String[], "")
+        @test runtests_args(["hooks", "gen"]) == (["hooks", "gen"], "")
+        @test runtests_args(["hooks", "--hooks-dir", "x/hooks"]) == (["hooks"], abspath("x/hooks"))
+        @test runtests_args(["--hooks-dir=x/hooks"]) == (String[], abspath("x/hooks"))
+        @test_throws ErrorException runtests_args(["--hooks-dir"])
+        @test_throws ErrorException runtests_args(["--root", "x"])
+        @test selected_files(["hooks"]) == ["test_hooks.jl", "test_hooks_lifecycle.jl"]
+        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl"]
+        @test selected_files(String[]) == TEST_FILES
+        @test_throws ErrorException selected_files(["nosuch"])
+    end
+end

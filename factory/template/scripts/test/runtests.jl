@@ -1,11 +1,51 @@
 # Factory tests: every script and hook in scripts/ and .claude/hooks/ has tests here.
-#   julia scripts/test/runtests.jl            (also run by `julia scripts/ci.jl guards`)
+#   julia scripts/test/runtests.jl [NAME...] [--hooks-dir DIR]   (also run by `julia scripts/ci.jl guards`)
+# NAME selects test files (`hooks` = test_hooks*.jl, `gen`, `lane`, `tdd`, ...; none = all). --hooks-dir
+# runs the hook tests against a COPY of the hooks (0.4.0, D3: the critic's gate audit mutates
+# .lanes/scratch/critic/hooks and looks for a test that goes red), not .claude/hooks.
 # Stdlib only. Hooks are run as real `sh` processes with JSON on stdin. Needs git and jq.
 using Test
 
 const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
-const HOOKS = joinpath(ROOT, ".claude", "hooks")
+const TEST_FILES = [
+    "test_gen.jl", "test_hooks.jl", "test_hooks_lifecycle.jl", "test_bash_guard.jl", "test_dod.jl", "test_ratchet.jl",
+    "test_check_docs.jl", "test_contract_usage.jl", "test_ci.jl", "test_lane.jl", "test_changelog.jl", "test_check_claims.jl",
+    "test_evidence.jl", "test_sync_factory.jl", "test_runtests_template.jl", "test_tdd.jl", "test_tdd_backfill.jl",
+    "test_tdd_classify2.jl", "test_tdd_review.jl",
+]
+"Parse the command line: (selected names, hooks dir or \"\"). An unknown option is an error, never ignored."
+function runtests_args(argv)
+    names, hooks = String[], ""
+    i = 1
+    while i <= length(argv)
+        a = argv[i]
+        if a == "--hooks-dir" && i < length(argv)
+            hooks = abspath(argv[i += 1])
+        elseif startswith(a, "--hooks-dir=")
+            hooks = abspath(a[length("--hooks-dir=") + 1:end])
+        elseif startswith(a, "-")
+            error("usage: runtests.jl [NAME...] [--hooks-dir DIR]; unknown option `$a`")
+        else
+            push!(names, a)
+        end
+        i += 1
+    end
+    return names, hooks
+end
+"The test files NAME... select: test_<name>.jl and test_<name>_*.jl; none selects every file."
+function selected_files(names)
+    isempty(names) && return TEST_FILES
+    files = String[]
+    for n in names
+        hit = filter(f -> f == "test_$n.jl" || startswith(f, "test_$(n)_"), TEST_FILES)
+        isempty(hit) && error("runtests.jl: no test file for `$n` (names: $(join(replace.(TEST_FILES, r"^test_|\.jl$" => ""), ", ")))")
+        append!(files, hit)
+    end
+    return files
+end
+const SELECTED, HOOKS_DIR = runtests_args(ARGS)
+const HOOKS = isempty(HOOKS_DIR) ? joinpath(ROOT, ".claude", "hooks") : HOOKS_DIR
 const FACTORY = normpath(joinpath(ROOT, ".."))           # set when run inside factory/template
 const IN_FACTORY = isfile(joinpath(FACTORY, "MANIFEST.toml")) && isfile(joinpath(FACTORY, "VERSION"))
 const JULIA = [Base.julia_cmd().exec; "--startup-file=no"]
@@ -53,24 +93,9 @@ end
 
 @testset "factory" begin
     t0 = time()
-    include("test_gen.jl")
-    include("test_hooks.jl")
-    include("test_hooks_lifecycle.jl")
-    include("test_bash_guard.jl")
-    include("test_dod.jl")
-    include("test_ratchet.jl")
-    include("test_check_docs.jl")
-    include("test_contract_usage.jl")
-    include("test_ci.jl")
-    include("test_lane.jl")
-    include("test_changelog.jl")
-    include("test_check_claims.jl")
-    include("test_evidence.jl")
-    include("test_sync_factory.jl")
-    include("test_runtests_template.jl")
-    include("test_tdd.jl")
-    include("test_tdd_backfill.jl")
-    include("test_tdd_classify2.jl")
-    include("test_tdd_review.jl")
+    isempty(HOOKS_DIR) || println("hooks under test: $HOOKS")
+    for f in selected_files(SELECTED)
+        include(f)
+    end
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end

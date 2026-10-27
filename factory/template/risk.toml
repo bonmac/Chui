@@ -59,6 +59,7 @@ globs = [
   "scripts/bench.jl",
   "scripts/lane",
   "scripts/lane.jl",                   # `scripts/lane audit` gates /change-review (0.2.4)
+  "scripts/_lane_stats.jl",            # lane stats/handoff, included by lane.jl (0.4.0)
   "scripts/changelog.jl",
   "scripts/check_claims.jl",
   "scripts/evidence.jl",

@@ -13,6 +13,6 @@
 - Construct the input that should redden each gate, run it, and paste the red run.
 - Does "found nothing" print differently from "did not run"? A skip that exits 0 must say NOT RUN.
 - Does each comment claim what the code does? Quote the line when it does not.
-- Delete the gate, or empty its pattern list, and see whether any test goes red; if none does, the gate is untested.
+- Mutate a copy, never the tree (you are read-only; the guards allow only `.lanes/reports/**` and `.lanes/scratch/critic/**`). For a hook: `cp -R .claude/hooks .lanes/scratch/critic/hooks`, mutate the copy with the Write tool (delete the gate, empty its pattern list, flip a condition), run `julia scripts/test/runtests.jl hooks --hooks-dir .lanes/scratch/critic/hooks`; a mutation no test catches is the finding. For a gate script (`dod.jl`, `ci.jl`, `tdd.jl`, `lane.jl`): name the mutation (file:line, from, to) and the test expected to go red; the lead runs it in a scratch copy.
 - List each exemption (allowlist, skip kind, override variable) and what it currently excuses.
 - An adversarial pass that refutes nothing says so in its first line: "this is not verification".
