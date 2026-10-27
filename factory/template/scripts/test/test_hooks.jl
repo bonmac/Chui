@@ -340,3 +340,4 @@ end
 end
 
 include("test_hooks_040.jl")   # the 0.4.0 hook testsets: this file and test_hooks_lifecycle.jl are at the 400-line budget
+include("test_hooks_format.jl")   # 0.4.0 D10: the advisory format_check.sh (PostToolUse Edit|Write)
