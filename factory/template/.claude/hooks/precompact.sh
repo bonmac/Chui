@@ -15,9 +15,11 @@ mkdir -p "$ROOT/.lanes" 2>/dev/null || exit 0
     git -C "$ROOT" status --short 2>/dev/null | head -15 | sed 's/^/    /'
     echo "- worktrees:"
     git -C "$ROOT" worktree list 2>/dev/null | head -10 | sed 's/^/    /'
-    if have_jq && [ -f "$LEDGER_FILE" ] && [ -f "$HOOKS_DIR/_lanes.sh" ] && . "$HOOKS_DIR/_lanes.sh"; then
+    set -- # the ledger and its pending file (final review M1), each if it exists
+    for _lf in "$LEDGER_FILE" "$PENDING_FILE"; do [ ! -f "$_lf" ] || set -- "$@" "$_lf"; done
+    if have_jq && [ $# -gt 0 ] && [ -f "$HOOKS_DIR/_lanes.sh" ] && . "$HOOKS_DIR/_lanes.sh"; then
         echo "- open lanes (dispatched, not closed, this session):"
-        jq -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | (.ids[] | \"    \" + .), \"    (count: \\(.count))\"" "$LEDGER_FILE" 2>/dev/null
+        jq -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | (.ids[] | \"    \" + .), \"    (count: \\(.count))\"" "$@" 2>/dev/null
     fi
     echo
     echo "Preserve: the task and its brief, file scopes in flight, decisions made, commands run"
@@ -29,6 +31,8 @@ mkdir -p "$ROOT/.lanes" 2>/dev/null || exit 0
 # `scripts/lane compact` keeps EVERY event, closed chains included, except a `stop` whose agent_id no
 # `spawned`/`unknown-result` record names and an `idle-*` event outside the last 200 lines (the
 # compact_keep rule, scripts/_lane_stats.jl), so dispatch_limit's count stays inside its watchdog.
+# Under the lock it also folds .lanes/ledger.pending.jsonl (the hooks' appends while the lock was held)
+# and any bytes appended to the ledger after its read into the new ledger (final review M1).
 # Needs julia on PATH and scripts/lane.jl in the root; any failure is ignored.
 # Detached (review round 1 m4: nohup, background, no fd of the hook): the hook returns at once, so the
 # host's hook timeout cannot kill a compaction half-way and leave its .dispatch.lock behind.

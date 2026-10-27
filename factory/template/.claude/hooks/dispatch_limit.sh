@@ -55,13 +55,15 @@ trap 'rmdir "$lock" 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT # the lock i
 trap 'exit 2' INT HUP
 FACTORY_LEDGER_LOCKED=1 # ledger() appends without taking the lock again (0.4.0, _lib.sh)
 open=0 names=""
-if [ -f "$LEDGER_FILE" ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
+set -- # the ledger and its pending file (final review M1: appends made while the lock was held), each if it exists
+for _lf in "$LEDGER_FILE" "$PENDING_FILE"; do [ ! -f "$_lf" ] || set -- "$@" "$_lf"; done
+if [ $# -gt 0 ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
     # The count is a `watched` step (background + wait), the only form the watchdog's TERM can interrupt.
     # FACTORY_SLOW_JQ (seconds) is a test-only sleep inside that step, honoured only under FACTORY_TEST=1.
     _slow=""
     [ "${FACTORY_TEST:-}" != 1 ] || _slow=${FACTORY_SLOW_JQ:-}
     watched "$_out" sh -c '[ -z "$1" ] || sleep "$1"; shift; exec jq "$@"' sh "$_slow" -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" \
-        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$LEDGER_FILE" ||
+        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$@" ||
         deny "cannot read the lane ledger $LEDGER_FILE, so the open-lane cap cannot be checked (fails closed). Repair or move the file."
     out=$(cat "$_out" 2>/dev/null)
     open=${out%% *} names=${out#* }

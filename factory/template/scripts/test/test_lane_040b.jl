@@ -7,7 +7,7 @@
     withenv("FACTORY_LANE_TTL_HOURS" => "0") do
         h = joinpath(mktempdir(), "hooks"); cp(HOOKS, h); lsh = joinpath(h, "_lanes.sh")
         write(joinpath(h, "t.sh"), ". \"\$(dirname -- \"\$0\")/_lib.sh\"\nledger \"\$@\"\n")          # the hooks' own appender
-        d = realpath(mktempdir()); led = joinpath(d, ".lanes/ledger.jsonl"); pend = joinpath(d, ".lanes/ledger.pending.jsonl")
+        d = tmp_repo(Dict(".gitignore" => "/.lanes/\n")); led =joinpath(d, ".lanes/ledger.jsonl"); pend = joinpath(d, ".lanes/ledger.pending.jsonl")
         lk = joinpath(d, ".lanes/.dispatch.lock"); mkpath(dirname(led))
         app(args...) = run(pipeline(addenv(`sh $(joinpath(h, "t.sh")) $args`, "CLAUDE_PROJECT_DIR" => d); stdin = IOBuffer("{\"session_id\":\"s1\"}")))
         disp(k) = ledger_ev("2026-10-27T10:00:00Z", "dispatch"; key = k, name = k, desc = "d $k")

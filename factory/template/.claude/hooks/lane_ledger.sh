@@ -26,7 +26,7 @@ case $ev in
         # ledger noise (1,043 lines by 2026-10-27)
         _a=$(field '.agent_id')
         _a=$(printf '%s' "$_a" | tr -c 'A-Za-z0-9_./:@-' '_')
-        [ -z "$_a" ] || ! grep -F -- "\"agent_id\":\"$_a\"" "$LEDGER_FILE" 2>/dev/null | grep -qE -- '"ev":"(spawned|unknown-result)"' ||
+        [ -z "$_a" ] || ! grep -hF -- "\"agent_id\":\"$_a\"" "$LEDGER_FILE" "$PENDING_FILE" 2>/dev/null | grep -qE -- '"ev":"(spawned|unknown-result)"' ||
             ledger stop agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')"
         ;;
     PostToolUse | PostToolUseFailure)

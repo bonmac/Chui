@@ -393,7 +393,7 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         @test_throws ErrorException runtests_args(["--hooks-dir"])
         @test_throws ErrorException runtests_args(["--root", "x"])
         @test selected_files(["hooks"]) == ["test_hooks.jl", "test_hooks_lifecycle.jl"]
-        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl", "test_lane_040.jl"]
+        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl", "test_lane_040.jl", "test_lane_040b.jl"]
         @test selected_files(String[]) == TEST_FILES
         @test_throws ErrorException selected_files(["nosuch"])
     end

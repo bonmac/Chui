@@ -214,20 +214,20 @@
     @testset "ledger appends take the dispatch lock; a denial names a big ledger (0.4.0 critic)" begin
         # `scripts/lane compact` rewrites the ledger under .lanes/.dispatch.lock: an append that ignored the
         # lock could land between its read and its rename and be lost. ledger() waits for the lock briefly
-        # (about 1 s), then appends anyway; a lock it did not take is left alone.
+        # (about 1 s), then appends to ledger.pending.jsonl (final review M1); a lock it did not take is left alone.
         start = "{\"session_id\":\"s2\",\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"b1\"}"
         r = realpath(mktempdir())
         lk = joinpath(r, ".lanes/.dispatch.lock")
         mkpath(lk)
         t = @elapsed (rc = hook("lane_ledger.sh", start, r)[1])
         @test rc == 0 && 0.5 < t < 5 || (println("held lock: rc=$rc in $t s"); false)
-        @test any(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test any(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.pending.jsonl"))) && !isfile(joinpath(r, ".lanes/ledger.jsonl"))
         @test isdir(lk)
         t = @elapsed hook("lane_ledger.sh", start, r; env = Dict("FACTORY_LEDGER_LOCKED" => "1"))   # the caller holds it
         @test t < 0.5
         rm(lk)
         hook("lane_ledger.sh", start, r)
-        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 3
+        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 2
         # a denial on a ledger over 2,000 lines says so and names `scripts/lane compact`
         big(n) = "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"a\"}\n"^n
         pre = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"n1\",\"description\":\"d\"}}"
