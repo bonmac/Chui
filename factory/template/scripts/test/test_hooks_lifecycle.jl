@@ -334,7 +334,7 @@
         @test all(g -> any(contains(g), cmds), guards)
         @test count(contains("tdd_boundary.sh"), cmds) == 2
         tdd_m = readlines(pipeline(`jq -r '.hooks.PreToolUse[] | select(.hooks[].command | contains("tdd_boundary.sh")) | .matcher' $settings`))
-        @test sort(tdd_m) == sort(["Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash", "Agent|Task"])
+        @test sort(tdd_m) == sort(["Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task"])
         empty_root = realpath(mktempdir())                       # no .claude/hooks/ at all
         shells = filter(s -> Sys.which(s) !== nothing, ["sh", "bash", "zsh", "fish"])
         for c in cmds, s in shells                               # the command must not depend on the user's shell
@@ -354,7 +354,8 @@
         # `command` (a string, as for Bash) or `ws` (a WebSocket, no command), so a command Monitor is
         # checked like Bash and a ws Monitor is denied by the no-command rule (fails closed).
         matchers = readlines(pipeline(`jq -r '.hooks.PreToolUse[].matcher' $settings`))
-        @test matchers == ["Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task"] || (println("PreToolUse matchers: $matchers"); false)
+        @test matchers == ["Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task",
+            "Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task"] || (println("PreToolUse matchers: $matchers"); false)
         mon(ti) = "{\"session_id\":\"s1\",\"tool_name\":\"Monitor\",\"cwd\":\"$(json(proj))\",\"tool_input\":$ti}"
         @test run1(mon("{\"command\":\"tail -f app.log\",\"description\":\"d\",\"timeout_ms\":1000}")) == 0
         @test run1(mon("{\"command\":\"git reset --hard\",\"description\":\"d\",\"timeout_ms\":1000}")) == 2

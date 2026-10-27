@@ -25,6 +25,15 @@
                 @test wrapper_exit(g, code; shell = s) == 2 || (println("$s $g: exit $code passed"); false)
             end
         end
+        # 0.3.0's tdd_boundary.sh (two matchers) sits behind the same wrapper: 0.3.0 wired it with `exec sh`, so a crash passed
+        tdd_cmds = filter(contains("tdd_boundary.sh"), cmds)
+        @test length(tdd_cmds) == 2
+        for c in tdd_cmds, code in (0, 1, 143)
+            proj = realpath(mktempdir()); mkpath(joinpath(proj, ".claude/hooks"))
+            write(joinpath(proj, ".claude/hooks/tdd_boundary.sh"), code == 143 ? "kill -TERM \$\$\n" : "exit $code\n")
+            rc = run(pipeline(ignorestatus(addenv(`sh -c $c`, "CLAUDE_PROJECT_DIR" => proj)); stdin = IOBuffer("{}"), stdout = devnull, stderr = devnull)).exitcode
+            @test rc == (code == 0 ? 0 : 2) || (println("tdd_boundary exit $code -> $rc"); false)
+        end
         # the splitter fails: an awk that crashes, or no awk at all (jq and the other tools still found).
         # Before 0.4.0 the empty segment list was "nothing to check" and the command passed.
         shim = mktempdir()

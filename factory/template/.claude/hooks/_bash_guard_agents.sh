@@ -22,7 +22,7 @@ RO_AGENT_GIT=' log show diff status blame ls-files merge-base rev-parse '
 RO_NOCD="" # set while checking the command evidence.jl wraps: a cd there would move the gate run (m2)
 
 ro_deny() {
-    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/lane audit (without --report); cp (-R -r -p) and mkdir (-p) only into .lanes/scratch/$AGENT/, never through a symlink. Write a report with the Write tool under .lanes/reports/."
+    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/tdd.jl audit; scripts/lane audit (without --report); cp (-R -r -p) and mkdir (-p) only into .lanes/scratch/$AGENT/, never through a symlink. Write a report with the Write tool under .lanes/reports/."
 }
 
 # ro_lane_audit NAME ARGS...: `audit` only, never with --report (final review m3: a passing --report appends a
@@ -90,6 +90,7 @@ ro_agent_julia() {
         dod.jl | test/runtests.jl) ;;
         gen.jl) [ "$*" = --check ] || ro_deny "\`scripts/gen.jl $*\` (only --check: without it gen.jl writes the generated files)" ;;
         lane.jl) ro_lane_audit scripts/lane.jl "$@" ;;
+        tdd.jl) [ "${1:-}" = audit ] || ro_deny "\`scripts/tdd.jl ${1:-}\` (only audit, the reviewer's test-first check: red, green and brief write evidence or briefs, mutate a worktree)" ;;
         ci.jl) case ${1:-} in test | guards | quality | docs) ;; *) ro_deny "\`scripts/ci.jl ${1:-}\` (only test, guards, quality, docs)" ;; esac ;;
         evidence.jl) # D8: the verifier records a gate run; the wrapped command passes this same check, and is not a cd (m2)
             case ${1:-} in
@@ -97,7 +98,7 @@ ro_agent_julia() {
                 '' | -*) ro_deny "\`scripts/evidence.jl ${1:-}\` (latest, or <kind> -- <a command on this list>)" ;;
                 *) [ "${2:-}" = -- ] || ro_deny "\`scripts/evidence.jl $1 ${2:-}\` (latest, or <kind> -- <a command on this list>)"; shift 2; RO_NOCD=1; ro_agent_check "$@"; RO_NOCD="" ;;
             esac ;;
-        *) ro_deny "\`julia scripts/$RO_SCRIPT\` (only scripts/dod.jl, scripts/ci.jl, scripts/evidence.jl, scripts/test/runtests.jl, scripts/gen.jl --check, scripts/lane.jl audit)" ;;
+        *) ro_deny "\`julia scripts/$RO_SCRIPT\` (only scripts/dod.jl, scripts/ci.jl, scripts/evidence.jl, scripts/test/runtests.jl, scripts/gen.jl --check, scripts/tdd.jl audit, scripts/lane.jl audit)" ;;
     esac
 }
 # ro_agent_git ARGS...: no option that sets config, a program path, another repo or an output file; -C only into a

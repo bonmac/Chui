@@ -32,11 +32,11 @@
         ]
       },
       {
-        "matcher": "Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash",
+        "matcher": "Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor",
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd_boundary.sh\"; if [ -f \"$f\" ]; then exec sh \"$f\"; fi; echo \"[factory] guard hook missing: $f. Failing closed: restore it (julia scripts/sync_factory.jl) or ask the user.\" >&2; exit 2'",
+            "command": "sh -c 'f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd_boundary.sh\"; if [ -f \"$f\" ]; then sh \"$f\"; rc=$?; [ \"$rc\" -eq 0 ] || exit 2; exit 0; fi; echo \"[factory] guard hook missing: $f. Failing closed: restore it (julia scripts/sync_factory.jl) or ask the user.\" >&2; exit 2'",
             "timeout": 10
           }
         ]
@@ -46,7 +46,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd_boundary.sh\"; if [ -f \"$f\" ]; then exec sh \"$f\"; fi; echo \"[factory] guard hook missing: $f. Failing closed: restore it (julia scripts/sync_factory.jl) or ask the user.\" >&2; exit 2'",
+            "command": "sh -c 'f=\"$CLAUDE_PROJECT_DIR/.claude/hooks/tdd_boundary.sh\"; if [ -f \"$f\" ]; then sh \"$f\"; rc=$?; [ \"$rc\" -eq 0 ] || exit 2; exit 0; fi; echo \"[factory] guard hook missing: $f. Failing closed: restore it (julia scripts/sync_factory.jl) or ask the user.\" >&2; exit 2'",
             "timeout": 10
           }
         ]

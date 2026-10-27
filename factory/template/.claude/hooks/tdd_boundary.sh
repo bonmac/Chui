@@ -1,7 +1,7 @@
 #!/bin/sh
 # shellcheck disable=SC1091,SC2034,SC2154 # eval sets the payload fields; the guard reads AN, AE and CWD_OK
-# tdd_boundary.sh (factory 0.3.0, spec §0.6): PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)
-# and PreToolUse(Agent|Task). The role is the payload's agent_type ONLY (plan Task 0: a named teammate has no
+# tdd_boundary.sh (factory 0.3.0, spec §0.6): PreToolUse(Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor)
+# and PreToolUse(Agent|Task); settings.json runs it behind the 0.4.0 fail-closed wrapper (any non-zero exit blocks). The role is the payload's agent_type ONLY (plan Task 0: a named teammate has no
 # agent_id; the lead is the caller with no agent_type). A test-side role (test_role, _lib.sh: the test-writer and
 # the law/property/differential testers, critic C1) reads and writes only allowlisted paths
 # and runs only allowlisted Bash (_tdd_allow.sh); an implementer writes no test/**; every caller's `git commit`
@@ -42,7 +42,7 @@ dispatch() { # the lead dispatches a role only on a clean lane worktree with a c
 
 case $tool in
     Agent | Task) dispatch; exit 0 ;;
-    Bash) ;;
+    Bash | Monitor) ;; # 0.4.0 D9: Monitor's tool_input.command runs like Bash's
     Read | Grep | Glob)
         [ -n "$TW" ] || exit 0
         _t=$fp
@@ -55,7 +55,8 @@ case $tool in
         tdd_role "$at" || exit 0
         co_of "$(abspath "$fp" "$cwd")"
         case /$fp/ in */.[Gg][Ii][Tt]/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
-        if [ -n "$TW" ]; then
+        if [ -n "$TW" ]; then # 0.4.0 _report: its own report, a .md directly in the session root's .lanes/reports/ (write only)
+            [ "$CO" != "$ROOT_P" ] || case $REL in .lanes/reports/*/*) ;; .lanes/reports/?*.md) exit 0 ;; esac
             in_root && case $REL in test/runtests.jl | test/Project.toml) ;; test/?*) exit 0 ;; esac
             tdeny tw-write §0.6 "a $at writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
         fi

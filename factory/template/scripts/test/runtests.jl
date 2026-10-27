@@ -20,6 +20,7 @@ const TEST_FILES = [
     "test_env_isolation.jl",
     "test_hooks_lifecycle.jl",
     "test_hooks_tdd.jl",   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
+    "test_hooks_tdd040.jl",   # the 0.3.0 x 0.4.0 interactions (the merge of main into feat/f040)
     "test_bash_guard.jl",
     "test_dod.jl",
     "test_ratchet.jl",

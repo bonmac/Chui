@@ -47,7 +47,7 @@ ro_script() {
     ro_dir "$1" "the script"
     RO_SCRIPT=""
     case $RO_REL in scripts/?* | factory/template/scripts/?*) RO_SCRIPT=${RO_REL#*scripts/} ;; esac
-    [ -n "$RO_SCRIPT" ] || ro_deny "\`$1\` ($RO_ABS) is not a scripts/<name> of a trusted checkout: only the repo's own scripts/dod.jl, ci.jl, evidence.jl, gen.jl --check, test/runtests.jl, lane.jl audit and scripts/lane audit run"
+    [ -n "$RO_SCRIPT" ] || ro_deny "\`$1\` ($RO_ABS) is not a scripts/<name> of a trusted checkout: only the repo's own scripts/dod.jl, ci.jl, evidence.jl, gen.jl --check, test/runtests.jl, tdd.jl audit, lane.jl audit and scripts/lane audit run"
 }
 # ro_opts TOOL SHORT ARGSHORT LONG MAX ARGS...: ARGS hold only short options whose letters are in SHORT (' -n -k ' style; one
 # cluster per word, as getopt reads it: a letter in ARGSHORT takes the rest of its word, or the next word), long options only
