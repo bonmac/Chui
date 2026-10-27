@@ -49,10 +49,11 @@ D1. **Any non-zero guard exit blocks.** The wrapper becomes `sh "$f"; rc=$?; [ "
 D2. **The ledger is compacted, not grown.** `scripts/lane compact` rewrites `.lanes/ledger.jsonl`
     keeping every `dispatch`, `spawned`, `unknown-result`, `close`, `release`, `verdict`,
     `dispatch-denied` and `guard-timeout` event, so no session's open chain and no `$known` name is
-    lost, and dropping only `stop` events whose agent_id matches no `spawned` record and `idle-*`
-    events older than the last 200 lines. It rewrites atomically under the dispatch lock, and the
+    lost, and dropping only `stop` events whose agent_id matches no `spawned` or `unknown-result`
+    record (the query closes on either) and `idle-*` events older than the last 200 lines. It rewrites atomically under the dispatch lock, and the
     `ledger()` appender in `_lib.sh` takes the same lock, so no append is lost between read and
-    rename. `lane_ledger.sh` writes a `stop` only when the agent_id appears in a `spawned` record.
+    rename; `lane.jl`'s own appends (`release`, `verdict`, `new`) take it too. `lane_ledger.sh`
+    writes a `stop` only when the agent_id appears in a `spawned` or `unknown-result` record.
     `precompact.sh` runs `compact` when the ledger exceeds 2,000 lines, and `dispatch_limit`'s denial
     names `scripts/lane compact` when it does.
 D3. **Read-only is enforced by the hooks.** `gen.jl` renders `READ_ONLY_AGENTS` into `limits.env`
