@@ -17,7 +17,17 @@
     --hooks-dir <copy>` (new: `runtests.jl [NAME...] [--hooks-dir DIR]`). New check `read_only_agents`
     in `factory/template/.agents/checks.toml` (blind spots: keyed on the dispatch's agent_type; tmux-pane
     teammates UNVERIFIED; the allowlisted scripts are trusted). The f040-lane sibling's lane-stats helper
-    (included by lane.jl) is T3 in `factory/template/risk.toml`. Tests: `factory/template/scripts/test/test_hooks_agents.jl`.
+    (included by lane.jl) is T3 in `factory/template/risk.toml` and `factory/profiles/coordinator/risk.toml`.
+    Tests: `factory/template/scripts/test/test_hooks_agents.jl`.
+  - Review round 1 (B1-B4, m1, m2): for a read-only agent `uniq` takes one operand and `file -C`, `sort
+    --compress-program`, `less -o/-O/--log-file` are refused (B1); a script is the repo's own `scripts/<name>`
+    (or `factory/template/scripts/<name>`) resolved against the tracked cwd, and the scratch is never a cwd, a
+    `cd` or `git -C` target or a script source: every segment's cwd, every `cd` and `git -C` target and every
+    script is a literal path in a trusted checkout (the root, its main checkout, a lane worktree of either) and
+    never below its `.lanes/` (B2, B4; new sourced library `factory/template/.claude/hooks/_bash_guard_agents_paths.sh`,
+    a missing one blocks); `julia` takes only `--startup-file=no` and a juliaup `+channel` before the script (B3);
+    `scripts/gen.jl --check` is allowed, `evidence.jl <kind> -- cd ...` is not (m2); the `agent_type` match is
+    recorded as exact-case and string-only (m1, checks.toml).
   - One review protocol in every agent: the fragments `factory/template/.agents/bodies/_preflight.md`
     (print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`, `git worktree list`;
     compare with the brief; stop on a mismatch) and `_report.md` (findings written to

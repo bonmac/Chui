@@ -119,6 +119,96 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         @test blocked("write_guard.sh", write_as("reviewer", "$main/.lanes/scratch/reviewer/x"), lane)   # the scratch is the session root's
     end
 
+    @testset "review round 1: the scratch is never a cwd, a -C target or a script source; julia options; uniq" begin
+        sc = "$r/.lanes/scratch/reviewer"
+        for d in ("$sc/scripts", "$sc/p", "$sc/bare", "$r/.lanes/reports", "$r/factory/template/scripts"); mkpath(d); end
+        write("$sc/scripts/dod.jl", "println(\"scratch\")\n")                 # a dod.jl the agent wrote itself
+        # B1: a second operand or an option that writes a file or runs a program
+        for c in (
+                "uniq README.md .claude/hooks/bash_guard.sh", "uniq -c a b", "file -C -m magic", "file -bC x", "file --compile x",
+                "sort --compress-program=touch f", "sort --compress-program touch f", "less -o f x", "less -of x", "less -O f x",
+                "less --log-file=f x", "less --LOG-FILE=f x",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in ("uniq f", "uniq -c f", "sort f | uniq", "file x", "less f", "sort -r f")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        # B2 (+ m2): a script is the repo's own scripts/<name> resolved against the tracked cwd (payload cwd, then each `cd`);
+        # no segment runs with a cwd below .lanes/ or outside a trusted checkout; evidence.jl never wraps a cd
+        for (c, cwd) in [
+                ("cd .lanes/scratch/reviewer && julia scripts/dod.jl", ""), ("julia scripts/dod.jl", sc), ("ls", sc),
+                ("cd .lanes/scratch/reviewer && ls", ""), ("cd .lanes/reports && git status", ""), ("cd .lanes && ls", ""),
+                ("cd .worktrees/f040/.lanes/scratch/reviewer && ls", ""), ("cd /tmp && julia scripts/dod.jl", ""), ("cd /tmp && ls", ""),
+                ("cd \$D && ls", ""), ("cd - && ls", ""), ("julia ../scripts/dod.jl", ""), ("julia scripts/dod.jl", "/tmp"),
+                (".lanes/scratch/reviewer/scripts/lane audit x", ""), ("cd .lanes/scratch/reviewer && ../../../scripts/lane audit x", ""),
+                ("julia scripts/gen.jl", ""), ("julia scripts/gen.jl --check --x", ""), ("julia scripts/gen.jl --apply", ""),
+                ("julia scripts/evidence.jl x -- cd /tmp", ""), ("julia scripts/evidence.jl x -- time cd /tmp", ""),
+                ("julia scripts/evidence.jl x -- pushd x", ""), ("julia .lanes/scratch/reviewer/scripts/dod.jl", ""),
+            ]
+            @test blocked("bash_guard.sh", bash_as("reviewer", c; cwd), r) || (println("not blocked for reviewer: $c (cwd $cwd)"); false)
+        end
+        for (c, cwd) in [
+                ("cd factory/template && julia --startup-file=no scripts/gen.jl --check", ""),
+                ("(cd $r/factory/template && julia --startup-file=no scripts/gen.jl --check)", ""),
+                ("julia --startup-file=no scripts/gen.jl --check", "$r/factory/template"), ("julia $r/scripts/dod.jl", ""),
+                ("cd .worktrees/f040 && julia scripts/dod.jl --base main", ""), ("cd .claude/worktrees/x && scripts/lane audit x", ""),
+                ("cd src && julia ../scripts/dod.jl", ""), ("julia factory/template/scripts/ci.jl test", ""),
+                ("cd factory/template && julia scripts/test/runtests.jl gen hooks", ""), ("./scripts/lane audit x", ""),
+                ("cd .worktrees/f040 && git status", ""), ("cat .lanes/scratch/reviewer/notes.md", ""), ("ls .lanes/reports", ""),
+                ("julia scripts/test/runtests.jl hooks --hooks-dir .lanes/scratch/reviewer/hooks", ""),
+            ]
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c; cwd), r) || (println("blocked for reviewer: $c (cwd $cwd)"); false)
+        end
+        # B3: only --startup-file=no and a juliaup +channel before the script
+        for c in (
+                "julia --project=.lanes/scratch/reviewer/p scripts/ci.jl test", "julia --project scripts/ci.jl test", "julia --project=. scripts/dod.jl",
+                "julia +lts --project=p scripts/ci.jl test", "julia -J x scripts/ci.jl test", "julia --sysimage=x scripts/ci.jl test",
+                "julia --sysimage x scripts/ci.jl test", "julia --load x scripts/ci.jl test", "julia -t 4 scripts/ci.jl test",
+                "julia --threads=4 scripts/ci.jl test", "julia --color=yes scripts/ci.jl test", "julia --startup-file=yes scripts/dod.jl",
+                "julia --startup-file no scripts/dod.jl", "julia -- scripts/dod.jl",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in ("julia --startup-file=no +lts scripts/ci.jl test", "julia +1.10 scripts/dod.jl", "julia +lts --startup-file=no scripts/evidence.jl latest")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        # B4: git -C only into a trusted checkout (this root, its main checkout, a lane worktree of either), never below .lanes/
+        for c in (
+                "git -C .lanes/scratch/reviewer/bare status", "git -C .lanes/scratch/reviewer log", "git -C .lanes/reports status",
+                "git -C .lanes status", "git -C /tmp log", "git -C .. log", "git -C \$D log", "git -C ~ log",
+                "git -C .worktrees/f040 -C ../../.lanes/scratch/reviewer status", "git -C .worktrees/f040/.lanes/scratch/reviewer status",
+                "git --no-pager -C .lanes/scratch/reviewer log", "git -C $r/.lanes/scratch/reviewer log",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in ("git -C . status", "git -C src log", "git -C factory/template status", "git -C .claude/worktrees/x log", "git -C $r log",
+                "git -C .worktrees/f040 -C .. status", "git -C .worktrees/f040 diff --stat")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        # a session rooted in a lane worktree: the main checkout and its lanes are trusted too, their .lanes/ is not
+        main = tmp_repo(Dict("a" => "x\n"))
+        sh(`git -C $main worktree add -q $main/.worktrees/l1 -b l1`)
+        lane = joinpath(main, ".worktrees", "l1")
+        for (c, cwd) in [
+                ("julia scripts/dod.jl", main), ("julia scripts/dod.jl", "$main/.worktrees/l2"), ("git -C $main status", ""),
+                ("git -C ../.. log", ""), ("cd $main && julia scripts/ci.jl test", ""), ("git -C $main/.worktrees/l2 log", ""),
+            ]
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c; cwd), lane) || (println("blocked for reviewer: $c (cwd $cwd)"); false)
+        end
+        for (c, cwd) in [
+                ("julia scripts/dod.jl", "$main/.lanes/scratch/reviewer"), ("git -C $main/.lanes/scratch/reviewer/bare status", ""),
+                ("git -C $main/.lanes/reports status", ""), ("cd $main/.lanes/scratch/reviewer && ls", ""), ("git -C $main/.. log", ""),
+            ]
+            @test blocked("bash_guard.sh", bash_as("reviewer", c; cwd), lane) || (println("not blocked for reviewer: $c (cwd $cwd)"); false)
+        end
+        # the denial says why
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cd .lanes/scratch/reviewer && julia scripts/dod.jl"), r)
+        @test rc == 2 && occursin(".lanes/", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "julia --project=p scripts/dod.jl"), r)
+        @test rc == 2 && occursin("--startup-file=no", err)
+    end
+
     @testset "fails closed: a missing library, a limits.env without the list" begin
         h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_bash_guard_agents.sh"))
         for (g, p) in (("bash_guard.sh", bash("ls")), ("write_guard.sh", write_payload("$r/src/x.jl")))
