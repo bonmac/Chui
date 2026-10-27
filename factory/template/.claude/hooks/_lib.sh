@@ -93,7 +93,8 @@ fold_pending() {
     for _pf in "$PENDING_FILE".*; do
         [ -f "$_pf" ] || continue
         [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
-        cat "$_pf" >>"$LEDGER_FILE" 2>/dev/null && rm -f "$_pf"
+        _sz=$(wc -c <"$_pf" | tr -d ' '); head -c "$_sz" "$_pf" >>"$LEDGER_FILE" 2>/dev/null || continue # then re-read: a write that opened it before the mv
+        tail -c +"$((_sz + 1))" "$_pf" >>"$LEDGER_FILE" 2>/dev/null && rm -f "$_pf"
     done
 }
 # Lane counting (lane_key, OPEN_LANES_JQ, LANE_TTL_SECS) lives in _lanes.sh (0.2.8).
