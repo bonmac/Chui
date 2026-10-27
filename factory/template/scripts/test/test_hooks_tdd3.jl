@@ -249,4 +249,17 @@ end
         @test tb_no(t, tb_disp3(L, tb_head(L); lane = "other"))
         @test tb_ok(t, tb_disp3(L, tb_head(L)))
     end
+
+    # ---- B1b: an implementer Bash write target with { or } is denied (brace expansion can reach test/) ----
+    @testset "B1b implementer brace-expansion write into test/ denied" begin
+        t = tb_topo(); L = t.lane
+        imb(c) = tb_bash(c; agent = "implementer", cwd = L)
+        for c in ("echo x | tee src/{..,zz}/test/x_tests.jl", "cp src/P.jl src/{../test/x_tests.jl,b.jl}",
+                "echo y > src/{..,.}/test/x_tests.jl")
+            @test tb_no(t, imb(c))
+        end
+        @test tb_ok(t, imb("echo x | tee src/b.jl"))
+        @test tb_ok(t, imb("cp src/P.jl src/b.jl"))
+        @test tb_ok(t, tb_bash("echo x | tee src/{a,b}.jl"; agent = nothing, cwd = L))   # the lead is unaffected
+    end
 end
