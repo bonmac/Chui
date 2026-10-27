@@ -290,4 +290,32 @@ end
         @test tb_no(t, tb_write("$L/test/x_tests.jl"; agent = "implementer"))
         @test tb_no(t, twb(t, "julia test/scripts/tdd.jl red"))
     end
+
+    # ---- review round 3 ----
+    # R3-B1: segments() drops heredoc bodies, and bash expands $(…) and `…` in an unquoted body. RULING: a
+    # test-writer's raw Bash command containing $, a backquote or << anywhere is denied; others keep heredocs.
+    @testset "R3-B1 test-writer heredoc denied; implementer and lead heredoc commit forms unaffected" begin
+        t = tb_topo(); L = t.lane
+        @test isfile("$L/src/P.jl") && isfile("$L/test/t.jl")   # precondition
+        for c in ("cat <<EOF\n\$(cat src/P.jl)\nEOF", "cat <<EOF\n`cat src/P.jl`\nEOF",
+                "cat <<'EOF'\nplain\nEOF", "cat <<<plain")
+            @test tb_no(t, twb(t, c))
+            r = tb_run(t, twb(t, c))   # the deny says how to commit instead: a message in plain quotes
+            @test r.rc == 2 && occursin(r"plain quotes|-m \"", r.err)
+        end
+        @test tb_ok(t, twb(t, "cat test/t.jl"))
+        @test tb_ok(t, tb_bash("cat <<EOF\nhello\nEOF"; agent = nothing, cwd = L))   # the lead is unaffected
+        @test tb_ok(t, tb_bash("git log --oneline <<EOF\nx\nEOF"; agent = nothing, cwd = L))
+        @test tb_ok(t, tb_bash("cat <<EOF\nhello\nEOF"; agent = "implementer", cwd = L))   # the implementer too
+    end
+    @testset "R3-B1 test-writer normal commands still pass" begin
+        t = tb_topo(); L = t.lane
+        for c in ("julia scripts/tdd.jl red", "cd $L && julia scripts/tdd.jl green",
+                "julia scripts/ci.jl test -- \"item=h doubles\"", "git add test/t.jl")
+            @test tb_ok(t, twb(t, c))
+        end
+        tb_stage!(L, Dict("test/t.jl" => "@testitem \"h doubles\" begin\n    @test false\nend\n"))   # test/ only
+        r = tb_run(t, twb(t, "git commit --author \"$TB_TW\" -m \"test: h doubles\" -m \"TDD: red\""))
+        @test r.rc == 0
+    end
 end
