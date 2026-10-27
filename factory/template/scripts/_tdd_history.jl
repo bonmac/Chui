@@ -32,11 +32,11 @@ sha7(s) = first(s, 7)
 
 # ---- Commits
 
-"""The trailers of a commit message as git parses them (`git interpret-trailers --parse`, critic C2: git is
-the one parser): key => its first value; `TDD` and `TDD-Mode` matched case-insensitively, as `%(trailers:key=)`."""
+"""The trailers of a commit message as git parses them (`git interpret-trailers --parse --no-divider`, critic
+C2: git is the one parser; a commit has no `---` divider): key => its first value; `TDD` and `TDD-Mode` matched case-insensitively, as `%(trailers:key=)`."""
 function trailers(msg)
     out, canon_key = Dict{String, String}(), k -> get(Dict("tdd" => "TDD", "tdd-mode" => "TDD-Mode"), lowercase(k), k)
-    for l in eachline(pipeline(`git interpret-trailers --parse`; stdin = IOBuffer(msg)))
+    for l in eachline(pipeline(`git interpret-trailers --parse --no-divider`; stdin = IOBuffer(msg)))
         m = match(r"^([^:]+):\s*(.*)$", l)
         m === nothing || get!(out, canon_key(m.captures[1]), String(strip(m.captures[2])))
     end
@@ -44,10 +44,10 @@ function trailers(msg)
 end
 "Trailer `key` of commit `sha` as git's `%(trailers:key=…,valueonly)` reads it: the first value, \"\" when none."
 git_trailer(root, sha, key) = String(strip(first(split(something(git(root, "log", "-1", "--format=%(trailers:key=$key,valueonly)", sha), ""), '\n'))))
-"""`TDD-Mode: <mode> <sep> <reason>` as (mode, reason); <sep> is ` — `, ` - ` or ` -- ` (critic C3), its first
+"""`TDD-Mode: <mode> <sep> <reason>` as (mode, reason); <sep> is ` — `, ` – `, ` - ` or ` -- ` (critic C3), its first
 occurrence: later separators stay in the reason. The reason is \"\" when there is none (also `skip -`)."""
 function parse_mode(v)
-    m = match(r"^(.*?)\s+(?:—|--|-)(?:\s+(.*))?$"s, v)
+    m = match(r"^(.*?)\s+(?:—|–|--|-)(?:\s+(.*))?$"s, v)
     m === nothing && return (String(strip(v)), "")
     return (String(strip(m.captures[1])), String(strip(something(m.captures[2], ""))))
 end
@@ -260,15 +260,22 @@ end
     lane_segments(root, base, commits, head = "HEAD") -> Vector{Vector{LaneCommit}}
 
 The H-rule segments of `commits` (`lane_commits(root, base, head)`): for each merge M on the first-parent
-chain of base..head, the commits of `M^1..M^2` form one segment, under that sub-lane's own mode commit; every
-other commit (made directly on the integration branch) forms the first, under the branch's own mode commit.
+chain of base..head, the commits of `M^1..M^2` form one segment, under that sub-lane's own mode commit (a later
+merge whose `M^2` first-parent chain holds an earlier `M^2` is the same sub-lane: one segment); every other commit (made directly on the integration branch) forms the first, under the branch's own mode commit.
 """
 function lane_segments(root, base, commits, head = "HEAD")
     mb = merge_base(root, base, head)
     (mb === nothing || isempty(commits)) && return [commits]
     by = Dict(c.sha => c for c in commits)
     revs(a...) = split(something(git(root, "rev-list", "--reverse", a...), ""), '\n'; keepempty = false)
-    subs = [[by[s] for s in revs("--no-merges", "$m^1..$m^2") if haskey(by, s)] for m in revs("--first-parent", "--merges", "$mb..$head")]
+    ms = revs("--first-parent", "--merges", "$mb..$head")
+    subs = [[by[s] for s in revs("--no-merges", "$m^1..$m^2") if haskey(by, s)] for m in ms]
+    tips = [something(git(root, "rev-parse", "$m^2"), "") for m in ms]
+    for k in eachindex(ms)   # review FIX-1: a sub-lane merged again (an earlier M^2 on this M^2's first-parent chain)
+        chain = Set(revs("--first-parent", "$mb..$(ms[k])^2"))   # joins the segment of its first merge
+        j = findfirst(i -> i < k && tips[i] in chain, eachindex(ms))
+        j === nothing || (append!(subs[j], subs[k]); empty!(subs[k]))
+    end
     inner = Set(c.sha for s in subs for c in s)
     return [[filter(c -> !(c.sha in inner), commits)]; filter(!isempty, subs)]
 end
