@@ -129,9 +129,21 @@ function ledger_rows(file)
     return rows
 end
 
-const REPORTERS = ("reviewer", "critic", "verifier")   # the read_only agents of the registry (gen.jl: READ_ONLY_AGENTS)
+const REPORTERS = ("reviewer", "critic", "verifier")   # the template's read_only agents: the fallback below
 "The dispatch name a report file is of: its base name before `-<round>.md` (or `.md`)."
 report_name(path) = replace(basename(path), r"(-[0-9]+)?\.md$" => "")
+"""
+    reporters(repo) -> Vector{String}
+
+The read-only agent types of `repo`: `READ_ONLY_AGENTS` of `<repo>/.claude/hooks/limits.env` (gen.jl renders it
+from every `default_mode = "read_only"` agent, so a repo's own read-only agent passes `audit --report`; round-4
+review m1), else `REPORTERS` when the file or the line is absent.
+"""
+function reporters(repo)
+    p = joinpath(repo, ".claude/hooks/limits.env")
+    m = isfile(p) ? match(r"^READ_ONLY_AGENTS=\"([^\"]*)\"$"m, read(p, String)) : nothing
+    return m === nothing ? collect(REPORTERS) : String.(split(m.captures[1]))
+end
 """
     report_dispatch(repo, path) -> problem or nothing
 
@@ -153,8 +165,9 @@ function report_dispatch(repo, path)
     catch
         NamedTuple[]
     end
-    any(r -> r.ev == "dispatch" && r.name == n && r.subagent_type in REPORTERS, rows) && return nothing
-    return "report $n is not from a read-only reviewer dispatch (no `dispatch` named `$n` with subagent_type reviewer, critic or verifier in $(isempty(lp) ? "the lane ledger" : lp))"
+    rs = reporters(repo)
+    any(r -> r.ev == "dispatch" && r.name == n && r.subagent_type in rs, rows) && return nothing
+    return "report $n is not from a read-only reviewer dispatch (no `dispatch` named `$n` with subagent_type $(join(rs, " | ")) in $(isempty(lp) ? "the lane ledger" : lp))"
 end
 
 """

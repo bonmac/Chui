@@ -85,10 +85,11 @@ ro_opts() {
 # THROUGH it to the linked file outside); every target (cp: its last operand; mkdir: every operand) is below
 # .lanes/scratch/<agent_type>/ and neither it nor any parent below the root is an existing symlink (ro_nolink).
 ro_agent_scratch() {
-    _n=$1 _t="" _end=""
+    _n=$1 _t="" _ops="" _end="" _rec=""
     shift
     case $_n in cp) _ok=' -R -r -p ' ;; *) _ok=' -p ' ;; esac
     for _a in "$@"; do
+        case $_a in *'$'* | *'`'*) ro_deny "\`$_n $_a\` holds an expansion the guard cannot resolve (round 4 review M1: \$(...) in a target wrote outside the scratch)" ;; esac
         if [ -z "$_end" ]; then
             case $_a in
                 --) _end=1; continue ;;
@@ -98,18 +99,30 @@ ro_agent_scratch() {
                         _ch=${_r%"${_r#?}"}
                         _r=${_r#?}
                         case $_ok in *" -$_ch "*) ;; *) ro_deny "\`$_n -$_ch\`: a read-only agent's $_n takes only$_ok(cp -s/-l make links, -a/-f/-n/-X and mkdir -m/-v change what is written; name the target last)" ;; esac
+                        case $_ch in R | r) _rec=1 ;; esac
                     done
                     continue ;;
             esac
         fi
-        [ "$_n" = mkdir ] && _t="$_t $_a" || _t=$_a
+        _ops="$_ops $_a"
     done
-    [ -n "$_t" ] || ro_deny "\`$_n\` without a target"
+    [ -n "$_ops" ] || ro_deny "\`$_n\` without a target"
+    for _a in $_ops; do _t=$_a; done # cp: the last operand; mkdir: every operand
+    [ "$_n" = cp ] || _t=$_ops
     for _a in $_t; do
+        # round 4 review B1: abspath folds `..` lexically, but the OS follows a symlink before it (`d/dl/../x`), so the RAW target
+        # takes no `.`/`..` component (abspath then only joins it to the cwd)
+        case "/$_a/" in */./* | */../*) ro_deny "\`$_n\` target $_a has a . or .. component: a symlink before it is followed by the OS, not by the guard; name the scratch path directly" ;; esac
         _x=$(abspath "$_a" "$cwd")
         case $_x in "$ROOT/.lanes/scratch/$AGENT" | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT" | "$ROOT_P/.lanes/scratch/$AGENT"/?*) ;;
             *) ro_deny "\`$_n\` target $_x is not below .lanes/scratch/$AGENT/" ;; esac
         ro_nolink "$_x"
+    done
+    [ "$_n" = cp ] && [ -n "$_rec" ] || return 0
+    for _a in $_ops; do # B1: cp -R copies a symlink AS a link under the scratch, to be written through next: no link in any source tree
+        [ "$_a" != "$_t" ] || continue
+        _l=$(find "$(abspath "$_a" "$cwd")" -maxdepth 8 -type l 2>/dev/null | head -1)
+        [ -z "$_l" ] || ro_deny "\`cp -R $_a\`: the source tree holds a symlink ($_l), which cp -R would copy as a link under the scratch; copy without it"
     done
 }
 # ro_nolink ABS: no component of ABS below the root (ABS itself, then each parent down to .lanes) is an existing symlink,

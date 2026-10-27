@@ -273,10 +273,34 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         for c in (
                 "cp -R .claude/hooks .lanes/scratch/reviewer/hooks", "cp -Rp .claude/hooks .lanes/scratch/reviewer/h2", "cp -rp .claude/hooks .lanes/scratch/reviewer/h3",
                 "cp -p p .lanes/scratch/reviewer/", "cp -R -p .claude/hooks .lanes/scratch/reviewer/h4", "cp -- p .lanes/scratch/reviewer/g", "mkdir -p .lanes/scratch/reviewer/x/y",
-                "mkdir -- .lanes/scratch/reviewer/z", "mkdir -p .lanes/scratch/reviewer/real/sub", "cp -R -- -s .lanes/scratch/reviewer/q",   # a FILE named -s "cp p .lanes/scratch/reviewer/real/q", "cp -R lnk .lanes/scratch/reviewer/real/",
+                "mkdir -- .lanes/scratch/reviewer/z", "mkdir -p .lanes/scratch/reviewer/real/sub", "cp -R -- -s .lanes/scratch/reviewer/q",   # a FILE named -s
+                "cp p .lanes/scratch/reviewer/real/q", "cp lnk .lanes/scratch/reviewer/real/",   # a plain cp of a link copies the file
             )
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
+        # round-4 review (B1, M1): abspath folds `..` lexically, so `d/dl/../PWNED` passed while the OS followed the link `dl`
+        # that `cp -R` had copied; and an expansion in the target was not resolved. A `.`/`..` component is refused on the RAW
+        # target, a `cp -R` source tree holding a symlink is refused, and a `$` or backtick anywhere in the arguments is refused
+        mkpath("$r/srcdir"); symlink(r, "$r/srcdir/dl"); write("$r/a", "a\n"); mkpath("$sc/d"); symlink(r, "$sc/d/dl")
+        for c in (
+                "cp -R srcdir .lanes/scratch/reviewer/d", "cp -r srcdir .lanes/scratch/reviewer/d2", "cp -Rp srcdir/ .lanes/scratch/reviewer/d3",
+                "cp a .lanes/scratch/reviewer/d/dl/../PWNED", "mkdir -p .lanes/scratch/reviewer/d/dl/../PWNEDDIR", "cp a .lanes/scratch/reviewer/./x",
+                "cp a ./.lanes/scratch/reviewer/x", "mkdir -p .lanes/scratch/reviewer/x/../y", "cp a $sc/d/dl/../P",
+                "cp a .lanes/scratch/reviewer/\$(echo ../../../SUBST)", "cp a .lanes/scratch/reviewer/`echo x`",
+                "mkdir -p .lanes/scratch/reviewer/\$(printf ../../../D)", "cp \$(echo a) .lanes/scratch/reviewer/x", "mkdir -p \$D/.lanes/scratch/reviewer/x",
+                "cp -R .lanes/scratch/reviewer/lnk .lanes/scratch/reviewer/real/", "cp -R .lanes/scratch/reviewer/d .lanes/scratch/reviewer/d4",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        mkpath("$r/.claude/hooks"); write("$r/.claude/hooks/x.sh", "x\n")
+        for c in ("cp -R .claude/hooks .lanes/scratch/reviewer/h", "cp -R .claude/hooks/ .lanes/scratch/reviewer/h5/", "cp a .lanes/scratch/reviewer/d/q",
+                "cp -R .claude/hooks a .lanes/scratch/reviewer/h6")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R srcdir .lanes/scratch/reviewer/d"), r)
+        @test rc == 2 && occursin("symlink", err) && occursin("srcdir/dl", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/dl/../PWNED"), r)
+        @test rc == 2 && occursin("..", err) && occursin("component", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -s $r/risk.toml .lanes/scratch/reviewer/r"), r)
         @test rc == 2 && occursin("cp -s", err) && occursin("-R -r -p", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp p .lanes/scratch/reviewer/lnkdir/x"), r)

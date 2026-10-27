@@ -51,6 +51,17 @@
     @test rc == 1 && occursin("lane worktree is dirty", out)
     rm(joinpath(wt, "src/untracked.jl"))
     @test lane("audit", "rv")[1] == 0                                         # without --report neither rule applies
+    # round-4 review m1: the read-only set is READ_ONLY_AGENTS of the repo's limits.env (a repo's own read_only agent, `auditor`,
+    # passes), the template's three when the file or the line is absent
+    @test Lane.reporters(d) == ["reviewer", "critic", "verifier"]
+    write(rep("rv-auditor.md"), ok); open(io -> println(io, ev("rv-auditor", "auditor")), led, "a")
+    @test lane("audit", "rv", "--report", rep("rv-auditor.md"))[1] == 1
+    mkpath(joinpath(d, ".claude/hooks")); write(joinpath(d, ".claude/hooks/limits.env"), "MAX_OPEN_LANES=4\nREAD_ONLY_AGENTS=\" auditor critic reviewer verifier \"\n")
+    @test Lane.reporters(d) == ["auditor", "critic", "reviewer", "verifier"]
+    @test lane("audit", "rv", "--report", rep("rv-auditor.md"))[1] == 0
+    write(joinpath(d, ".claude/hooks/limits.env"), "MAX_OPEN_LANES=4\n")             # no line: the fallback, auditor fails again
+    rc, out = lane("audit", "rv", "--report", rep("rv-auditor.md"))
+    @test rc == 1 && occursin("reviewer | critic | verifier", out)
     rm(led)                                                                   # no ledger: no dispatch to match
     rc, out = lane("audit", "rv", "--report", rep("rv-reviewer-4.md"))
     @test rc == 1 && occursin("is not from a read-only reviewer dispatch", out)
