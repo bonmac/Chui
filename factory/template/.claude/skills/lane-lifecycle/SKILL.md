@@ -48,10 +48,14 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   the local base when that contains `origin/<base>` (local merges not yet pushed are not the
   lane's); `--base B` audits against another base.
 - A lane's report: SendMessage, or `.lanes/reports/<name>.md` (`<name>-<round>.md` per review
-  round) in its worktree or the repo root (`teammate_idle` reads both). The file counts as a
-  report only once its first line is the Verdict line (`Verdict: MAY MERGE | MERGE WITH FIXES |
-  FIX FIRST`, one of the three); until then it is partial. After the reviewer's FINAL report, run
-  `scripts/lane audit <name> --report <file>`: it checks that line and that `Head:` is the lane's HEAD.
+  round) in its worktree, the repo root or, from a lane session, the main checkout
+  (`teammate_idle` reads all three). The file counts as a report only once its first line is
+  final: the Verdict line for a reviewer, critic or verifier (`Verdict: MAY MERGE | MERGE WITH
+  FIXES | FIX FIRST`, one of the three), `Status: DONE | BLOCKED` for a write agent; `Verdict:
+  PENDING` and `Status: PARTIAL` mean still writing. After the reviewer's FINAL report, run
+  `scripts/lane audit <name> --report <file>`: it checks line 1, that line 2 `Head:` is the lane's
+  HEAD, that the lane is clean, and that the report's name is a reviewer/critic/verifier dispatch
+  of the ledger (a write agent's own report is no review).
 - Close the agent (TaskStop) in the same step as reading its report. A listing is not proof of
   closure. Before recording a lane as `no_report`, check once more for a late message: a report
   can arrive after the stop.
