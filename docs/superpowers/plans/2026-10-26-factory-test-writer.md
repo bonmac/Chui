@@ -568,6 +568,21 @@ extended) and `<case>-1.13.txt` and `<case>-1.10.txt` for each case.
 - Timings (ms/call, including a 6.5 ms spawn; load 4–6): lead Read 21, test-writer Read 23, lead
   Bash 21–26, test-writer Bash 28, denial 58, `git commit` Pre 52–55, post 24 (none pending) and
   113 (one recorded). The common paths are under 30 ms; commits and denials are not.
+- **E5 ruling (sub-lead, review round 1; the lead accepted it on 2026-10-27; the lead adds the spec
+  note at merge):**
+  - E5 matches a `tdd-commit-violation` only by the lane's commit shas, no longer also by
+    `checkout`.
+  - A commit recorded only by a sweep (`tdd-commit-late`) does not satisfy E5.
+  - The sweep writes neither `tdd-commit` nor violations. The post hook and the sweep attribute only
+    `--first-parent` commits whose committer time falls inside the call's window (the entry's
+    mtime − 5 s to + 600 s).
+  - Reason: the reviewer measured three cases.
+    - A Pre entry left by a call that never ran (bash_guard denied it in parallel, or the user
+      cancelled it) gave other callers' commits spurious violations.
+    - A commit forged outside the guard got a late `tdd-commit` that E5 accepted.
+    - A lead's merge of `main` checked main's role commits against the lead.
+  - A violation matched by checkout failed the lane for good. Matching by sha makes "replace the
+    commit" a real way out.
 
 **Left to review on purpose (m4).** These rules are stated in the spec but have no mechanical test,
 and the reviewer checks them (spec §4.5):
