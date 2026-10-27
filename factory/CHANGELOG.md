@@ -5,6 +5,98 @@ Versions of the development-process template. Repos record the version they vend
 A breaking change (a renamed file, a new required field, a stricter guard) bumps the minor
 version while below 1.0.
 
+## 0.3.1 (2026-10-27)
+
+Fixes what the first live test-first lane (ChuiTypes smoke lane `scan-widen`) exposed in 0.3.0
+(lane tw-034). A patch: every change is in managed files, no seeded hand edit. Each fix went
+test-first: a fresh test agent committed failing tests, then a fresh factory-maintainer implemented.
+
+- **Format job (BLOCKER).** `julia scripts/ci.jl format` failed in every package that synced
+  0.3.0 (ChuiTypes main c69a784). There were two causes. First, 17 template scripts were not
+  Runic-clean. Second, Runic hit a ParseError on the deliberately broken fixture
+  `scripts/test/fixtures/tdd/scratchpkg/test/parse_tests.jl`. Runic 1.13.0 has no exclude option,
+  so the job now picks its own files. The new `CI.format_files(root)` lists the `.jl` files from
+  `git ls-files --cached --others --exclude-standard`, falling back to a directory walk outside
+  git. It drops everything under `scripts/test/fixtures/` (`FORMAT_EXCLUDE`) and hands Runic
+  `--check --diff <files>`, never `.`. An empty selection is a `not_applicable` skip. All 17 files
+  were rewritten by the Runic 1.13.0 CLI (`--inplace`), and the fixtures keep their defects. Guard:
+  `test_ci_format.jl`. It checks the selection on the template and on a scratch repo, checks the
+  job's argv, and runs a Runic `--check` of every selected template script. That last check is
+  skipped with a `SKIPPED:` line when Runic is missing from `@runic`, because tests never install
+  packages.
+- **One TDD ledger (MAJOR).** `tdd-commit` records landed in the session root's ledger
+  (`CLAUDE_PROJECT_DIR`). That was the coordinator's ledger for an unnamed subagent and the
+  package's ledger for a named teammate. `tdd.jl audit` defaulted to the *outermost* ancestor
+  ledger, which for a nested package is the coordinator's. So E5 failed for one of the two
+  dispatch shapes. Now `tdd-commit`, `tdd-commit-violation` and `tdd-commit-late` go to the
+  ledger of the main checkout of the repo that owns the commit's checkout:
+  `<dirname(git -C <checkout> rev-parse --path-format=absolute --git-common-dir)>/.lanes/ledger.jsonl`.
+  `audit`'s default `--ledger` is that same file. Each language resolves the path in one
+  function, both named **`owning_ledger`**: the shell `owning_ledger CHECKOUT` in
+  `.claude/hooks/_lib.sh`, and the Julia `owning_ledger(root)` in `scripts/_tdd_evidence.jl`,
+  which replaces `default_ledger`. A test checks that the two agree. Records are still written by
+  the one `ledger()` helper. `tdd_commit_post` sets `LEDGER_FILE` per checkout, and falls back to
+  the session ledger if git cannot read the checkout (still fail-open). Other events, such as
+  `tdd-boundary-denied` and the lane records, stay in the session ledger. Guard:
+  `test_tdd_ledger.jl`, which covers both dispatch shapes with a session root unlike the
+  checkout's repo. The 0.3.0 tests that pinned the old rule were changed in a test-fix commit.
+- **TDD roles report by their final reply (MAJOR).** The TDD roles have no SendMessage, and
+  `tdd_boundary` bars them from `.lanes/reports/`. Yet a named dispatch fires TeammateIdle, which
+  demands one of those two channels. The skill and the bodies now say that the TDD roles
+  (test-writer, law-tester, property-tester, differential-tester, implementer) are dispatched
+  **unnamed**, as plain subagents, and that their final reply is the report. This applies only to
+  the TDD roles; roles checked by `lane audit` reports are dispatched named. `teammate_idle.sh`
+  is unchanged, since an unnamed subagent fires no TeammateIdle.
+- **Deletion-only test-fix (MAJOR).** A `TDD: test-fix` that only deleted `@testitem`s got
+  `tdd.jl red: adds or changes no @testitem (exit 2)`. E1 could then never pass, and the only way
+  out was to reset the lane. Chosen rule (option A, recorded removal): `tdd.jl red` on a
+  deletion-only test-fix exits 0. It writes red evidence with `red <sha7>: OK` and one
+  `REMOVED <name>` line per item. E1 accepts that evidence only when the audit itself derives from
+  git that the commit adds or changes no item and removes at least one, the phase is `test-fix`,
+  and the header is clean and on the commit. `tdd.jl green` reports such an item as
+  `REMOVED <name> (test-fix <sha7>)` when a test-side role made the deletion; otherwise it is
+  NOT-RUN. Why A rather than "E1 exempts it if earlier red evidence covers the rest": A keeps one
+  evidence file per red/test-fix sha, so E1 stays a per-commit check. A removal leaves a written
+  trace for the reviewer. The deletion-only test is re-derived from git, so hand-written evidence
+  cannot hide an added item. Option B would have made E1 depend on the evidence of other commits.
+  A deletion-only `TDD: red` still exits 2. Guard: `test_tdd_testfix_delete.jl`, plus the reworked
+  `test_tdd_rename.jl` case (a test-fix commit).
+- **Skill and brief text (MINOR).**
+  - Removed the false claim that a new agent type is "not dispatchable until the session
+    restarts". Agent types load mid-session.
+  - `test_writer.md`: a `TDD: red` commit holds only items that fail today. Behaviour the code
+    already has goes in a separate `TDD: backfill` commit, or is left to the existing tests.
+  - The audit commands in `reviewer.md`, `/change-review` and the skill use the owning repo's
+    ledger. `checks.toml` says the same.
+- **CHECK_COVERAGE: two blind spots.** First, `sync_factory.jl --apply`'s own writes to T3 paths
+  need no `FACTORY_ALLOW_T3`, because the guards see only agent Edit/Write and Bash. Second, a
+  teammate without T3 cannot discard an applied sync: `bash_guard` blocks `git clean -f` and
+  `git restore`/`git checkout` of T3 paths, so the lead undoes it.
+- **Omitted from 0.3.0's notes (spec §3.4).** The `:doctest` and `:snapshot` items cannot be
+  selected by tag on non-stable Julia. The seeded `test/runtests.jl` applies the stable-only
+  exclusion before `item=` and before the tags. So on LTS or nightly, an `item=` or tag request
+  for one of them selects nothing, and `tdd.jl red`/`green` report it NOT-RUN. Run them on the
+  stable Julia.
+- **Process notes (lane tw-034).** The F2 implementer edited `tdd_commit_post.sh` with a
+  `uv run python` script instead of the Edit tool, bypassing the Edit/Write hooks. The edit was
+  kept, and that file's diff in commit 1fc4bcd was reviewed line by line. The rule was repeated in
+  every later brief.
+- **Migration.** Every changed file is managed, so a sync brings it all: `ci.jl`, the tdd scripts,
+  `_lib.sh`, `tdd_commit_post.sh`, the skill, the bodies and their generated agents, `checks.toml`,
+  `/change-review`, `CHECK_COVERAGE.md` and the reformatted test scripts. Then:
+  - Run `julia scripts/gen.jl`.
+  - `julia scripts/ci.jl format` passes on the synced template files. A repo's own files must
+    still be Runic-clean.
+  - **In-flight TDD lanes.** Records made under 0.3.0 by an unnamed subagent are in the
+    coordinator's ledger. Audit such a lane with an explicit
+    `--ledger <coordinator>/.lanes/ledger.jsonl` (or both ledgers, one run each), or re-run it on
+    0.3.1.
+  - Each repo that owns a lane needs `.lanes/` in its `.gitignore`, since the hook now writes
+    there. The packages and the coordinator already ignore it.
+  - Dispatch TDD roles unnamed from now on.
+  - Spec `docs/superpowers/specs/2026-10-26-factory-test-writer-design.md` §0.5 (and the E5 row)
+    still names the session-root ledger. The coordinator corrects it outside `factory/`.
+
 ## 0.3.0 (2026-10-27)
 
 A `test-writer` role and test-first lanes with separate contexts (ADR-0015; spec
