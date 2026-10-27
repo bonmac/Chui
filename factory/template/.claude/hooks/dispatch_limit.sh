@@ -69,8 +69,9 @@ fi
 case $open in '' | *[!0-9]*) deny "the lane ledger $LEDGER_FILE gave no open-lane count ($open); dispatch_limit fails closed." ;; esac
 if [ "$open" -ge "$max" ]; then
     _first=${names%% *} _hint=""
-    _nl=$(wc -l <"$LEDGER_FILE" 2>/dev/null | tr -d ' ') # 0.4.0 (critic): a ledger past 2,000 lines is named (before this append)
-    [ "${_nl:-0}" -le 2000 ] 2>/dev/null || _hint=" The ledger has $_nl lines; run scripts/lane compact."
+    _lim=${FACTORY_LEDGER_LINES:-2000} # 0.4.0 (critic; round 4 A8): a ledger past the line budget is named (before this append)
+    _nl=$(wc -l <"$LEDGER_FILE" 2>/dev/null | tr -d ' ')
+    [ "${_nl:-0}" -le "$_lim" ] 2>/dev/null || _hint=" The ledger has $_nl lines; run scripts/lane compact. If it stays above $_lim lines it holds that many live chains: raise FACTORY_LEDGER_LINES (default 2000, read by precompact.sh and this hint)."
     ledger dispatch-denied open "$open" max "$max" subagent_type "$(field '.tool_input.subagent_type')"
     deny "$open lanes are open (cap $max): $names. Read a finished lane's report and close it with TaskStop <name>. If its agent is gone (TaskStop says no task found, or the dispatch never ran), release it: scripts/lane release ${_first:-<name>}. The cap is [lanes] max_open in .agents/agent-registry.toml.$_hint"
 fi

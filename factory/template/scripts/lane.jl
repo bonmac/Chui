@@ -41,9 +41,13 @@
 #         are recorded, or, with --reported FILE (one path per line, as the lane reported its
 #         changed files), when the two lists differ. /change-review runs it before a lane lands.
 #         (0.4.0, D5) --report FILE: the review report's first line must be exactly
-#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three) and a line
+#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three) and its second line
 #         `Head: <sha>` must name the lane's current HEAD (a stale round fails), else FAIL; a passing
 #         audit records {ev: verdict, lane, verdict, head, report} in the ledger (`lane stats` shows it).
+#         (review round 4, A2) The report must come from a read-only reviewer: the ledger holds a
+#         `dispatch` whose name is the report's base name (before `-<round>.md`) and whose
+#         subagent_type is reviewer, critic or verifier (an implementer's own report had passed as a
+#         review); and the lane worktree must be clean (`git status --porcelain` empty), else FAIL.
 # list   name, branch, base, ahead/behind, clean/dirty. Read-only.
 # remove  refuses a dirty lane, one whose branch is not merged into its base, and one holding
 #         ignored files (reports, Manifest.toml, scratch) unless --allow-ignored. Never forces.
@@ -255,6 +259,11 @@ module Lane
         head = something(git(wt, "rev-parse", "HEAD"), "")
         verdict, problem = report === nothing ? (nothing, nothing) : report_check(report, head)
         problem === nothing || push!(bad, problem)
+        if report !== nothing   # review round 4 (A2): a reviewer's report, of a lane that holds nothing uncommitted
+            problem = report_dispatch(repo, report)
+            problem === nothing || push!(bad, problem)
+            l.dirty && push!(bad, "lane worktree is dirty; commit or drop before the audit")
+        end
         println(
             io, "lane audit $name: $(l.branch) vs $(l.base) (merge base $(first(mb, 10))), $(length(changed)) changed; owns: ",
             isempty(owns) ? "(none)" : join(owns, ' ')
@@ -277,21 +286,23 @@ module Lane
 
     0.4.0 (D5): a review report's first line is exactly `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST`
     (one of the three, exact case, nothing else on the line: no bold, not the template line, a CR counts),
-    and a line `Head: <sha>` (full, or a prefix of 7+ hex characters) names the lane worktree's HEAD, so a
-    report of an earlier round cannot pass this one. One of the two results is `nothing`. Anchored and
-    mechanical on purpose: `verdict: may merge` is no verdict.
+    and its second line `Head: <sha>` (full, or a prefix of 7+ hex characters; review round 4: line 2 exactly,
+    as the `_verdict` fragment asks) names the lane worktree's HEAD, so a report of an earlier round cannot
+    pass this one. One of the two results is `nothing`. Anchored and mechanical on purpose: `verdict: may
+    merge` is no verdict.
     """
     function report_check(path, head)
         isfile(path) || return nothing, "report $path is missing"
         ls = [endswith(l, '\n') ? l[1:prevind(l, lastindex(l))] : l for l in readlines(path; keep = true)]
         m = isempty(ls) ? nothing : match(VERDICT, ls[1])
         m === nothing && return nothing, "report $path has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
-        hs = [String(h.captures[1]) for h in filter(!isnothing, map(l -> match(HEADLINE, l), ls))]
-        isempty(hs) && return nothing, "report $path has no line 'Head: <sha>' naming the lane's HEAD $(first(head, 7))"
-        any(h -> startswith(head, h), hs) ||
-            return nothing, "report $path names Head $(join(hs, ", ")) but the lane's HEAD is $(first(head, 7)): a stale round; the review must be of this HEAD"
+        h = length(ls) < 2 ? nothing : match(HEADLINE, ls[2])
+        h === nothing && return nothing, "report $path has no line 2 'Head: <sha>' naming the lane's HEAD $(first(head, 7))"
+        startswith(head, h.captures[1]) ||
+            return nothing, "report $path names Head $(h.captures[1]) but the lane's HEAD is $(first(head, 7)): a stale round; the review must be of this HEAD"
         return String(m.captures[1]), nothing
     end
+    # report_dispatch (round 4, A2: the report's name is a reviewer/critic/verifier dispatch of the ledger) is in _lane_stats.jl
 
     function cmd_list(repo; io = stdout)
         ls = lanes(repo)

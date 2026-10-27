@@ -32,9 +32,10 @@ round (1, then +1 per re-review), `<base>` its recorded base, `<mb>` the merge b
      `julia scripts/evidence.jl lane --root .worktrees/<lane>/factory/template -- julia --startup-file=no scripts/test/runtests.jl`
      then the hook-mutation route (D3) for each changed hook: copy `.claude/hooks` into
      `.lanes/scratch/hooks-<n>`, change ONE thing in the copy with Write (drop a deny, invert a
-     test), and run the hook tests against the copy with `scripts/test/runtests.jl hooks --hooks-dir .lanes/scratch/hooks-<n>`
-     once `scripts/test/runtests.jl` takes those arguments; while it takes none, print
-     `hook mutants: NOT RUN (runtests.jl has no --hooks-dir)`. A mutant no test catches is a finding.
+     test), and run the hook tests against the copy with
+     `(cd .worktrees/<lane>/factory/template && julia --startup-file=no scripts/test/runtests.jl gen hooks --hooks-dir .lanes/scratch/hooks-<n>)`
+     (`gen` too: the hook tests use a helper of test_gen.jl). Paste the command, its exit code and
+     its Test Summary. A mutant no test catches is a finding.
    - Neither file: print `test gate: NOT RUN (no Project.toml, no factory/MANIFEST.toml)`.
    Compare the two evidence files: `julia scripts/evidence.jl latest base --root <base checkout>`
    and `julia scripts/evidence.jl latest lane --root .worktrees/<lane>` print their paths;
@@ -63,9 +64,11 @@ round (1, then +1 per re-review), `<base>` its recorded base, `<mb>` the merge b
    GREEN after.
 7. `scripts/lane audit <lane> --report .lanes/reports/<reviewer name>-<round>.md` (the path
    where the reviewer wrote it: the lane worktree or the repo root). It fails on a missing or
-   misspelled Verdict line and on a `Head:` that is not the lane's current HEAD (a stale round:
-   the lane moved after the review, so re-review with `<round>` + 1); passing, it records the
-   verdict in the ledger (`scripts/lane stats` shows it).
+   misspelled Verdict line, on a line 2 that is not `Head: <sha>`, on a `Head:` that is not the
+   lane's current HEAD (a stale round: the lane moved after the review, so re-review with
+   `<round>` + 1), on a dirty lane worktree, and on a report whose name is not a reviewer, critic
+   or verifier dispatch of the ledger (an implementer's own `Status:` report is no review);
+   passing, it records the verdict in the ledger (`scripts/lane stats` shows it).
 8. Close the reviewer agent in the same step as reading its report (TaskStop, or let its call
    return; `scripts/lane release <name>` when it is already gone). The base checkout holds the
    base evidence file: `evidence.jl latest base` (step 3) printed its path RELATIVE to that

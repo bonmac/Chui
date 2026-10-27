@@ -1,5 +1,5 @@
 # shellcheck shell=sh
-# shellcheck disable=SC2034,SC2154 # cwd is bash_guard.sh's; RO_CMDS is in _read_only_roots.sh; git_sub/git_dir/newdir in _bash_guard_lib.sh
+# shellcheck disable=SC2034,SC2154 # cwd is bash_guard.sh's; RO_AGENT_CMDS/ro_* are in _bash_guard_agents_lib.sh; git_sub/git_dir/newdir in _bash_guard_lib.sh
 # _bash_guard_agents.sh: read-only agents (factory 0.4.0, spec D3, ADR-0016). Sourced by bash_guard.sh
 # and write_guard.sh after _lib.sh (limits.env: READ_ONLY_AGENTS, rendered by gen.jl from every agent
 # with default_mode = "read_only"). When the payload's agent_type is one of them, Bash may run only the
@@ -10,21 +10,19 @@
 # option may write or run (uniq IN OUT, uniq - OUT, sort -ro OUT, sort --out=OUT, file --comp, rg --hostname-bin=
 # PROG), so rg, sort, uniq, file and less take a fixed option set each (ro_opts); the scratch holds the
 # agent's OWN files, so the tracked cwd, a cd or git -C target and a script are resolved (ro_dir, ro_script:
-# a trusted checkout, never below .lanes/); and julia takes no option that loads a file or a project.
+# a trusted checkout, never below .lanes/); and julia takes no option that loads a file or a project. Round 4 (A1, A5):
+# cp/mkdir take a fixed option set and never a symlink target (ro_agent_scratch), and the command list is the agents' own.
 AGENT=$(field '.agent_type')
 RO_AGENT=""
 if [ -n "$AGENT" ]; then
     [ -n "${READ_ONLY_AGENTS+set}" ] || deny "agent_type '$AGENT' cannot be checked: limits.env has no READ_ONLY_AGENTS line, so the guard cannot tell a read-only agent from a writer; it fails closed. Run \`julia scripts/gen.jl\`."
     case " $READ_ONLY_AGENTS " in *" $AGENT "*) RO_AGENT=1 ;; esac
 fi
-# Besides RO_CMDS (the read-only roots' list): tools that only print. sort is checked for -o; awk,
-# sed, xargs, tee and the shells are out (their programs or arguments write or run commands).
-RO_AGENT_CMDS=' echo printf true false test date diff cmp sort cut tr uniq basename dirname realpath which jq '
 RO_AGENT_GIT=' log show diff status blame ls-files merge-base rev-parse '
 RO_NOCD="" # set while checking the command evidence.jl wraps: a cd there would move the gate run (m2)
 
 ro_deny() {
-    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_CMDS$RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/lane audit; cp/mkdir only into .lanes/scratch/$AGENT/. Write a report with the Write tool under .lanes/reports/."
+    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/lane audit; cp (-R -r -p) and mkdir (-p) only into .lanes/scratch/$AGENT/, never through a symlink. Write a report with the Write tool under .lanes/reports/."
 }
 
 # ro_agent_check WORD...: one segment (bash_guard.sh: assignments, redirections and wrappers still in place).
@@ -64,7 +62,7 @@ ro_agent_check() {
         uniq) ro_opts uniq ' -c -d -u -i ' '' '' 1 "$@" ;;                    # a second operand (a lone - too) is written
         file) ro_opts file ' -b -i -h ' '' '' -1 "$@" ;;                      # not -C/--compile (writes a magic file)
         less) for _a in "$@"; do case $_a in +*) ro_deny "\`less $_a\` runs a less command" ;; esac; done; ro_opts less '' '' '' -1 "$@" ;; # not -o/-O/--log-file (writes a log)
-        *) case "$RO_CMDS$RO_AGENT_CMDS" in *" $_c "*) ;; *) ro_deny "\`$_c\` is not on the allowlist" ;; esac ;;
+        *) case $RO_AGENT_CMDS in *" $_c "*) ;; *) ro_deny "\`$_c\` is not on the allowlist" ;; esac ;;
     esac
 }
 # ro_agent_julia ARGS...: julia [+channel] [--startup-file=no] <the repo's own allowlisted script> <its allowed arguments>.
@@ -115,24 +113,19 @@ ro_agent_git() {
     done
     [ -n "$_ok" ] || ro_deny "\`git ${_s:-}\` (only${RO_AGENT_GIT}branch --show-current|--list, worktree list)"
 }
-# ro_agent_scratch NAME ARGS...: every target of cp (its last operand) or mkdir (every operand) is below .lanes/scratch/<agent_type>/.
-ro_agent_scratch() {
-    _n=$1 _t=""
-    shift
-    for _a in "$@"; do
-        case $_a in -t | --target-directory*) ro_deny "\`$_n $_a\` (name the target last)" ;; -*) ;; *) [ "$_n" = mkdir ] && _t="$_t $_a" || _t=$_a ;; esac
-    done
-    [ -n "$_t" ] || ro_deny "\`$_n\` without a target"
-    for _a in $_t; do
-        _x=$(abspath "$_a" "$cwd")
-        case $_x in "$ROOT/.lanes/scratch/$AGENT" | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT" | "$ROOT_P/.lanes/scratch/$AGENT"/?*) ;;
-            *) ro_deny "\`$_n\` target $_x is not below .lanes/scratch/$AGENT/" ;; esac
-    done
-}
+# ro_agent_scratch (cp/mkdir into the scratch) is in _bash_guard_agents_lib.sh (round 4, A1).
 # ro_agent_write_check ABS: write_guard.sh; a read-only agent writes only its reports and its scratch.
 ro_agent_write_check() {
     [ -n "$RO_AGENT" ] || return 0
-    case $1 in "$ROOT"/.lanes/reports/?* | "$ROOT_P"/.lanes/reports/?* | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT"/?*) return 0 ;; esac
+    case $1 in "$ROOT"/.lanes/reports/?* | "$ROOT_P"/.lanes/reports/?* | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT"/?*)
+        # review P1: the prefix match is lexical, so the RAW path ($fp, write_guard.sh) takes no `.`/`..` component or expansion,
+        # and no existing symlink sits at or above the path below the root (ro_nolink, _bash_guard_agents_lib.sh)
+        _n=Write
+        case "/$fp/" in */./* | */../*) ro_deny "the write target $fp has a . or .. component: a symlink before it is followed by the OS, not by the guard" ;; esac
+        case $fp in *'$'* | *'`'*) ro_deny "the write target $fp holds an expansion the guard cannot resolve" ;; esac
+        ro_nolink "$1"
+        return 0 ;;
+    esac
     if in_main "$1"; then case $1 in "$IN_MAIN"/.lanes/reports/?*) return 0 ;; esac; fi
     deny "agent_type '$AGENT' is read-only (ADR-0016 D3): it may write only .lanes/reports/** and .lanes/scratch/$AGENT/**, not $1."
 }

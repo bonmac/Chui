@@ -183,8 +183,12 @@ end
         reg = TOML.parsefile(joinpath(ROOT, ".agents/agent-registry.toml"))
         pre = read(joinpath(ROOT, ".agents/bodies/_preflight.md"), String)
         rep = read(joinpath(ROOT, ".agents/bodies/_report.md"), String)
+        ver = read(joinpath(ROOT, ".agents/bodies/_verdict.md"), String)   # review round 4 (A2): only read_only agents get it
         @test occursin("git rev-parse --show-toplevel", pre) && occursin("git worktree list", pre)
-        @test occursin("Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST", rep) && occursin("Head: <sha>", rep) &&
+        @test occursin("Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST", ver) && occursin("Head: <sha>", ver) &&
+            occursin("Verdict: PENDING", ver) && occursin("replace it last", ver)   # A6: the line while writing
+        @test occursin("Status: DONE | PARTIAL | BLOCKED", rep) && occursin("Status: PARTIAL", rep) && occursin("replace", rep) &&
+            !occursin("Verdict: MAY MERGE", rep) && !occursin("Head: <sha>", rep) &&
             occursin("80 lines", rep) && occursin("last 20 lines", rep) && occursin(".lanes/reports/<name>.md", rep)
         for a in reg["agents"]
             md = read(joinpath(ROOT, ".claude/agents/$(a["name"]).md"), String)
@@ -195,9 +199,17 @@ end
             @test occursin(rstrip(pre), toml) && occursin(rstrip(rep), toml)
             @test endswith(a["output_format"], "; at most 80 lines")
             @test !startswith(a["slug"], "_")
+            ro = a["default_mode"] == "read_only"                                         # the Verdict rule is a read-only agent's only
+            @test occursin(rstrip(ver), md) == ro && occursin(rstrip(ver), toml) == ro || (println("$(a["name"]): verdict fragment"); false)
+            @test occursin("Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST", md) == ro && occursin("Status: DONE | PARTIAL | BLOCKED", md)
+            ro && @test first(findfirst(rstrip(rep), md)) < first(findfirst(rstrip(ver), md)) < first(k)
+        end
+        @test only(filter(a -> a["slug"] == "implementer", reg["agents"]))["default_mode"] == "write"
+        for s in ("reviewer", "critic", "verifier")
+            @test only(filter(a -> a["slug"] == s, reg["agents"]))["default_mode"] == "read_only"
         end
         outs = Gen.outputs(ROOT)
-        @test !any(k -> occursin("_preflight", k) || occursin("_report", k), keys(outs))   # a fragment is never an agent
+        @test !any(k -> occursin("_preflight", k) || occursin("_report", k) || occursin("_verdict", k), keys(outs))   # a fragment is never an agent
         @test !isfile(joinpath(ROOT, ".claude/agents/_preflight.md")) && !isfile(joinpath(ROOT, ".codex/agents/_preflight.toml"))
         v = only(filter(a -> a["slug"] == "verifier", reg["agents"]))
         @test v["default_mode"] == "read_only" && v["tools"] == ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
@@ -219,6 +231,9 @@ end
         rm(joinpath(d, ".agents/bodies/_report.md"))
         e = try; Gen.outputs(d); nothing; catch e; e; end
         @test e isa Gen.GenError && occursin("_report.md", e.msg)
+        d = gen_sandbox(); rm(joinpath(d, ".agents/bodies/_verdict.md"))                 # a read_only agent needs _verdict too
+        e = try; Gen.outputs(d); nothing; catch e; e; end
+        @test e isa Gen.GenError && occursin("_verdict.md", e.msg) && occursin("read_only", e.msg)
     end
 
     if IN_FACTORY

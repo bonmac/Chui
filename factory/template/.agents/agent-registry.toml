@@ -18,7 +18,8 @@
 #                  .lanes/scratch/<name>/**, which the guards allow it by agent_type; 0.4.0 D3)
 #   scorecard      what the lead grades the report on
 #   output_format  the sections the report must contain, in order; ends with `; at most 80 lines` (0.4.0 D4)
-# Bodies named `_<fragment>.md` (`_preflight`, `_report`) are rendered into EVERY agent by gen.jl; they are not agents.
+# Bodies named `_<fragment>.md` (`_preflight`, `_report`) are rendered into EVERY agent by gen.jl, and `_verdict`
+# (the Verdict/Head lines) into every read_only agent only (0.4.0 review round 4 A2); they are not agents.
 #
 # Adjust per package: delete roles a package does not need, never add a 13th without
 # asking whether an existing role covers it (see docs/adr/ in the coordinator, ADR-0001).

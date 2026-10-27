@@ -250,6 +250,125 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         @test rc == 2 && occursin("--startup-file=no", err)
     end
 
+    @testset "review round 4 (A1, A5): cp/mkdir fixed options, no symlink target; the agents' own command list" begin
+        # A1: macOS cp takes -s/-l (a symlink or hard link is made under the scratch, then a plain cp writes THROUGH it to
+        # the linked file outside), so cp takes only -R -r -p and mkdir only -p (getopt clusters, `--` ends the options,
+        # no long option), and a target whose path or any parent below the root is an existing symlink is refused
+        sc = "$r/.lanes/scratch/reviewer"
+        mkpath("$sc/real"); write("$r/risk.toml", "version = 1\n"); write("$sc/pf", "p\n")   # round 1 made $sc/p a directory
+        symlink("$r/risk.toml", "$sc/lnk"); symlink("$sc/real", "$sc/lnkdir")
+        for c in (
+                "cp -s $r/risk.toml .lanes/scratch/reviewer/r", "cp -l $r/risk.toml .lanes/scratch/reviewer/r", "cp -Rs .claude/hooks .lanes/scratch/reviewer/h",
+                "cp -sR .claude/hooks .lanes/scratch/reviewer/h", "cp -a .claude/hooks .lanes/scratch/reviewer/h", "cp -f p .lanes/scratch/reviewer/q",
+                "cp -n p .lanes/scratch/reviewer/q", "cp -X p .lanes/scratch/reviewer/q", "cp -pf p .lanes/scratch/reviewer/q", "cp --parents p .lanes/scratch/reviewer/",
+                "mkdir -m 777 .lanes/scratch/reviewer/d", "mkdir -v .lanes/scratch/reviewer/d", "mkdir -pm 700 .lanes/scratch/reviewer/d",
+                "mkdir --parents .lanes/scratch/reviewer/d", "mkdir -p -- -v .lanes/scratch/reviewer/d",
+                # the symlink the agent planted (or found): the link itself, below a linked directory, the scratch's own parents
+                "cp .lanes/scratch/reviewer/pf .lanes/scratch/reviewer/lnk", "cp p .lanes/scratch/reviewer/lnkdir/x", "cp -R .claude/hooks .lanes/scratch/reviewer/lnkdir",
+                "mkdir .lanes/scratch/reviewer/lnkdir/new", "mkdir -p .lanes/scratch/reviewer/lnkdir", "mkdir -p .lanes/scratch/reviewer/lnkdir/a/b",
+                "cp p $sc/lnk", "cp p .lanes/scratch/reviewer/real/../lnkdir/x",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in (
+                "cp -R .claude/hooks .lanes/scratch/reviewer/hooks", "cp -Rp .claude/hooks .lanes/scratch/reviewer/h2", "cp -rp .claude/hooks .lanes/scratch/reviewer/h3",
+                "cp -p p .lanes/scratch/reviewer/", "cp -R -p .claude/hooks .lanes/scratch/reviewer/h4", "cp -- p .lanes/scratch/reviewer/g", "mkdir -p .lanes/scratch/reviewer/x/y",
+                "mkdir -- .lanes/scratch/reviewer/z", "mkdir -p .lanes/scratch/reviewer/real/sub", "cp -R -- -s .lanes/scratch/reviewer/q",   # a FILE named -s
+                "cp p .lanes/scratch/reviewer/real/q", "cp lnk .lanes/scratch/reviewer/real/",   # a plain cp of a link copies the file
+            )
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        # round-4 review (B1, M1): abspath folds `..` lexically, so `d/dl/../PWNED` passed while the OS followed the link `dl`
+        # that `cp -R` had copied; and an expansion in the target was not resolved. A `.`/`..` component is refused on the RAW
+        # target, a `cp -R` source tree holding a symlink is refused, and a `$` or backtick anywhere in the arguments is refused
+        mkpath("$r/srcdir"); symlink(r, "$r/srcdir/dl"); write("$r/a", "a\n"); mkpath("$sc/d"); symlink(r, "$sc/d/dl")
+        for c in (
+                "cp -R srcdir .lanes/scratch/reviewer/d", "cp -r srcdir .lanes/scratch/reviewer/d2", "cp -Rp srcdir/ .lanes/scratch/reviewer/d3",
+                "cp a .lanes/scratch/reviewer/d/dl/../PWNED", "mkdir -p .lanes/scratch/reviewer/d/dl/../PWNEDDIR", "cp a .lanes/scratch/reviewer/./x",
+                "cp a ./.lanes/scratch/reviewer/x", "mkdir -p .lanes/scratch/reviewer/x/../y", "cp a $sc/d/dl/../P",
+                "cp a .lanes/scratch/reviewer/\$(echo ../../../SUBST)", "cp a .lanes/scratch/reviewer/`echo x`",
+                "mkdir -p .lanes/scratch/reviewer/\$(printf ../../../D)", "cp \$(echo a) .lanes/scratch/reviewer/x", "mkdir -p \$D/.lanes/scratch/reviewer/x",
+                "cp -R .lanes/scratch/reviewer/lnk .lanes/scratch/reviewer/real/", "cp -R .lanes/scratch/reviewer/d .lanes/scratch/reviewer/d4",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        mkpath("$r/.claude/hooks"); write("$r/.claude/hooks/x.sh", "x\n")
+        for c in ("cp -R .claude/hooks .lanes/scratch/reviewer/h", "cp -R .claude/hooks/ .lanes/scratch/reviewer/h5/", "cp a .lanes/scratch/reviewer/d/q",
+                "cp -R .claude/hooks a .lanes/scratch/reviewer/h6")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        # round-4 review round 2 (N1, N2): a glob in an operand is expanded by the shell, not by the guard (`dws/*` reached the
+        # link dl; `d/*` was a literal to ro_nolink), so `*`, `?`, `[`, `{` and a leading `~` are refused in every operand; and the
+        # symlink scan of a cp -R source is unbounded in depth, with a tree deeper than 8 levels refused up front (the cost cap)
+        mkpath("$r/dws"); symlink(r, "$r/dws/dl"); mkpath("$r/deep/1/2/3/4/5/6/7/8/9"); symlink(r, "$r/deep/1/2/3/4/5/6/7/8/9/dl")
+        mkpath("$r/deep2/1/2/3/4/5/6/7/8/9"); write("$r/deep2/1/2/3/4/5/6/7/8/9/f", "f\n"); mkpath("$r/ok8/1/2/3/4/5/6/7"); write("$r/ok8/1/2/3/4/5/6/7/f", "f\n")
+        for c in (
+                "cp -R dws/* .lanes/scratch/reviewer/g", "cp a .lanes/scratch/reviewer/d/*", "mkdir -p .lanes/scratch/reviewer/g/*/X",
+                "cp a .lanes/scratch/reviewer/d?", "cp [d]l .lanes/scratch/reviewer/x", "cp a .lanes/scratch/reviewer/{x,y}", "cp ~/a .lanes/scratch/reviewer/x",
+                "mkdir -p ~/.lanes/scratch/reviewer/x", "cp -R d* .lanes/scratch/reviewer/g", "cp -R deep .lanes/scratch/reviewer/deep", "cp -R deep2 .lanes/scratch/reviewer/deep2",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        @test !blocked("bash_guard.sh", bash_as("reviewer", "cp -R ok8 .lanes/scratch/reviewer/ok8"), r)              # 8 levels: allowed
+        # round-4 review round 3 (P1): operands were stored space-joined and re-split, so `cp -R "sp ace"` scanned `sp` and `ace`
+        # (nothing) and planted the link; and write_guard matched the scratch prefix lexically, so a Write through a planted link
+        # under the scratch passed. Operands are never re-split; a scratch or report Write follows no symlink and takes no ./.. component
+        # The splitter flattens a quoted space or an escape to `_` (`"sp ace"` reaches the guard as `sp_ace`), so an operand holding
+        # `_` is trusted only when it exists as written: the source itself, a target's parent (a new last component is fine)
+        mkpath("$r/sp ace/in"); symlink(r, "$r/sp ace/in/dl"); mkpath("$r/no_link/in"); write("$r/no_link/in/f", "f\n"); mkpath("$sc/x_y")
+        for c in (
+                "cp -R \"sp ace\" .lanes/scratch/reviewer/sp", "cp -R 'sp ace' .lanes/scratch/reviewer/sp", "cp -R sp\\ ace .lanes/scratch/reviewer/sp",
+                "cp -R no_link \"sp ace\" .lanes/scratch/reviewer/sp", "cp a \".lanes/scratch/reviewer/d/dl/x y\"", "cp a \".lanes/scratch/reviewer/d/d l/q\"",
+                "mkdir -p \".lanes/scratch/reviewer/d/dl/x y\" .lanes/scratch/reviewer/z", "cp a \"x y/../.lanes/scratch/reviewer/q\"",
+                "mkdir -p \".lanes/scratch/reviewer/new one/z\"", "cp -R \"no link\" .lanes/scratch/reviewer/nl", "cp -R sp_ace .lanes/scratch/reviewer/sp",
+                "cp -R no_link .lanes/scratch/reviewer/nl", "cp -R no_link no_link .lanes/scratch/reviewer/n_l",   # a same-named `no_link` could hide `no link`
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in ("cp a \".lanes/scratch/reviewer/x y\"", "cp no_link/in/f .lanes/scratch/reviewer/nl", "mkdir -p .lanes/scratch/reviewer/x_y/z",
+                "cp \"no link/in/f\" .lanes/scratch/reviewer/n_l", "cp a \".lanes/scratch/reviewer/x_y/new one\"", "mkdir -p .lanes/scratch/reviewer/x_y/b_c")
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R \"sp ace\" .lanes/scratch/reviewer/sp"), r)
+        @test rc == 2 && occursin("quoted space", err) && occursin("sp_ace", err)
+        for p in ("$r/.lanes/scratch/reviewer/d/dl/q", "$r/.lanes/scratch/reviewer/lnkdir/x", "$r/.lanes/scratch/reviewer/lnk", "$r/.lanes/scratch/reviewer/d/./q",
+                "$r/.lanes/scratch/reviewer/d/dl/../q", "$r/.lanes/scratch/reviewer/\$X/q", "$r/.lanes/reports/lnkrep/q")
+            islink("$r/.lanes/reports/lnkrep") || symlink(r, "$r/.lanes/reports/lnkrep")
+            @test blocked("write_guard.sh", write_as("reviewer", p), r) || (println("write not blocked: $p"); false)
+        end
+        rc, _, err = hook("write_guard.sh", write_as("reviewer", "$r/.lanes/scratch/reviewer/d/dl/q"), r)
+        @test rc == 2 && occursin("symlink", err) && occursin("$sc/d/dl", err)
+        for p in ("$r/.lanes/scratch/reviewer/plain.md", "$r/.lanes/scratch/reviewer/d/q", "$r/.lanes/scratch/reviewer/real/x y", "$r/.lanes/reports/reviewer-9.md")
+            @test !blocked("write_guard.sh", write_as("reviewer", p), r) || (println("write blocked: $p"); false)
+        end
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_bash_guard_agents_lib.sh"))                       # write_guard needs the lib too
+        @test blocked("write_guard.sh", write_as("", "$r/src/x.jl"), r; hooks = h)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/*"), r)
+        @test rc == 2 && occursin("glob", err) && occursin(".lanes/scratch/reviewer/d/*", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R deep2 .lanes/scratch/reviewer/deep2"), r)
+        @test rc == 2 && occursin("deeper than 8 levels", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R srcdir .lanes/scratch/reviewer/d"), r)
+        @test rc == 2 && occursin("symlink", err) && occursin("srcdir/dl", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/dl/../PWNED"), r)
+        @test rc == 2 && occursin("..", err) && occursin("component", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -s $r/risk.toml .lanes/scratch/reviewer/r"), r)
+        @test rc == 2 && occursin("cp -s", err) && occursin("-R -r -p", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp p .lanes/scratch/reviewer/lnkdir/x"), r)
+        @test rc == 2 && occursin("symlink", err) && occursin("$sc/lnkdir", err)
+        r2 = realpath(mktempdir()); real = realpath(mktempdir()); mkpath("$r2/.lanes"); symlink(real, "$r2/.lanes/scratch")   # the scratch's parent is a link
+        @test blocked("bash_guard.sh", bash_as("reviewer", "mkdir -p .lanes/scratch/reviewer/x"), r2)
+        rm("$r2/.lanes/scratch"); mkpath("$r2/.lanes/scratch")
+        @test !blocked("bash_guard.sh", bash_as("reviewer", "mkdir -p .lanes/scratch/reviewer/x"), r2)
+        # A5: the agents' command list is their own (RO_AGENT_CMDS, _bash_guard_agents_lib.sh), pinned here so a change is deliberate;
+        # it no longer shares RO_CMDS with the reference-root policy, so a tool added for the roots is not granted to an agent
+        lib = read(joinpath(TEST_HOOKS, "_bash_guard_agents_lib.sh"), String)
+        @test occursin("\nRO_AGENT_CMDS=' cat head tail less grep rg find ls wc stat file cd pushd popd pwd echo printf true false test date diff cmp sort cut tr uniq basename dirname realpath which jq '\n", lib)
+        @test !occursin("RO_CMDS", read(joinpath(TEST_HOOKS, "_bash_guard_agents.sh"), String))
+        h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); roots = joinpath(h, "_read_only_roots.sh")
+        write(roots, replace(read(roots, String), "RO_CMDS=' cat " => "RO_CMDS=' xargs cat "; count = 1))
+        @test blocked("bash_guard.sh", bash_as("reviewer", "xargs ls"), r; hooks = h) && !blocked("bash_guard.sh", bash_as("reviewer", "cat p"), r; hooks = h)
+    end
+
     @testset "fails closed: a missing library, a limits.env without the list" begin
         h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_bash_guard_agents.sh"))
         for (g, p) in (("bash_guard.sh", bash("ls")), ("write_guard.sh", write_payload("$r/src/x.jl")))
@@ -274,7 +393,7 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         @test_throws ErrorException runtests_args(["--hooks-dir"])
         @test_throws ErrorException runtests_args(["--root", "x"])
         @test selected_files(["hooks"]) == ["test_hooks.jl", "test_hooks_lifecycle.jl"]
-        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl"]
+        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl", "test_lane_040.jl"]
         @test selected_files(String[]) == TEST_FILES
         @test_throws ErrorException selected_files(["nosuch"])
     end

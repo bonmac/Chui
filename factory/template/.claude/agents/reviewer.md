@@ -24,12 +24,21 @@ the wrong tree, branch or base is a finding, never something to work around.
 
 - Write findings to `.lanes/reports/<name>.md` (a later round: `<name>-<round>.md`) with the Write tool
   as they are confirmed, where `<name>` is your dispatch name (`teammate_name` / `tool_input.name`),
-  else your agent type. The file counts as a report only once its first line is the Verdict line.
-- Line 1: `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (exactly one of the three, exact case,
-  no formatting); line 2: `Head: <sha>`, the HEAD the report covers.
+  else your agent type. The file counts as a report only once its first line is final.
+- Line 1 of a write agent's report: `Status: DONE | PARTIAL | BLOCKED` (exactly one, exact case, no
+  formatting). While writing, line 1 is `Status: PARTIAL` (the file is then not yet a report); replace
+  it last. A read-only agent's line 1 is the Verdict line (its own section below), never a Status.
 - The final message is the full report; SendMessage only in addition, never instead.
 - At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
   log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
+
+## Verdict (read-only agents: reviewer, critic, verifier)
+
+- Line 1: `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (exactly one of the three, exact case,
+  no formatting); line 2: `Head: <sha>`, the HEAD the report covers. `scripts/lane audit --report`
+  matches both lines anchored, requires that the report's name is a reviewer, critic or verifier
+  dispatch, and fails a stale Head or a dirty lane.
+- While writing, line 1 is `Verdict: PENDING` (the file is then not yet a report); replace it last.
 
 ## Operating rules
 
