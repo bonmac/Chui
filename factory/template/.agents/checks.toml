@@ -170,7 +170,9 @@ blind_spots = [
   "a broken helper raising inside an item is BEHAVIOUR; it is only flagged (HELPER)",
   "a rebase or squash orphans sha-keyed evidence; a test edit made while resolving a merge conflict is seen only by the reviewer",
   "mutate proves one mutation fails the item, not how strong it is; mutexp proves only that the assertion runs",
-  "gaps: a public name counts as tested if it appears anywhere in test/; needs Julia >= 1.11"
+  "gaps: a public name counts as tested if it appears anywhere in test/; needs Julia >= 1.11",
+  "merge commits are invisible to H1/H3/H4: lane_commits reads base..head with --no-merges, so code or test edits made in a merge resolution are seen only by the reviewer's git show --cc",
+  "an alias commit (git ci) gets no commit guard, post check or record: tdd.jl audit's E5 fails it when a role identity authored it, but dod, which has no E rules, does not"
 ]
 
 [[checks]]
@@ -187,7 +189,8 @@ blind_spots = [
   "the lead's paraphrase in a brief passes; only review of the saved prompts catches it",
   "E5 needs the local ledger: a fresh clone or CI sees H9 only, and a forged ledger line passes",
   "fails closed on every Read/Grep/Glob/Bash call, the lead's included, when jq or a library is missing (availability cost)",
-  "two instances of one model share priors; other harnesses (.codex) run no hooks"
+  "two instances of one model share priors; other harnesses (.codex) run no hooks",
+  "a git alias for commit (e.g. git ci, from git config) bypasses the commit guard for every caller: the guard sees no commit subcommand"
 ]
 
 [[checks]]
