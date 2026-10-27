@@ -345,9 +345,9 @@ end
         @test length(get(a, "blind_spots", [])) == 9 && length(get(a, "runs_in", [])) == 2
         @test startswith(get(a, "rule", ""), "In a lane that changes src/ext: mode required has a RED")
         post = ["PostToolUse cannot undo a commit: a violating commit exists until audit E5 fails the lane",
-            "a cancelled Bash call fires no post event: its commit is recorded only by the next call's sweep of .lanes/tdd-pending (marked late), so a session that ends right after a cancelled commit leaves it unrecorded and E5 fails the lane"]
+            "a cancelled Bash call fires no post event: its commit gets only a tdd-commit-late record from a later call's sweep of .lanes/tdd-pending after 11 minutes, which does not satisfy E5: re-make or amend the commit through the hooks"]
         spec10 = ["the role comes from agent_type, documented for subagents only; teammates and a missing agent_type leave reads unguarded (TDD lanes are subagent-only)",
-            "the Bash allowlist relies on bash_guard's parser; unparsed forms are denied, not modelled",
+            "the Bash allowlist relies on bash_guard's parser; unparsed forms are denied, not modelled; a git alias for commit (git -c alias.ci=commit ci) is not seen as a commit, and E5 fails it: no tdd-commit record",
             "test code that reads src at run time is detected after the fact by review, never prevented; an uncommitted read leaves no trace",
             "run output names src files and lines, and show() can expose fields",
             "the lead's paraphrase in a brief passes; only review of the saved prompts catches it",
