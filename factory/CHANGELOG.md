@@ -174,8 +174,6 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     <noreply@anthropic.com>"`, run in its own Bash call, never chained with `tdd.jl red` or
     anything else (a cancelled chained call leaves a late commit, critic C4). `--trailer` needs
     git 2.32 or later.
-  - Existing tests that encoded the old behaviour (a role commit with no phase passing the post
-    hook, the `-m "TDD: red"` form) are listed in the C1/C2 lane report for a test-fix lane.
 - **Critic fixes C3, C4, C6, C7 and C8** (`.lanes/reports/critic-030.md`; red tests `test_tdd_c3.jl`,
   `test_tdd_c4.jl`):
   - **C3: skip separators.** `parse_mode` takes ` — `, ` - ` or ` -- ` as the reason separator (its
@@ -198,6 +196,10 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     segment under the branch's own mode commit. `tdd.jl audit` and dod's `tdd` apply H1–H9 per
     segment (`segment_rules`). Before, a refactor-mode sub-lane merged before a required-mode one
     turned the latter's red and green into H8 failures. The E rules still read the whole lane.
+    **Known limit:** so audit's E2 refactor check uses the mode of the whole lane (the oldest mode
+    trailer, `_tdd_evidence.jl` `audit`), not each segment's: a refactor-mode sub-lane merged into a
+    required-mode branch gets no E2 green-at-the-merge-base check, and a refactor-mode branch's
+    check runs once, at the lane's merge base.
   - **C7: named blind spots** (`checks.toml`, `docs/CHECK_COVERAGE.md`): merge commits are
     invisible to H1/H3/H4 (`--no-merges`; only the reviewer's `git show --cc` sees a merge
     resolution); a git alias (`git ci`) bypasses the commit guard; E5 catches alias commits by role
@@ -206,6 +208,26 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     1.10 `api` prints NOT RUN), never a docstring read in `src/`.
   - `scripts/_tdd_history.jl` was at its 400-line budget: the evidence rules E1–E5, the ledger
     and `audit` move to a new managed, T3 `scripts/_tdd_evidence.jl`, which only `tdd.jl` includes.
+- **Review of the critic fixes** (the reviewer's FINAL on 1097ee1..55ff8ca; red tests
+  `test_tdd_c5.jl`, 8d77f1c):
+  - **FIX-1: a sub-lane merged twice is one segment.** `lane_segments` joins a merge's segment to
+    an earlier merge's when that merge's `M^2` lies on the later `M^2`'s first-parent chain (the
+    same sub-lane, merged again). Before, the second merge's refactor formed a segment of its own,
+    with no red and no mode, and failed H2 and H6. A different sub-lane cut from the integration
+    branch after the first merge reaches that `M^2` only through a merge's second parent, so it
+    stays its own segment; nested merges are unchanged. 7 more lines (C6: 33 of its 40).
+  - **Trailer parsing agrees with git's commit parser:** `trailers(msg)` runs
+    `git interpret-trailers --parse --no-divider` (a commit message has no `---` divider).
+  - **The `=` form of `--trailer`** (`--trailer "TDD-Mode=…"`, `"TDD-Waiver=…"`, any case; git
+    writes `Key: value`) is denied to a role caller at Pre, rules `mode-trailer` and
+    `waiver-trailer`, as the `:` form is.
+  - `parse_mode` also takes the en dash ` – ` as the reason separator; the first separator wins.
+  - Docs: the E2 known limit (C6 above); the `checks.toml` `tdd` and `tdd_boundary` rules (and
+    `docs/CHECK_COVERAGE.md`) name every test-side role (test-writer, law-, property-,
+    differential-tester), not only the test-writer. The tdd_boundary row keeps its two git-alias
+    blind spots: `test_hooks_tdd.jl` pins both texts exactly. The only test-fix commit in this
+    round's history is 55ff8ca (it pins the C7 blind spots); the C1/C2 note about a test-fix lane
+    for old tests is removed.
 - **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the five tdd
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
   them by hand (below).
@@ -222,15 +244,15 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   - **ChuiCore.jl** (after v0.0.1), **ChuiTypes.jl, ChuiFrames.jl** (after their open branches
     merge): the registry `test_writer` entry and the `implementer` change (`file_scope`, `tools`,
     `disallowed_tools`, role, scorecard), and the `law_tester`, `property_tester` and
-  `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard); `risk.toml`: `tdd` in the T1–T3 `requires` and the five
-    tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
+    `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard);
+    `risk.toml`: `tdd` in the T1–T3 `requires` and the five tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
     the template.
   - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.
   - **Non-TDD code lanes need a lead skip commit** (critic C3). Once `tdd` is in a tier, every lane
     that changes `src/` or `ext/` without the test-writer and implementer roles (a format fix, a perf
     lane, a release fix, sub-lead work) fails dod (H1/H2) unless it carries a `TDD-Mode: skip`
     commit authored by the lead. The lead runs, once per lane, before its first code commit:
-  - `git -C <lane> commit -q --allow-empty --author "lead <lead@factory.invalid>" -m "chore: tdd skip" --trailer "TDD-Mode: skip — <reason>"`
+    - `git -C <lane> commit -q --allow-empty --author "lead <lead@factory.invalid>" -m "chore: tdd skip" --trailer "TDD-Mode: skip — <reason>"`
   - **TDD dispatches and mode commits are the lead's** (the main session). A sub-lead teammate has an
     `agent_type`, so `tdd_dispatch` denies its TDD dispatches (`dispatch-not-lead`) and the commit
     guard denies it the lead identity: it can neither dispatch the TDD roles nor set a mode. A

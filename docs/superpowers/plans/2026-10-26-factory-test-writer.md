@@ -662,6 +662,14 @@ needs a test and an implementation before 0.3.0.
 - Line cost: 20 lines in `_tdd_history.jl` (the section: `lane_segments` with its docstring,
   `segment_rules`, header and blank lines; 9 lines of code), 1 changed line in `_tdd_evidence.jl`
   `audit`, and 5 changed lines in `dod.jl`: 26 in all, under the 40-line target.
+- Known limit (2026-10-27, review CONSIDER-1): the E rules read the whole lane, so audit's E2
+  refactor check (`_tdd_evidence.jl` `audit`) uses `lane_mode` of the whole lane, not each
+  segment's mode. A refactor-mode sub-lane merged into a required-mode branch gets no E2 check of
+  its own. Per-segment E rules would mean splitting evidence and the ledger by segment: not done.
+- Review FIX-1 (2026-10-27): a sub-lane merged twice is one segment. `lane_segments` joins merge
+  k's segment to the earlier merge j's when `M_j^2` is on `git rev-list --first-parent M_k^2`. A
+  different sub-lane cut after M_j reaches `M_j^2` only through M_j's second parent and stays its
+  own segment. Cost: 7 more lines in `_tdd_history.jl`, so C6 is 33 lines in all, under the 40.
 
 ### Task 10: Review, coordinator sync, and the coordinator registry (D7 reversed)
 
