@@ -29,4 +29,4 @@ ignore_fenced = false
 # markers; empty = every tracked *.md. `required`: claim keys that must have at least one marker
 # (max_open, roles, factory_version, max_lines:<glob>, tests_pass, tests_total, ...).
 files = []
-required = ["max_open"]   # 0.4.0 (D7): the lane-cap lines of CLAUDE.md and the lane-lifecycle skill carry it
+required = ["max_open"]   # 0.4.0 (D7): the CLAUDE.md lane-cap line carries it; the managed lane-lifecycle skill names only the key

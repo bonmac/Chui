@@ -21,17 +21,28 @@
     whose descriptions now start `Package repos only:`. Tests: `test_sync_factory.jl` (the
     coordinator dry run offers none of the three and both new commands; the package run offers
     both), `test_check_docs.jl` (every `scripts/` path the two commands name exists).
-  - Task 7 (D7): `factory/template/.claude/skills/lane-lifecycle/SKILL.md` states the cap once as
-    the registry's number with a `<!-- claim: max_open=4 -->` marker ("default 4" is gone; the
-    template registry says 4, so the skill says 4), and its "Close" rule says a report file counts
-    only once its first line is the Verdict line and that `scripts/lane audit <name> --report <file>`
-    runs after the reviewer's FINAL report. `factory/template/.agents/factory.toml` `[check_claims]`
-    keeps `required = ["max_open"]` over every tracked `*.md` (`files = []`), so the skill is checked.
+  - Task 7 (D7): `factory/template/.claude/skills/lane-lifecycle/SKILL.md` names the cap's key
+    (`[lanes] max_open` in `.agents/agent-registry.toml`) and never a number or a claim marker
+    ("default 4" is gone): the file is synced unchanged into repos whose caps differ, so the number
+    lives in each repo's CLAUDE.md with its `<!-- claim: max_open=N -->` marker, which
+    `factory/template/.agents/factory.toml` `[check_claims] required = ["max_open"]` keeps requiring.
+    Its "Close" rule says a report file counts only once its first line is the Verdict line and that
+    `scripts/lane audit <name> --report <file>` runs after the reviewer's FINAL report.
     `factory/template/CLAUDE.md` (134 lines, rendered into `factory/template/AGENTS.md`) gains
     "Precedence" (the factory's `scripts/lane`, reviewer, critic, cap and intake tiers win over
     `using-git-worktrees`, `subagent-driven-development` and `brainstorming`; plugin skills only
     for brainstorming at T2+ and executing a plan) and "Writing files under the guard"
     (Edit/Write only; `(cd dir && cmd)`; a refused probe is `NOT RUN`; gated words go in a file),
     and lists `/lane-review` and `/ci-triage`. `factory/template/.claude/commands/lanes.md` step 2
-    names `.claude/worktrees/*` as unmanaged. Test: `test_check_claims.jl` (a copy of the skill
-    against a registry of another cap fails `check_claims --strict` naming `SKILL.md`).
+    names `.claude/worktrees/*` as unmanaged. Test: `test_check_claims.jl` (the skill carries no
+    `claim: max_open` marker and no cap number; a package-shaped repo whose registry says 6 and whose
+    CLAUDE.md marker says 4 fails `check_claims --strict` naming `CLAUDE.md`, never the skill).
+  - Review round 1 (`fix(commands)`): B1, the skill's hardcoded `max_open=4` marker broke
+    `check_claims` in every synced repo with another cap (above). M1: the `description:` of
+    `lane-review.md` and `ci-triage.md` held `: ` unquoted (invalid YAML): both double-quoted, and
+    `test_check_docs.jl` checks every `.claude/commands/*.md` frontmatter (a value holding `: ` is
+    quoted; `ruby -ryaml` parses the block when ruby is present). `/lane-review`: step 3 compares the
+    evidence files' `tests:` headers, not a hand-parsed Test Summary; step 5 says
+    `subagent_type: reviewer`; step 8 copies the base evidence file into the lane's
+    `.lanes/evidence/` before removing the base checkout, and step 9 quotes both. `/ci-triage` step 5
+    labels in order: a gate → `guard`, else passes locally → `flake`, else → `defect`.

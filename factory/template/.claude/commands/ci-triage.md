@@ -1,5 +1,5 @@
 ---
-description: Triage a failed CI run (0.4.0, D6): group the failed jobs by first failing assertion, reproduce each locally with ci.jl, label flake | guard | defect.
+description: "Triage a failed CI run (0.4.0, D6): group the failed jobs by first failing assertion, reproduce each locally with ci.jl, label flake | guard | defect."
 argument-hint: [run id; default the newest failed run of the current branch]
 allowed-tools: Bash(gh run:*), Bash(git:*), Bash(julia scripts/ci.jl:*), Bash(julia scripts/evidence.jl:*), Read, Grep
 ---
@@ -20,15 +20,16 @@ Run: $ARGUMENTS (empty: the newest failed run from step 1)
    `julia scripts/ci.jl <job> --timeout 900`
    Paste the command, its exit code and its last 20 lines; exit 124 is TIMED OUT, not a pass.
    Keep the result: `julia scripts/evidence.jl ci-<job> --root <checkout> -- julia scripts/ci.jl <job> --timeout 900`.
-5. Label each group:
-   - `flake`: passes locally at the same commit, and the log shows time, network or runner
-     limits (a timeout, a download, a rate limit, a busy benchmark runner). Propose a re-run
-     (`gh run rerun <id> --failed`) to the user; do not re-run it yourself.
-   - `guard`: a gate said no (`ci.jl guards`, ratchets, check_docs, check_claims, dod, a format
-     diff, a `FAILED (missing)` skip): the change is fixed in the gate's own terms, never by
-     loosening the gate.
-   - `defect`: fails locally the same way. Say whether the base commit also fails
-     (`julia scripts/ci.jl <job> --timeout 900` at the merge base): pre-existing, or the change's.
+5. Label each group with the first rule that applies, in this order (one label per group):
+   1. `guard`: the failing step is a gate (`ci.jl guards`, a ratchet, check_docs, check_claims,
+      dod, a format diff, a `FAILED (missing)` skip), whatever it printed locally: the change is
+      fixed in the gate's own terms, never by loosening the gate.
+   2. `flake`: not a gate, and the job passes locally at the same commit (step 4, exit 0). Say
+      what the log shows (a timeout, a download, a rate limit, a busy benchmark runner) and
+      propose a re-run (`gh run rerun <id> --failed`) to the user; do not re-run it yourself.
+   3. `defect`: everything else (it fails locally, or could not be run: exit 124 is a defect to
+      triage, not a flake). Say whether the base commit also fails
+      (`julia scripts/ci.jl <job> --timeout 900` at the merge base): pre-existing, or the change's.
 6. Output: a table `job | first failing line | local result (exit) | label | next step`, then
    one next lane per defect: name, file scope, deliverable, and the reproducer command (RED
    now; the lane closes it GREEN). State what did not reproduce and which jobs you did not run.

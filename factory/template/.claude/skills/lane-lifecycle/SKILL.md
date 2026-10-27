@@ -20,7 +20,9 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   blocked there. Do not work in scratch copies. The parent lane still owns the merge.
 - The brief says: change files with Edit/Write only, never `sed -i`, redirects or heredocs.
 - Each lane records its change in `changelog.d/<name>.md`, never in `CHANGELOG.md`.
-- The cap is `[lanes] max_open`, 4 here <!-- claim: max_open=4 -->. `dispatch_limit.sh` refuses the next spawn. A lane
+- The cap is `[lanes] max_open` in `.agents/agent-registry.toml`; the repo's CLAUDE.md states the
+  number with a claim marker (this file is synced unchanged into repos whose caps differ, so it
+  never states one). `dispatch_limit.sh` refuses the next spawn. A lane
   is an Agent dispatch, open until its call returns (foreground), its background agent stops, or
   you `TaskStop <name>` it (a teammate). Give every teammate a `name`. A lane whose agent is gone
   (TaskStop says no task found; a dispatch that never ran) is released with

@@ -148,6 +148,34 @@
         end
     end
 
+    @testset "every command's frontmatter is YAML (0.4.0, review M1)" begin
+        # an unquoted plain scalar holding ": " (`description: Triage (0.4.0, D6): group ...`) is a
+        # nested mapping to a YAML parser, not a string: such a value is double-quoted. Checked
+        # line by line here; `ruby -ryaml` confirms the whole block when it is on the machine.
+        dir = joinpath(ROOT, ".claude/commands")
+        cmds = filter(f -> endswith(f, ".md"), readdir(dir))
+        @test length(cmds) >= 8
+        ruby = Sys.which("ruby")
+        for f in cmds
+            text = read(joinpath(dir, f), String)
+            m = match(r"\A---\n(.*?)\n---\n"s, text)
+            @test m !== nothing || (println("$f: no frontmatter"); false)
+            m === nothing && continue
+            for line in split(m.captures[1], '\n')
+                km = match(r"^([A-Za-z-]+):\s*(.*)$", line)
+                @test km !== nothing || (println("$f: not a `key: value` line: $line"); false)
+                km === nothing && continue
+                key, v = km.captures
+                quoted = startswith(v, '"') || startswith(v, '\'')
+                @test quoted || !occursin(": ", v) || (println("$f: unquoted `$key:` holds \": \""); false)
+            end
+            if ruby !== nothing
+                ok = success(pipeline(`$ruby -ryaml -e 'YAML.load(File.read(ARGV[0]).split(/^---$/)[1])' $(joinpath(dir, f))`; stderr = devnull))
+                @test ok || (println("$f: frontmatter is not YAML (ruby -ryaml)"); false)
+            end
+        end
+    end
+
     if IN_FACTORY
         # the template itself has no stale references (docs/agent/* are copied in by the lead).
         # Only here: in a vendored repo the repo-wide run is `ci.jl guards`'s own check_docs step,

@@ -75,26 +75,34 @@
         @test "check_claims" in keys(CheckClaims.CONFIG_KEYS)
     end
 
-    @testset "the lane-lifecycle skill carries the cap's marker (0.4.0, D7)" begin
-        # a copy of this checkout's skill, whose line says the registry's cap, against a registry of 6
+    @testset "the lane-lifecycle skill names the cap's key, never a number (0.4.0, D7)" begin
+        # the skill is factory-managed and synced into repos whose caps differ (4 in the template, 6 in
+        # the packages), so it names `[lanes] max_open` and carries no marker and no number; the
+        # repo-owned CLAUDE.md states the number with the marker (review of f040-commands, B1)
         skill = ".claude/skills/lane-lifecycle/SKILL.md"
         text = read(joinpath(ROOT, skill), String)
-        reg_cap = string(get(get(TOML.parsefile(joinpath(ROOT, ".agents/agent-registry.toml")), "lanes", Dict()), "max_open", 4))
-        @test occursin("<!-- claim: max_open=$reg_cap -->", text)                # the skill states the registry's number once
-        @test !occursin("default 4", text)                                       # and no second, unmarked number
+        cap_lines = filter(l -> occursin("max_open", l), split(text, '\n'))
+        @test !isempty(cap_lines)                                                 # the skill names the key
+        @test all(l -> occursin("`[lanes] max_open`", l), cap_lines) || (println(cap_lines); false)
+        @test !occursin("claim: max_open", text)                                  # no marker in a managed file
+        @test all(l -> !occursin(r"\d", l), cap_lines) || (println(cap_lines); false)   # no bare cap number
+        @test !occursin("default 4", text)
+        # the reviewer's reproducer: a package-shaped repo (registry 6) holding the skill and a CLAUDE.md
+        # whose marker says 4 fails `--strict` naming CLAUDE.md, never the skill; with a matching marker it passes
         cfg = "version = 1\n[check_claims]\nrequired = [\"max_open\"]\n"
-        other = reg_cap == "6" ? "7" : "6"
         t = tmp_repo(
             Dict(
                 ".gitignore" => "/.lanes/\n", skill => text, ".agents/factory.toml" => cfg,
-                ".agents/agent-registry.toml" => "version = 1\n[lanes]\nmax_open = $other\n", "CLAUDE.md" => "x\n",
+                ".agents/agent-registry.toml" => "version = 1\n[lanes]\nmax_open = 6\n",
+                "CLAUDE.md" => "- At most 4 lanes open <!-- claim: max_open=4 -->\n",
             )
         )
-        rc, out = capture(() -> CheckClaims.main(["--strict", "--root", t]))
-        @test rc == 1 && occursin(r"\[FAIL\] \.claude/skills/lane-lifecycle/SKILL\.md:\d+: max_open=\d+ but the derived value is \d+", out) ||
-            (print(out); false)
-        write(joinpath(t, ".agents/agent-registry.toml"), "version = 1\n[lanes]\nmax_open = $reg_cap\n")
-        rc, out = capture(() -> CheckClaims.main(["--strict", "--root", t]))
+        strict() = capture(() -> CheckClaims.main(["--strict", "--root", t]))
+        rc, out = strict()
+        @test rc == 1 && occursin("[FAIL] CLAUDE.md:1: max_open=4 but the derived value is 6", out) || (print(out); false)
+        @test !occursin("SKILL.md", out) || (print(out); false)
+        write(joinpath(t, "CLAUDE.md"), "- At most 6 lanes open <!-- claim: max_open=6 -->\n")
+        rc, out = strict()
         @test rc == 0 || (print(out); false)
     end
 end
