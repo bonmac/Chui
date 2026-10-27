@@ -60,18 +60,29 @@ function added_items(root, sha)
     return out
 end
 
-"The flat string fields of each JSONL line of the ledger (no JSON stdlib)."
-function ledger_records(path)
-    isfile(path) || return nothing
-    return [Dict{String, String}(m.captures[1] => replace(m.captures[2], r"\\(.)" => s"\1")
-        for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l)) for l in eachline(path) if !isempty(strip(l))]
+"""
+The ledger file `path` and its pending files, in reading order (critic round 3 M2): the ledger, a crash's leftover
+`ledger.pending.jsonl.<epoch>.<pid>` files (oldest first), then the live `ledger.pending.jsonl` as its tail: the hooks
+append there while the lock is held (_lib.sh's `ledger`, lane.jl's `pending_file`). Only the files that exist.
+"""
+function ledger_files(path)
+    dir, pf = dirname(path), joinpath(dirname(path), "ledger.pending.jsonl")
+    left = isdir(dir) ? joinpath.(dir, sort!(filter(n -> startswith(n, "ledger.pending.jsonl."), readdir(dir)))) : String[]
+    return filter(isfile, [path; left; pf])
 end
-"The outermost ancestor-or-self of `root` that holds `.lanes/ledger.jsonl` (spec §0.5), or nothing."
+"The flat string fields of each JSONL line of the ledger and its pending files (no JSON stdlib); nothing when none exists."
+function ledger_records(path)
+    files = ledger_files(path)
+    isempty(files) && return nothing
+    return [Dict{String, String}(m.captures[1] => replace(m.captures[2], r"\\(.)" => s"\1")
+        for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l)) for f in files for l in eachline(f) if !isempty(strip(l))]
+end
+"The outermost ancestor-or-self of `root` whose `.lanes/` holds the ledger or its pending file (spec §0.5): its `ledger.jsonl` path, or nothing."
 function default_ledger(root)
     found, d = nothing, abspath(root)
     while true
         p = joinpath(d, ".lanes", "ledger.jsonl")
-        isfile(p) && (found = p)
+        (isfile(p) || isfile(joinpath(d, ".lanes", "ledger.pending.jsonl"))) && (found = p)
         dirname(d) == d && return found
         d = dirname(d)
     end
