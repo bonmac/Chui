@@ -3,6 +3,9 @@
 # Stdlib only. Hooks are run as real `sh` processes with JSON on stdin. Needs git and jq.
 using Test
 
+# factory 0.3.0: a caller's FACTORY_ALLOW_* leaked into every child process and flipped 101+ hook deny tests.
+foreach(v -> delete!(ENV, v), ("FACTORY_ALLOW_T3", "FACTORY_ALLOW_PUSH", "FACTORY_ALLOW_OUTWARD"))
+
 const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
 const HOOKS = joinpath(ROOT, ".claude", "hooks")
@@ -55,7 +58,9 @@ end
     t0 = time()
     include("test_gen.jl")
     include("test_hooks.jl")
+    include("test_env_isolation.jl")
     include("test_hooks_lifecycle.jl")
+    include("test_hooks_tdd.jl")   # tdd_boundary hook and commit guard (plan Task 8; includes test_hooks_tdd2.jl)
     include("test_bash_guard.jl")
     include("test_dod.jl")
     include("test_ratchet.jl")
@@ -69,8 +74,14 @@ end
     include("test_sync_factory.jl")
     include("test_runtests_template.jl")
     include("test_tdd.jl")
+    include("test_tdd_rename.jl")   # renamed red item must not deadlock green (0.3.0)
     include("test_tdd_backfill.jl")
     include("test_tdd_classify2.jl")
     include("test_tdd_review.jl")
+    include("test_tdd_c1.jl")   # critic C1: test-side roles (law/property/differential) author test phases
+    include("test_tdd_c2.jl")   # critic C2: one trailer parser (git's), phase-less role commits
+    include("test_tdd_c3.jl")   # critic C3/C6: skip separators, lead-only modes, per-merge segments
+    include("test_tdd_c4.jl")   # critic C4/C7/C8: commit in its own call, E5 lead waiver, blind spots
+    include("test_tdd_c5.jl")   # review of the critic fixes: sub-lane merged twice, trailer forms
     println("factory tests finished in $(round(time() - t0; digits = 1)) s")
 end

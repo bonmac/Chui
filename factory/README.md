@@ -89,17 +89,17 @@ Either way the change lands through a reviewed PR labelled T3.
 | Path | What | Owner |
 |---|---|---|
 | `CLAUDE.md` → `AGENTS.md` | short instructions; AGENTS.md generated | seeded → generated |
-| `.agents/agent-registry.toml`, `.agents/bodies/*.md` | 12 roles: data + prose | seeded / managed |
+| `.agents/agent-registry.toml`, `.agents/bodies/*.md` | 13 roles: data + prose; the 13th, `test-writer` (0.3.0, ADR-0015), writes a test-first lane's red tests and the narrowed `implementer` the code | seeded / managed |
 | `.agents/factory.toml` (+ `.agents/factory.local.toml`) → `.claude/hooks/read-only-roots.txt`, `limits.env` | read-only roots, check_docs settings; the local file and the roots file are gitignored | seeded (per profile) / local → generated |
 | `.claude/agents/*.md`, `.codex/agents/*.toml` | generated agent files | generated |
 | `.agents/checks.toml` → `docs/CHECK_COVERAGE.md` | "prevented by X" + blind spots | managed → generated |
 | `.claude/commands/*.md` | intake, lanes, change-review, contract-check, release-check, test-changed | managed |
-| `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules | managed |
-| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, and the sourced `_lib.sh`, `_lanes.sh` (lane counting, 0.2.8), `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_bash_guard_write.sh`, `_read_only_roots.sh`; guards fail closed if their script, a library, `protected-paths.txt` or a readable payload is missing | managed |
+| `.claude/skills/lane-lifecycle/` | dispatch / idle / close / roster rules; test-first lanes: the two tdd-brief templates, fresh dispatches, merge never rebase | managed |
+| `.claude/hooks/*.sh`, `.claude/settings.json` | bash_guard, write_guard, dispatch_limit, lane_ledger, teammate_idle, precompact, session_start, `tdd_boundary` (0.3.0: the test-writer's read/write/Bash allowlists, the implementer's `test/**` denial, the lead-only role dispatch) with the sourced `_tdd_allow.sh` and `_tdd_commit_guard.sh`, `tdd_commit_post` (the post-commit author/phase/path check, ledger `tdd-commit`), and the sourced `_lib.sh`, `_lanes.sh` (lane counting, 0.2.8), `_bash_guard_lib.sh`, `_bash_guard_cmd.sh`, `_bash_guard_write.sh`, `_read_only_roots.sh`; guards fail closed if their script, a library, `protected-paths.txt` or a readable payload is missing | managed |
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
 | `LICENSE` | MIT (ADR-0011); replace `<YEAR>` and `<COPYRIGHT HOLDER>` when scaffolding | seeded |
-| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, check_claims, contract_usage, ci, bench, lane (new, list, audit, remove), changelog (fold), evidence, sync_factory | managed |
+| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, check_claims, contract_usage, ci, bench, lane (new, list, audit, remove), changelog (fold), evidence, sync_factory, tdd (0.3.0: red, green, audit, api, brief, mutate, gaps; with `_tdd_classify.jl`, `_tdd_history.jl`, `_tdd_evidence.jl`, `_tdd_backfill.jl`) | managed |
 | `changelog.d/.gitkeep` | where lanes add changelog fragments (`changelog.d/<lane>.md`); folded at release | seeded |
 | `test/contracts/USED.md`, `test/contracts/upstreams.toml` | contract IDs relied on; upstream URLs and contract-file copies | seeded (package) |
 | `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |

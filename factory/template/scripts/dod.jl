@@ -10,8 +10,8 @@
 #   tests      src/ or ext/ changed  =>  test/ changed
 #   changelog  CHANGELOG.md changed, or a changelog.d/<name>.md fragment ADDED (0.2.4): lanes in one
 #              repo then never share a file; the release manager folds the fragments into
-#              CHANGELOG.md with `julia scripts/changelog.jl fold`. An added fragment holding a
-#              Markdown heading fails it (0.3.0): the fold refuses it
+#              CHANGELOG.md with `julia scripts/changelog.jl fold`. An added or modified fragment
+#              holding a Markdown heading fails it (0.3.0): the fold refuses it (deleted: not checked)
 #   adr        an NNNN-*.md file in the ADR directory (not the template) changed, or the body cites
 #              ADR-NNNN. The directory is `adr_dir` in .factory-version (from the MANIFEST profile;
 #              `adr` for the coordinator), default docs/adr; --adr-dir overrides it.
@@ -66,8 +66,8 @@ module DoD
     function evaluate(
             risk, changed::Vector{<:AbstractString}, labels, text::AbstractString;
             kept::Vector{<:AbstractString} = changed, added::Vector{<:AbstractString} = kept,
-            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true,
-            headed::Vector{<:AbstractString} = String[]   # added fragments with a heading (fold refuses them)
+            adr_dir::AbstractString = "docs/adr", commits = nothing, stub_ok::Function = _ -> true, segments = nothing,
+            headed::Vector{<:AbstractString} = String[]   # added/modified fragments with a heading (fold refuses them)
         )
         lt = label_tier(labels)
         pts = filter(!isnothing, [path_tier(risk, f) for f in changed])
@@ -109,7 +109,7 @@ module DoD
                 (adr || occursin(r"ADR-\d{4}", text)) ? (:pass, "ADR changed or cited") :
                     (:fail, "a T3 change needs an ADR ($dir or a cited coordinator ADR-NNNN)")
             elseif req == "tdd"
-                tdd_result(commits, src_changed, stub_ok)
+                tdd_result(commits, src_changed, stub_ok, segments)
             elseif req == "ci"
                 (:info, "CI is the caller")
             elseif req == "review"
@@ -123,12 +123,12 @@ module DoD
     end
 
     "Requirement `tdd`: H9 applies to every lane, H2-H8 only when code changed (spec §4.2 H1)."
-    function tdd_result(commits, src_changed, stub_ok)
+    function tdd_result(commits, src_changed, stub_ok, segments = nothing)
         # review B3 / minor 5: code changed and no history to check is a failure, never a pass or info
         commits === nothing &&
             return src_changed ? (:fail, "not checked: no lane history given") : (:pass, "no src/ext change")
         src_changed && isempty(commits) && return (:fail, "src/ or ext/ changed but no lane commits were found")
-        problems = history_rules(commits; stub_ok)
+        problems = segment_rules(something(segments, [commits]); stub_ok)   # critic C6: per merged sub-lane
         isempty(problems) || return (:fail, first(problems))
         src_changed || return (:pass, "no src/ext change")
         return (:pass, "tdd history OK ($(length(commits)) commits, mode $(first(lane_mode(commits))))")
@@ -161,7 +161,8 @@ module DoD
         # an empty fragment would never reach CHANGELOG.md (changelog.jl fold refuses it): not evidence
         frag_text(f) = something(git(root, "show", "$head:$f"), "")
         added = filter(f -> !is_fragment(f) || !isempty(strip(frag_text(f))), names("--diff-filter=A"))
-        headed = filter(f -> is_fragment(f) && has_heading(frag_text(f)), added)   # 0.3.0: fold refuses these
+        # 0.3.0: fold refuses these; added OR modified (kept = not deleted), so an edit cannot sneak one in
+        headed = filter(f -> is_fragment(f) && has_heading(frag_text(f)), kept)
         msgs = something(git(root, "log", "--format=%B", "$mb..$head"), "")
         risk = TOML.parsefile(joinpath(root, "risk.toml"))
         # lane_commits reads base..head (review B3); an empty list (tdd fails on a src change) when none
@@ -169,7 +170,7 @@ module DoD
         tier, results = evaluate(
             risk, changed, labels, body * "\n" * msgs; kept, added,
             adr_dir = haskey(opts, "--adr-dir") ? opts["--adr-dir"] : adr_dir(root),
-            commits, stub_ok = s -> stub_declares_only(root, s), headed
+            commits, stub_ok = s -> stub_declares_only(root, s), headed, segments = lane_segments(root, base, commits, head)
         )
         println("dod.jl: $(length(changed)) files changed since $(first(mb, 10)); tier $tier")
         for (req, st, detail) in results

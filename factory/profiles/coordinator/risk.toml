@@ -71,6 +71,13 @@ globs = [
   "scripts/changelog.jl",
   "scripts/check_claims.jl",
   "scripts/evidence.jl",
+  # the TDD gate (0.3.0): tdd.jl and its helpers decide `tdd` in dod.jl and the evidence audit.
+  # No `tdd` in the coordinator's tiers: it has no src/ (spec §9.2).
+  "scripts/tdd.jl",
+  "scripts/_tdd_classify.jl",
+  "scripts/_tdd_history.jl",
+  "scripts/_tdd_evidence.jl",
+  "scripts/_tdd_backfill.jl",
   # the gate's own tests (0.2.4): a lane must not weaken a test so its gate passes
   "scripts/test/*",
   "risk.toml",
