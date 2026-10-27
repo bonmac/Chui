@@ -48,7 +48,25 @@ Updated: 2026-10-26 · Phase: **L1.** Lanes frames-p4 and types-p5 are running; 
 - The rebase gets its own reviewer, and e1 also runs `test_hooks_tdd*.jl`.
 - HANDOFF stays the lead's.
 - e1's f040-hooks fixes a heredoc-terminator bypass in bash_guard's splitter. That bypass is in the 0.2.8 hooks running now |
-| tw-031 | coordinator | `.worktrees/tw-031` / `feat/tw-031` | `factory/**`, the test-writer plan | started 2026-10-27 (sub-lead tw-build2): test-writer Tasks 8–9 plus required 0.3.0 items: (a) the renamed-red deadlock, (b) the dod heading check on modified fragments, (c) the factory tests unset `FACTORY_ALLOW_T3`/`PUSH` (today 101 hook tests fail when it is set). After it: Task 10 (the lead syncs 0.3.0 into the coordinator; a restart loads the new agents), Task 11, Task 12 |
+| ~~factory 0.3.0~~ | coordinator | **DONE 2026-10-27: factory 0.3.0 is final and synced into the coordinator, main 979c495.**
+- **Merges:**
+  - tw-031 7195240: Tasks 8–9 and critic C1–C8, with reviewer FINAL ×2.
+  - tw-032 1722a44: the tests became coordinator-safe; FULL guard 771/0/0.
+  - sync-030 979c495: Task 10, reviewer APPROVE FINAL.
+- **Lead re-runs:**
+  - 3375/3377 (1.13, T3 set) and 3370/3372 (1.10, T3 unset) at d03d9f2;
+  - coordinator 3042/3045 at 39cb7c4.
+- **Registry:** test-writer and implementer are registered. The lead's hand edits (308b00b) were authored `lead <lead@factory.invalid>`, the only such commit on main. The coordinator has no `tdd` requirement, so it has no effect; it is kept as is, and future non-TDD lead commits use the real author.
+- **Next:** the user restarts the session (new agent types load at start), then a live smoke lane (critic C5), then Task 11 (package syncs; ChuiCore after its tag), then Task 12 (backfill).
+- **Factory follow-ups (next factory change):**
+  - CHECK_COVERAGE: sync_factory writes T3 paths without T3, and teammates without T3 cannot discard an applied sync;
+  - wfcheck coverage of Agent and Edit;
+  - reviewer NIT-A/NIT-B (octopus merges, a branch cut from a sub-lane tip);
+  - lts flake: test_ci.jl:166 and the hook timing checks under load above 25.
+- **Process:** teammates do not inherit `FACTORY_ALLOW_T3`, so T3 hand edits are the lead's.
+
+The original row follows. | — | — |
+| (was) tw-031 | coordinator | `.worktrees/tw-031` / `feat/tw-031` | `factory/**`, the test-writer plan | started 2026-10-27 (sub-lead tw-build2): test-writer Tasks 8–9 plus required 0.3.0 items: (a) the renamed-red deadlock, (b) the dod heading check on modified fragments, (c) the factory tests unset `FACTORY_ALLOW_T3`/`PUSH` (today 101 hook tests fail when it is set). After it: Task 10 (the lead syncs 0.3.0 into the coordinator; a restart loads the new agents), Task 11, Task 12 |
 | ~~sync-028 (coordinator)~~ | coordinator | **MERGED 2026-10-27 as 8d56a1b** (reviewer APPROVE WITH NITS FINAL; the lead re-ran 1339/1339 on both versions with T3 unset). Nits: ADR-0001 line 51 and the revisit trigger are stale since 0.2.8 (dated note owed, lead); the factory-028 fragment text gets fixed at fold time. **Test-writer Task 0: DONE**, probe PASS, recorded in the plan (2a338f3) | — | — |
 | ~~sync-028 (packages)~~ | ChuiTypes.jl, ChuiFrames.jl | **MERGED 2026-10-27: ChuiTypes main 177674d, ChuiFrames main 3cba230** (both reviewers APPROVE FINAL).
 - **ChuiTypes:** `-- all` passed 17283/17283 on 1.13 and 17268/17268 on 1.10, at a tree identical to the merge.
