@@ -72,9 +72,10 @@ guard_commit() {
             *) shift ;;
         esac
     done
-    _au="" _ra="" _am="" _src="" _ru="" _fx="" _md="" _all="" _p="" _mf=""
-    for _w in "$@"; do # a TDD-Mode: trailer line starts a word, or follows a blank/newline (_ in segments) or =
+    _au="" _ra="" _am="" _src="" _ru="" _fx="" _md="" _wv="" _all="" _p="" _mf=""
+    for _w in "$@"; do # a TDD-Mode:/TDD-Waiver: trailer line starts a word, or follows a blank/newline (_ in segments) or =
         case $_w in [Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:* | *[_=][Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:* | -m[Tt][Dd][Dd]-[Mm][Oo][Dd][Ee]:*) _md=1 ;; esac
+        case $_w in [Tt][Dd][Dd]-[Ww][Aa][Ii][Vv][Ee][Rr]:* | *[_=][Tt][Dd][Dd]-[Ww][Aa][Ii][Vv][Ee][Rr]:* | -m[Tt][Dd][Dd]-[Ww][Aa][Ii][Vv][Ee][Rr]:*) _wv=1 ;; esac
         if [ -n "$_p" ]; then case $_p in a) _au=$_w ;; s) _src=$_w ;; f) _mf="$_mf$_w$NL" ;; esac; _p=""; continue; fi
         case $_w in
             --author) _p=a ;;
@@ -101,6 +102,7 @@ guard_commit() {
     done
     if tdd_role "$at"; then
         [ -z "$_md" ] || cdeny mode-trailer "only the lead writes a TDD-Mode: trailer"
+        [ -z "$_wv" ] || cdeny waiver-trailer "only the lead writes a TDD-Waiver: trailer (critic C4: it attests a late E5 record)"
         [ -z "$_all" ] || cdeny commit-paths "a $at stages named paths with git add and commits the index: no -a/-i/-o/-p or pathspecs on git commit"
     fi
     [ -z "$TW" ] || [ -z "$_ru$_fx" ] ||

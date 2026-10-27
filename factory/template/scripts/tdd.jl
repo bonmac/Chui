@@ -21,6 +21,7 @@ module Tdd
     include(joinpath(@__DIR__, "_common.jl"))
     include(joinpath(@__DIR__, "_tdd_classify.jl"))
     include(joinpath(@__DIR__, "_tdd_history.jl"))
+    include(joinpath(@__DIR__, "_tdd_evidence.jl"))   # E1-E5, the ledger, audit (split for the line budget)
     include(joinpath(@__DIR__, "evidence.jl"))   # module Tdd.Evidence
     include(joinpath(@__DIR__, "_tdd_backfill.jl"))
 

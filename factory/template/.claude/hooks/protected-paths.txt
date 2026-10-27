@@ -26,6 +26,7 @@ T3 scripts/evidence.jl
 T3 scripts/tdd.jl
 T3 scripts/_tdd_classify.jl
 T3 scripts/_tdd_history.jl
+T3 scripts/_tdd_evidence.jl
 T3 scripts/_tdd_backfill.jl
 T3 scripts/test/*
 T3 risk.toml

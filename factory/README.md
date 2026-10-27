@@ -99,7 +99,7 @@ Either way the change lands through a reviewed PR labelled T3.
 | `risk.toml` → `protected-paths.txt`, PR template | tiers T0–T3, protected paths | seeded → generated |
 | `ratchets.toml` | coverage up, sizes and bench tolerance down | seeded |
 | `LICENSE` | MIT (ADR-0011); replace `<YEAR>` and `<COPYRIGHT HOLDER>` when scaffolding | seeded |
-| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, check_claims, contract_usage, ci, bench, lane (new, list, audit, remove), changelog (fold), evidence, sync_factory, tdd (0.3.0: red, green, audit, api, brief, mutate, gaps; with `_tdd_classify.jl`, `_tdd_history.jl`, `_tdd_backfill.jl`) | managed |
+| `scripts/*.jl`, `scripts/lane` | gen, dod, ratchet, check_docs, check_claims, contract_usage, ci, bench, lane (new, list, audit, remove), changelog (fold), evidence, sync_factory, tdd (0.3.0: red, green, audit, api, brief, mutate, gaps; with `_tdd_classify.jl`, `_tdd_history.jl`, `_tdd_evidence.jl`, `_tdd_backfill.jl`) | managed |
 | `changelog.d/.gitkeep` | where lanes add changelog fragments (`changelog.d/<lane>.md`); folded at release | seeded |
 | `test/contracts/USED.md`, `test/contracts/upstreams.toml` | contract IDs relied on; upstream URLs and contract-file copies | seeded (package) |
 | `test/contracts/Project.toml`, `test/contracts/runtests.jl` | the contract tests' own environment and runner (`ci.jl contracts`) | seeded (package) |
