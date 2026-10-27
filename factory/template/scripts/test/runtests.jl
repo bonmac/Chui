@@ -95,6 +95,7 @@ const TEST_FILES = [
     "test_tdd_c5.jl",   # review of the critic fixes: sub-lane merged twice, trailer forms
     "test_tdd_testfix_delete.jl",   # 0.3.1 finding 4: a deletion-only test-fix records what it removed
     "test_tdd_ledger.jl",   # 0.3.1 finding 2: tdd-commit records and audit use the owning repo's main ledger
+    "test_docs_031.jl",   # 0.3.1 findings 3, 5, 6: unnamed TDD dispatches, stale claims, blind spots
     "test_profile_coordinator.jl",   # tw-032: the dod and tdd tests pass in a coordinator-profile sync
 ]
 # FACTORY_TEST_ONLY=a.jl,b.jl runs only those of TEST_FILES (test_profile_coordinator.jl uses it).
