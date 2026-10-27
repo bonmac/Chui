@@ -6,9 +6,9 @@
 # allowlist below (ro_agent_check, one segment at a time, after the lead's rules) and Edit/Write may
 # write only .lanes/reports/** and .lanes/scratch/<agent_type>/** (ro_agent_write_check). An empty
 # agent_type (the lead) is unchanged. The check keys on the dispatch's agent type: see checks.toml.
-# Review rounds 1-2 (B1-B4, N1-N3), helpers in _bash_guard_agents_lib.sh: a text tool's second operand or
-# option may write or run (uniq IN OUT, uniq - OUT, sort -ro OUT, sort --out=OUT, file --comp), so sort,
-# uniq, file and less take a fixed short-option set and no long option (ro_opts); the scratch holds the
+# Review rounds 1-3 (B1-B4, N1-N3, R1), helpers in _bash_guard_agents_lib.sh: a text tool's second operand or
+# option may write or run (uniq IN OUT, uniq - OUT, sort -ro OUT, sort --out=OUT, file --comp, rg --hostname-bin=
+# PROG), so rg, sort, uniq, file and less take a fixed option set each (ro_opts); the scratch holds the
 # agent's OWN files, so the tracked cwd, a cd or git -C target and a script are resolved (ro_dir, ro_script:
 # a trusted checkout, never below .lanes/); and julia takes no option that loads a file or a project.
 AGENT=$(field '.agent_type')
@@ -24,7 +24,7 @@ RO_AGENT_GIT=' log show diff status blame ls-files merge-base rev-parse '
 RO_NOCD="" # set while checking the command evidence.jl wraps: a cd there would move the gate run (m2)
 
 ro_deny() {
-    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_CMDS$RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg without --pre; sort, uniq, file and less with a fixed short-option set and no long option, uniq with one operand); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/lane audit; cp/mkdir only into .lanes/scratch/$AGENT/. Write a report with the Write tool under .lanes/reports/."
+    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_CMDS$RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/lane audit; cp/mkdir only into .lanes/scratch/$AGENT/. Write a report with the Write tool under .lanes/reports/."
 }
 
 # ro_agent_check WORD...: one segment (bash_guard.sh: assignments, redirections and wrappers still in place).
@@ -59,11 +59,11 @@ ro_agent_check() {
             [ -n "$_nd" ] || ro_deny "\`$_c ${1:-}\` goes where the guard cannot resolve (an expansion, or cd -)"
             ro_dir "$_nd" "cd into" ;;
         find) for _a in "$@"; do case $_a in -delete | -exec | -execdir | -ok | -okdir | -fprint* | -fls) ro_deny "\`find $_a\` deletes, writes or runs a command" ;; esac; done ;;
-        rg) for _a in "$@"; do case $_a in --pre | --pre=*) ro_deny "\`rg --pre\` runs a command" ;; esac; done ;;
-        sort) ro_opts sort ' -n -r -u -b -f -s -k -t ' ' -k -t ' -1 "$@" ;; # not -o/-T/--output/--compress-program (write, run)
-        uniq) ro_opts uniq ' -c -d -u -i ' '' 1 "$@" ;;                    # a second operand (a lone - too) is written
-        file) ro_opts file ' -b -i -h ' '' -1 "$@" ;;                      # not -C/--compile (writes a magic file)
-        less) ro_opts less '' '' -1 "$@" ;;                                # not -o/-O/--log-file (writes a log)
+        rg) ro_opts rg ' -n -i -w -l -c -e -g -t -F -S -A -B -C -H -h -N -v ' ' -e -g -t -A -B -C ' ' --no-heading --color=never --glob --type --files --line-number --count --fixed-strings --smart-case --ignore-case --word-regexp --files-with-matches --max-count --context --no-messages ' -1 "$@" ;; # not --pre/--hostname-bin (run a program); rg rejects abbreviations
+        sort) ro_opts sort ' -n -r -u -b -f -s -k -t ' ' -k -t ' '' -1 "$@" ;; # not -o/-T/--output/--compress-program (write, run)
+        uniq) ro_opts uniq ' -c -d -u -i ' '' '' 1 "$@" ;;                    # a second operand (a lone - too) is written
+        file) ro_opts file ' -b -i -h ' '' '' -1 "$@" ;;                      # not -C/--compile (writes a magic file)
+        less) for _a in "$@"; do case $_a in +*) ro_deny "\`less $_a\` runs a less command" ;; esac; done; ro_opts less '' '' '' -1 "$@" ;; # not -o/-O/--log-file (writes a log)
         *) case "$RO_CMDS$RO_AGENT_CMDS" in *" $_c "*) ;; *) ro_deny "\`$_c\` is not on the allowlist" ;; esac ;;
     esac
 }

@@ -43,24 +43,28 @@ ro_script() {
     case $RO_REL in scripts/?* | factory/template/scripts/?*) RO_SCRIPT=${RO_REL#*scripts/} ;; esac
     [ -n "$RO_SCRIPT" ] || ro_deny "\`$1\` ($RO_ABS) is not a scripts/<name> of a trusted checkout: only the repo's own scripts/dod.jl, ci.jl, evidence.jl, gen.jl --check, test/runtests.jl, lane.jl audit and scripts/lane audit run"
 }
-# ro_opts TOOL SHORT ARGSHORT MAX ARGS...: ARGS hold only short options whose letters are in SHORT (' -n -k ' style; one
-# cluster per word, read as getopt does: a letter in ARGSHORT takes the rest of its word, or the next word), never a
-# --long option (abbreviations such as --out, --comp, --log-f cannot be enumerated), and at most MAX operands (a lone -
-# is one; -1: any). Round 2: `sort -ro F`, `sort --out=F`, `file --comp` and `uniq - F` wrote a file past literal patterns.
+# ro_opts TOOL SHORT ARGSHORT LONG MAX ARGS...: ARGS hold only short options whose letters are in SHORT (' -n -k ' style;
+# one cluster per word, read as getopt does: a letter in ARGSHORT takes the rest of its word, or the next word), long
+# options only from LONG (' --glob --color=never ': a word matches whole, or by its name before `=`; a separate argument
+# counts as an operand; a tool that abbreviates long options gets none, since --out, --comp, --log-f cannot be enumerated),
+# `--` ending the options, and at most MAX operands (a lone - is one; -1: any). Round 2: `sort -ro F`, `sort --out=F`,
+# `file --comp` and `uniq - F` wrote a file past literal patterns; round 3: `rg --hostname-bin=PROG` ran PROG.
 ro_opts() {
-    _t=$1 _ok=$2 _oa=$3 _max=$4 _n=0 _need=""
-    shift 4
+    _t=$1 _ok=$2 _oa=$3 _ol=$4 _max=$5 _n=0 _need="" _end=""
+    shift 5
     for _a in "$@"; do
         if [ -n "$_need" ]; then _need=""; continue; fi # the argument of the previous option
+        if [ -n "$_end" ]; then _n=$((_n + 1)); continue; fi
         case $_a in
             -) _n=$((_n + 1)) ;;
-            --*) ro_deny "\`$_t $_a\`: a read-only agent's $_t takes no long option (an abbreviation hides --output, --compile, --log-file) and only${_ok:- no option}" ;;
+            --) _end=1 ;;
+            --*) case $_ol in *" $_a "* | *" ${_a%%=*} "*) ;; *) ro_deny "\`$_t $_a\`: a read-only agent's $_t takes only${_ol:- no long option} and${_ok:- no short option}" ;; esac ;;
             -?*)
                 _r=${_a#-}
                 while [ -n "$_r" ]; do
                     _ch=${_r%"${_r#?}"}
                     _r=${_r#?}
-                    case $_ok in *" -$_ch "*) ;; *) ro_deny "\`$_t -$_ch\`: a read-only agent's $_t takes only${_ok:- no option}" ;; esac
+                    case $_ok in *" -$_ch "*) ;; *) ro_deny "\`$_t -$_ch\`: a read-only agent's $_t takes only${_ok:- no short option} and${_ol:- no long option}" ;; esac
                     case $_oa in *" -$_ch "*) [ -n "$_r" ] || _need=1; _r="" ;; esac
                 done ;;
             *) _n=$((_n + 1)) ;;

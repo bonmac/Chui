@@ -207,22 +207,42 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         for c in (
                 "uniq - src/x.jl", "sort -ro src/x.jl g", "sort --out=src/x.jl g", "sort --outp=src/x.jl g", "file --comp -m x",
                 "file --compil x", "sort --compress=x f", "less --log-f=f x", "less --LOG-F=f x", "sort -k2 -o x f", "sort -T src f",
-                "sort -- f", "sort -m f", "uniq -f 1 f", "uniq -c - f", "uniq --count f", "file -C x", "file -m x f", "less -k f x",
-                "less -- f", "sort -nro x f",
+                "sort -m f", "uniq -f 1 f", "uniq -c - f", "uniq --count f", "file -C x", "file -m x f", "less -k f x",
+                "sort -nro x f",
             )
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
         for c in (
                 "sort -n f", "uniq -c f", "file -b f", "sort -nr f", "sort -k2 -t, f", "sort -k 2 f", "sort -t , -k 1,1 -n f", "uniq -",
                 "uniq -c -", "cat f | sort -u", "uniq -ci f", "file -bi f", "file -h f", "less f", "sort -rn -k2 f", "sort -bfs f",
-                "sort -k2,2n -k1 f", "sort -tk f",
+                "sort -k2,2n -k1 f", "sort -tk f", "sort -- f", "less -- f",   # round 3: `--` ends the options (what follows is an operand)
             )
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
+        # round 3 (R1): rg takes a fixed option set too (ripgrep 15.2 `--hostname-bin=PROG` runs PROG; rg rejects abbreviations,
+        # so exact long-option matching is safe); `less +cmd` runs a less command
+        for c in (
+                "rg --hostname-bin=./x --hyperlink-format=default x", "rg --pre cat x", "rg --hostname-bin=x x", "rg --hostname-bin x x",
+                "rg --pre=cat x", "rg --pre-glob '*' x", "rg -o x", "rg --color=always x", "rg --colour=never x", "rg --no-head x",
+                "rg -z x", "rg --sort path x", "rg --type-add 'j:*.jl' x", "rg -nj x", "less +!x f", "less +G f", "less -n +F f",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        for c in (
+                "rg -n x", "rg --no-heading -n x f", "rg -g '*.jl' x", "rg --glob '*.jl' x", "rg --glob='*.jl' x", "rg -t julia x",
+                "rg -nC 3 x", "rg -e x -e y f", "rg --color=never x", "rg -A 2 -B 2 x", "rg --max-count 3 x", "rg -c x", "rg -l x src",
+                "rg -iw x", "rg -F -- --no-verify .", "rg -- -x f", "rg --files", "rg --files-with-matches x", "rg -S x", "rg -Hn x f",
+                "rg -N x", "rg -v x f", "rg --count --no-messages x", "rg --fixed-strings x", "rg --smart-case --word-regexp x",
+                "rg --ignore-case --line-number --context 2 x",
+            )
+            @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
+        end
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "rg --hostname-bin=x x"), r)
+        @test rc == 2 && occursin("rg", err) && occursin("--no-heading", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "sort --out=x f"), r)
         @test rc == 2 && occursin("sort", err) && occursin("-n -r -u -b -f -s -k -t", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "less -o f x"), r)
-        @test rc == 2 && occursin("less", err) && occursin("no option", err)
+        @test rc == 2 && occursin("less", err) && occursin("no short option", err)
         # the denial says why
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cd .lanes/scratch/reviewer && julia scripts/dod.jl"), r)
         @test rc == 2 && occursin(".lanes/", err)
