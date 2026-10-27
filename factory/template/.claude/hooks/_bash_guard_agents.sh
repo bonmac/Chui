@@ -6,12 +6,9 @@
 # allowlist below (ro_agent_check, one segment at a time, after the lead's rules) and Edit/Write may
 # write only .lanes/reports/** and .lanes/scratch/<agent_type>/** (ro_agent_write_check). An empty
 # agent_type (the lead) is unchanged. The check keys on the dispatch's agent type: see checks.toml.
-# Review rounds 1-3 (B1-B4, N1-N3, R1), helpers in _bash_guard_agents_lib.sh: a text tool's second operand or
-# option may write or run (uniq IN OUT, uniq - OUT, sort -ro OUT, sort --out=OUT, file --comp, rg --hostname-bin=
-# PROG), so rg, sort, uniq, file and less take a fixed option set each (ro_opts); the scratch holds the
-# agent's OWN files, so the tracked cwd, a cd or git -C target and a script are resolved (ro_dir, ro_script:
-# a trusted checkout, never below .lanes/); and julia takes no option that loads a file or a project. Round 4 (A1, A5):
-# cp/mkdir take a fixed option set and never a symlink target (ro_agent_scratch), and the command list is the agents' own.
+# Review rounds 1-4, helpers in _bash_guard_agents_lib.sh: text tools, cp and mkdir take a fixed option set each (ro_opts,
+# ro_agent_scratch: uniq IN OUT, sort -o, rg --hostname-bin, cp -s wrote or ran); the scratch holds the agent's OWN files, so a
+# cwd, cd or git -C target and a script resolve to a trusted checkout, never below .lanes/ (ro_dir, ro_script); julia loads nothing.
 AGENT=$(field '.agent_type')
 RO_AGENT=""
 if [ -n "$AGENT" ]; then
@@ -22,15 +19,27 @@ RO_AGENT_GIT=' log show diff status blame ls-files merge-base rev-parse '
 RO_NOCD="" # set while checking the command evidence.jl wraps: a cd there would move the gate run (m2)
 
 ro_deny() {
-    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/tdd.jl audit; scripts/lane audit (without --report); cp (-R -r -p) and mkdir (-p) only into .lanes/scratch/$AGENT/, never through a symlink. Write a report with the Write tool under .lanes/reports/."
+    deny "agent_type '$AGENT' is read-only (ADR-0016 D3): $1. Its Bash allowlist, by subcommand, with no output redirection, no inline assignment, no --root, and every cwd, cd or git -C target and script a literal path in this checkout, its main checkout or a lane worktree of either, never below .lanes/: $RO_AGENT_CMDS(find without -delete/-exec/-ok/-fprint*/-fls; rg, sort, uniq, file and less with a fixed option set each, uniq with one operand, less without +cmd); git (no -c, --config-env, --exec-path, --git-dir, --work-tree or --output) with only${RO_AGENT_GIT}branch --show-current|--list, worktree list; julia [+channel] [--startup-file=no] with the repo's own scripts/dod.jl; scripts/ci.jl {test,guards,quality,docs}; scripts/evidence.jl latest, or <kind> -- <a command on this list>; scripts/test/runtests.jl; scripts/gen.jl --check; scripts/tdd.jl audit; scripts/lane audit <lane> [--base B] [--owns GLOBS] [--reported FILE] (no --report, no --repo); cp (-R -r -p) and mkdir (-p) only into .lanes/scratch/$AGENT/, never through a symlink. Write a report with the Write tool under .lanes/reports/."
 }
 
-# ro_lane_audit NAME ARGS...: `audit` only, never with --report (final review m3: a passing --report appends a
-# `verdict` to the ledger, a write and a self-certified verdict; the lead runs it).
+# ro_lane_audit NAME ARGS...: `audit <lane>` [--base B] [--owns GLOBS] [--reported FILE: a literal path in a trusted checkout, only
+# read]. Never --report (final review m3: it appends a self-certified `verdict`), --repo (critic round 3 B1: lane.jl runs git -C
+# there, and a scratch gitdir's core.fsmonitor ran) or any other option; no value that starts with -.
 ro_lane_audit() {
-    _n=$1; shift
-    [ "${1:-}" = audit ] || ro_deny "\`$_n ${1:-}\` (only audit)"
-    for _a in "$@"; do case $_a in --report | --report=*) ro_deny "\`$_n audit $_a\` records a verdict in the ledger (a write); the lead runs it" ;; esac; done
+    [ "${2:-}" = audit ] || ro_deny "\`$1 ${2:-}\` (only audit)"; _n=$1 _ln=""; shift 2
+    while [ $# -gt 0 ]; do
+        case $1:${2:-} in
+            --report:* | --report=*) ro_deny "\`$_n audit $1\` records a verdict in the ledger (a write); the lead runs it" ;;
+            --base: | --owns: | --reported: | --base:-* | --owns:-* | --reported:-*) ro_deny "\`$_n audit $1\` needs a value that is not an option" ;;
+            --reported:*'$'* | --reported:*'`'* | '--reported:~'*) ro_deny "\`$_n audit --reported $2\` holds an expansion the guard cannot resolve" ;;
+            --reported:*) ro_base "$(abspath "$2" "$cwd")" || ro_deny "\`$_n audit --reported $2\` is outside this checkout, its main checkout and their lane worktrees"; shift ;;
+            --base:* | --owns:*) shift ;;
+            -*) ro_deny "\`$_n audit $1\`: a read-only agent's lane audit takes only <lane> [--base B] [--owns GLOBS] [--reported FILE] (never --repo: lane.jl runs git there)" ;;
+            *) [ -z "$_ln" ] || ro_deny "\`$_n audit $_ln $1\` (one lane name)"; _ln=$1 ;;
+        esac
+        shift
+    done
+    [ -n "$_ln" ] || ro_deny "\`$_n audit\` without a lane name"
 }
 
 # ro_agent_check WORD...: one segment (bash_guard.sh: assignments, redirections and wrappers still in place).
@@ -132,6 +141,7 @@ ro_agent_write_check() {
         _n=Write
         case "/$fp/" in */./* | */../*) ro_deny "the write target $fp has a . or .. component: a symlink before it is followed by the OS, not by the guard" ;; esac
         case $fp in *'$'* | *'`'*) ro_deny "the write target $fp holds an expansion the guard cannot resolve" ;; esac
+        case "/$1/" in */.[Gg][Ii][Tt]/*) ro_deny "the write target $1 has a .git component (any case: APFS folds it, and git reads it as a gitdir)" ;; esac
         ro_nolink "$1"
         return 0 ;;
     esac

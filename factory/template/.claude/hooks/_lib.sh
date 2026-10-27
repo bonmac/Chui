@@ -69,19 +69,24 @@ ledger() {
         args="$args --arg $1 ${_v:--}"
         shift 2
     done
-    # 0.4.0 (final review M1): never appends to the ledger without .lanes/.dispatch.lock (`lane compact` rewrites
-    # it under that lock). After about 1 s the event goes to PENDING_FILE instead; with the lock, pending is folded
-    # first (fold_pending). A lock it did not take (dispatch_limit's: FACTORY_LEDGER_LOCKED=1, a stale one) stays.
-    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to=$LEDGER_FILE
-    if [ "${FACTORY_LEDGER_LOCKED:-}" != 1 ]; then
-        until mkdir "$_lk" 2>/dev/null; do _i=$((_i + 1)); [ "$_i" -lt 10 ] || break; sleep 0.1; done
-        if [ "$_i" -lt 10 ]; then _mine=1; fold_pending; else _to=$PENDING_FILE; fi
-    fi
+    # 0.4.0 (final review M1): never appends to the ledger itself (`lane compact` rewrites it under .lanes/.dispatch.lock).
+    # Critic round 3 M1: every event goes to PENDING_FILE and a lock holder then folds it (fold_pending), so the ledger's
+    # order is arrival order (a holder's direct append overtook a line that had timed out into pending meanwhile). The lock
+    # is waited for about 1 s; without it the event waits in pending. FACTORY_LEDGER_LOCKED=1: the caller holds the lock
+    # (dispatch_limit); =pending: append only (the watchdog, which may fire during the lock wait: n1). Not its lock: it stays.
+    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to=$PENDING_FILE _fold=""
+    case ${FACTORY_LEDGER_LOCKED:-} in
+        1) _fold=1 ;;
+        pending) ;;
+        *) until mkdir "$_lk" 2>/dev/null; do _i=$((_i + 1)); [ "$_i" -lt 10 ] || break; sleep 0.1; done
+            [ "$_i" -ge 10 ] || _mine=1 _fold=1 ;;
+    esac
     # 0.2.8: after a truncated last line (a crash mid-write) start a new line, or this record is lost
     [ ! -s "$_to" ] || [ -z "$(tail -c 1 "$_to" 2>/dev/null)" ] || printf '\n' >>"$_to" 2>/dev/null
     # shellcheck disable=SC2086 # the line is built first, then appended in one printf (a short open-to-write window)
     _line=$(jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" --arg session "$(session)" $args '$ARGS.named' 2>/dev/null) &&
         printf '%s\n' "$_line" >>"$_to" 2>/dev/null
+    [ -z "$_fold" ] || fold_pending
     [ -z "$_mine" ] || rmdir "$_lk" 2>/dev/null
 }
 # fold_pending: the caller holds the lock (review round 1 B1, B2). Pending lines are newer than the ledger's tail, so

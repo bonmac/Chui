@@ -54,4 +54,17 @@
         @test tb_no(t, mon("git log"; agent = "law-tester"))
         @test tb_ok(t, mon("cat src/P.jl"; agent = nothing))   # the lead: commit guard only
     end
+    @testset "fix7 m1: a slow git in the TDD dispatch check is killed by the watchdog; both hooks deny in time" begin
+        stub = realpath(mktempdir()); write(joinpath(stub, "git"), "#!/bin/sh\nexec sleep 20\n"); chmod(joinpath(stub, "git"), 0o755)
+        b = "<!-- tdd-brief role=test-writer lane=lane1 checkout=$L head=$(tb_head(L)) -->\n## Task\nm1\n"
+        p = tb_pay("Agent", Dict{String, Any}("subagent_type" => "test-writer", "prompt" => b, "description" => "d"))
+        @test tb_ok(t, p)                                     # control: the real git allows this dispatch
+        for h in ("dispatch_limit.sh", "tdd_boundary.sh")
+            cmd = Cmd(addenv(`sh $(joinpath(TB_HOOKS, h))`, tb_env(t)..., "PATH" => stub * ":" * ENV["PATH"], "FACTORY_WATCHDOG_SECS" => "2"); dir = S)
+            err = IOBuffer(); t0 = time()
+            rc = run(pipeline(ignorestatus(cmd); stdin = IOBuffer(p), stdout = devnull, stderr = err)).exitcode
+            el = time() - t0
+            @test rc == 2 && el < 3.0 || (println("m1 $h: rc $rc after $(round(el; digits = 1)) s: ", String(take!(err))); false)
+        end
+    end
 end

@@ -190,6 +190,10 @@ end
         @test occursin("Status: DONE | PARTIAL | BLOCKED", rep) && occursin("Status: PARTIAL", rep) && occursin("replace", rep) &&
             !occursin("Verdict: MAY MERGE", rep) && !occursin("Head: <sha>", rep) &&
             occursin("80 lines", rep) && occursin("last 20 lines", rep) && occursin(".lanes/reports/<name>.md", rep)
+        # fix7 (integration review m2, m3): the path is absolute, under the session root the brief names; a test-side role
+        # writes it once, at the end (the Write tool needs a prior Read to overwrite, and it may not Read reports): no PARTIAL draft
+        @test occursin("`<session root>/.lanes/reports/<name>.md`", rep) && occursin("absolute", rep) && occursin("the brief names", rep) &&
+            occursin(r"test-side role[^.]*ONCE, at the end"s, rep) && occursin("prior Read", rep) || (println("m2/m3: ", rep); false)
         for a in reg["agents"]
             md = read(joinpath(ROOT, ".claude/agents/$(a["name"]).md"), String)
             @test occursin(rstrip(pre), md) && occursin(rstrip(rep), md)                 # verbatim

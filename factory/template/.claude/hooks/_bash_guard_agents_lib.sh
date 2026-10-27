@@ -109,6 +109,7 @@ ro_agent_scratch() {
     for _a in "$@"; do # pass 2: each operand AS TYPED (review P1: a space-joined list re-split `sp ace` and the scan missed its link)
         if [ -z "$_end" ]; then case $_a in --) _end=1; continue ;; -) ;; -*) continue ;; esac; fi
         _i=$((_i + 1))
+        case "/${_a%/}" in */.[Gg][Ii][Tt]) [ "$_n" = mkdir ] || [ "$_i" -eq "$_nop" ] || ro_deny "\`$_n $_a\`: a .git (any case) is never copied into the scratch, where git would read it as a gitdir" ;; esac
         if [ "$_n" = mkdir ] || [ "$_i" -eq "$_nop" ]; then ro_scratch_target "$_a"; elif [ -n "$_rec" ]; then ro_scratch_source "$_a"; fi
     done
 }
@@ -117,6 +118,7 @@ ro_agent_scratch() {
 ro_scratch_target() {
     case "/$1/" in */./* | */../*) ro_deny "\`$_n\` target $1 has a . or .. component: a symlink before it is followed by the OS, not by the guard; name the scratch path directly" ;; esac
     _x=$(abspath "$1" "$cwd")
+    case "/$_x/" in */.[Gg][Ii][Tt]/*) ro_deny "\`$_n\` target $_x has a .git component (any case: APFS folds it, and git reads it as a gitdir: critic round 3 B1)" ;; esac
     case $_x in "$ROOT/.lanes/scratch/$AGENT" | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT" | "$ROOT_P/.lanes/scratch/$AGENT"/?*) ;;
         *) ro_deny "\`$_n\` target $_x is not below .lanes/scratch/$AGENT/" ;; esac
     ro_nolink "$_x"

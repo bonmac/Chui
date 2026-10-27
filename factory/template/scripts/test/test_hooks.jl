@@ -344,3 +344,4 @@ include("test_hooks_040.jl")   # the 0.4.0 hook testsets: this file and test_hoo
 include("test_hooks_format.jl")   # 0.4.0 D10: the advisory format_check.sh (PostToolUse Edit|Write)
 include("test_hooks_agents.jl")   # 0.4.0 Task 3: read-only agents (bash_as, write_as)
 include("test_hooks_040b.jl")   # 0.4.0 final review: pending ledger appends, report names, --report, format_check, lock owner
+include("test_hooks_040c.jl")   # 0.4.0 critic round 3 (fix7): lane audit --repo, case-insensitive .git, appends through pending

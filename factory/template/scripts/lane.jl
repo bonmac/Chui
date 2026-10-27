@@ -154,12 +154,13 @@ module Lane
         return joinpath(repo, rel)
     end
 
+    const BEFORE_LEDGER_APPEND = Ref{Function}(() -> nothing)   # a test hook (test_lane_040c.jl): runs under the lock
     """
     Append one JSON line to the repo's lane ledger under the hooks' lock (`with_lock`, _lane_stats.jl);
     returns `true` if it was written (`false` when the lock was held for 5 s: review round 1, M2, an
-    append between `compact`'s read and its rename was lost). Never throws. After a truncated last line
-    (a crash mid-write) it starts a new line first, as the hooks' `ledger` does (0.2.8): otherwise this
-    record joins the fragment and is skipped as malformed.
+    append between `compact`'s read and its rename was lost). Never throws. Critic round 3 M1: the line goes to the
+    pending file and is then folded (as the hooks' `ledger` does), so a hook's line that timed out into pending while
+    this held the lock lands first: the ledger's order is arrival order. A torn last line is ended first (0.2.8).
     """
     function ledger_line(repo, ev; kw...)
         esc(x) = "\"" * replace(string(x), "\\" => "\\\\", "\"" => "\\\"") * "\""
@@ -172,8 +173,9 @@ module Lane
         end
         written = with_lock(joinpath(dirname(f), ".dispatch.lock"); ledger = f) do   # pending folded first (review round 1 B1)
             try
-                torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
-                open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
+                BEFORE_LEDGER_APPEND[]()
+                append_lines(pending_file(f), Vector{UInt8}("{" * join(fields, ",") * "}"))
+                fold_pending!(f)
                 true
             catch
                 false

@@ -67,7 +67,7 @@ t3_check() {
         set -f
         ;;
     esac
-    case "/${1#"$_rt"}/" in */.git/*) deny "writes below a .git directory (or creating one) are blocked: $1. Use git itself, or ask the user." ;; esac
+    case "/${1#"$_rt"}/" in */.[Gg][Ii][Tt]/*) deny "writes below a .git directory, or to a .git file, are blocked (any case: APFS folds .GIT to .git, critic round 3 B1): $1. Use git itself, or ask the user." ;; esac
     _repo=$_rt
     if [ "$1" != "$_rt" ]; then
         _d=${1%/*}
