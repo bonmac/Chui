@@ -43,6 +43,18 @@
         @test length(calls_of(calls)) == 1
     end
 
+    @testset "runic crashes (rc other than 1): exit 0, said, formatting not claimed (review M1)" begin
+        for rc in (139, 127, 2)
+            env, calls = stub_runic(rc; lines = ["boom"])
+            code, out, err = hook("format_check.sh", write_payload(joinpath(root, "a.jl")), root; env)
+            @test code == 0 || (println("rc $rc: hook exit $code"); false)
+            @test out == ""
+            @test startswith(err, "[factory] runic --check failed (rc $rc); formatting not checked")
+            @test !occursin("not Runic-formatted", err)
+            @test length(calls_of(calls)) == 1
+        end
+    end
+
     @testset "no runic on PATH: exit 0, nothing run" begin
         _, calls = stub_runic(1)                              # the stub exists but its dir is NOT on PATH
         code, out, err = hook("format_check.sh", write_payload(joinpath(root, "a.jl")), root; env = Dict("PATH" => base_path))
