@@ -26,8 +26,9 @@ D2 and D6–D12 are implementation choices that live in the spec.
   One review was lost whole to the output-token limit.
 - **Verdict words differ** (spec §1.4) between the registry, the reports and the lead, so no check
   can read them.
-- **UNVERIFIED:** that PreToolUse input carries `agent_type` for a lead-dispatched subagent on this
-  machine (ADR-0015 "Verification"; plan 0.3.0 Task 0's probe). D3 depends on it.
+- PreToolUse input carries `agent_type` for a lead-dispatched Agent-tool subagent and for an
+  in-process teammate (the 0.3.0 Task-0 probe, `.lanes/archive/tw-task0/probe.jsonl`: four records
+  with `agent_type: reviewer`). **UNVERIFIED** for a tmux-pane teammate. D3 depends on it.
 
 ## Decision
 
@@ -40,14 +41,32 @@ D2 and D6–D12 are implementation choices that live in the spec.
      `checks.toml`.
 2. **D3: read-only is enforced by the hooks** (spec §2 D3).
    - `gen.jl` must render `READ_ONLY_AGENTS` into `limits.env` from `default_mode = "read_only"`.
-   - When the payload's `agent_type` is in that list, bash_guard must allow only the read-only
-     command list plus `julia scripts/dod.jl`, `julia scripts/ci.jl`, `scripts/lane audit`,
-     `tdd.jl mutate` and `julia scripts/evidence.jl`, and write_guard must allow only
-     `.lanes/reports/<agent_type>*.md`.
-   - A read-only agent's `file_scope` must be empty or a subset of `.lanes/reports/**`.
-   - The critic's gate audit must mutate in `tdd.jl mutate`'s scratch worktree, never the tree.
+   - *(Amended 2026-10-27 after review rounds 1–4 and critic round 2; the earlier text listed
+     `julia scripts/ci.jl` unqualified, `tdd.jl mutate`, `evidence.jl` unqualified, reports named
+     `<agent_type>*.md` and a mutate-worktree gate audit.)* When the payload's `agent_type` is in
+     that list, bash_guard must allow only, by subcommand, with fixed option sets for the text tools
+     and `cp`/`mkdir`, with every redirect refused and no `--root`: the read-only command list for
+     agents (`RO_AGENT_CMDS`, its own list), `git` read subcommands with `-C` only into a trusted
+     checkout (the root, the main checkout, their lane worktrees; never `.lanes/`),
+     `julia scripts/dod.jl`, `julia scripts/ci.jl {test,guards,quality,docs}`,
+     `julia scripts/gen.jl --check`, `scripts/lane audit`, `julia scripts/evidence.jl latest` and
+     `evidence.jl <kind> -- <cmd>` when `<cmd>` passes this same allowlist,
+     `julia scripts/test/runtests.jl`, with `julia` taking only `--startup-file=no` and a
+     `+channel`, and every script path resolved against the tracked cwd to a trusted checkout's
+     own `scripts/`. `tdd.jl mutate` is not allowed. write_guard must allow only `.lanes/reports/**`
+     and `.lanes/scratch/<agent_type>/**`.
+   - A read-only agent's `file_scope` must be empty or a subset of those two globs.
+   - The critic's gate audit of a hook must run in a copy of `.claude/hooks` under its scratch with
+     `julia scripts/test/runtests.jl hooks --hooks-dir <copy>`; a gate script is audited by
+     specification, run by the lead in a scratch copy.
+   - Enforcement keys on the dispatch's `agent_type`: an agent of another type briefed as a
+     reviewer is unrestricted (a stated blind spot). The property holds against a mistaken agent
+     and against every adversarial route the four review rounds tried; `checks.toml` lists what
+     remains unmodelled.
 3. **D4: one review protocol in every body** (spec §2 D4).
-   - `gen.jl` must insert `_preflight` and `_report` (in `.agents/bodies/`) before each body.
+   - `gen.jl` must insert `_preflight` and `_report` (in `.agents/bodies/`) between the Mode line
+     and each body, and `_verdict` only into read-only agents *(amended 2026-10-27, critic round 2:
+     a write agent's line 1 is `Status: DONE | PARTIAL | BLOCKED`, never a verdict)*.
    - Pre-flight: print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current`,
      `git worktree list`; on a mismatch with the brief the agent must stop.
    - Findings must be written to `.lanes/reports/<name>.md` as they are confirmed; the final
@@ -57,13 +76,17 @@ D2 and D6–D12 are implementation choices that live in the spec.
 4. **D5: one verdict vocabulary** (spec §2 D5; ★2).
    - The first line of every reviewer and critic report must be
      `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST`, exact case.
-   - `scripts/lane audit --report FILE` must fail on a file without that line and must record
-     `{ev: verdict, lane, verdict}` in the ledger.
-5. **D9: defence in depth in `settings.json`** (spec §2 D9).
-   - `permissions.deny` must list `Bash(git push --force*)`, `Bash(git push -f*)` and Edit/Write of
-     the T3 globs; the hooks remain the primary check.
-   - `Monitor` must join the Bash matcher; a payload without `tool_input.command` must be denied
-     until a probe records the field name. The codex plugin is documented as uncovered.
+   - Line 2 must be `Head: <sha>` naming the lane HEAD the review covered *(amended 2026-10-27)*.
+   - `scripts/lane audit --report FILE` must fail on a file without those two lines, on a Head that
+     is not the lane's current HEAD, on a dirty lane worktree, and on a report whose name is not a
+     ledger dispatch of a read-only agent (reviewer, critic, verifier); it records
+     `{ev: verdict, lane, verdict, head, report}` in the ledger.
+5. **D9: coverage, not a second rule set** (spec §2 D9; *amended 2026-10-27, critic round 1 M4:
+   the earlier text mandated a `permissions.deny` list*).
+   - There must be no static `permissions.deny` list: it would defeat the user's
+     `FACTORY_ALLOW_T3=1` and block `--force-with-lease`, and its glob semantics are UNVERIFIED.
+   - `Monitor` must join the Bash matcher; a payload without `tool_input.command` must be denied.
+     The codex plugin is documented as uncovered.
 
 **The user's answers (★, 2026-10-27).**
 - ★1: D1 ships in 0.4.0, after 0.3.0. Lane f040 starts now and is rebased (reviewed) after tw-031
@@ -79,7 +102,7 @@ D2 and D6–D12 are implementation choices that live in the spec.
 
 | Alternative | Why rejected |
 |---|---|
-| Claude Code `permissions.deny` alone | Applies to the whole session, with no per-agent scope: it cannot let the lead write while denying the reviewer. Kept as a second layer (D9), not the mechanism. |
+| Claude Code `permissions.deny` alone, or as a second layer | Applies to the whole session, with no per-agent scope: it cannot let the lead write while denying the reviewer. As a second layer it is static, so it would defeat `FACTORY_ALLOW_T3=1` and block `--force-with-lease` (critic round 1, M4); dropped. |
 | `Bash(pattern)` allowlists in agent frontmatter | UNVERIFIED that subagent frontmatter honours `Bash(...)` patterns; a silent no-op would leave the hole open while reading as closed. |
 | A separate `write_guard` per agent | Multiplies hook files and the per-call cost; one guard keyed on `agent_type` keeps one tested path and one list rendered by `gen.jl`. |
 | Leaving read-only as a written rule | It is today's state, and spec §1.2 shows it failing: the critic's own brief asks it to edit the tree. |
@@ -98,12 +121,21 @@ D2 and D6–D12 are implementation choices that live in the spec.
 
 - Spec §1 records the measurements (ledger size, wrapper behaviour, `bash_guard.sh:41`).
 - Spec §5 lists the acceptance tests that will prove D1, D3, D4 and D5 (plan Tasks 1, 3, 4, 5).
-- **UNVERIFIED:** PreToolUse `agent_type` for a subagent here; whether frontmatter `Bash(...)`
-  allowlists work for subagents; the `Monitor` payload's command field name.
+- Fourteen review rounds on the sub-lanes (reports in `.lanes/reports/f040-*.md`) each closed
+  their findings with the same reproducer quoted RED then GREEN: two heredoc bypasses, four
+  read-only escapes, three option-spelling bypasses, one `rg` program-execution route, one
+  `cp -s` symlink write.
+- **UNVERIFIED:** PreToolUse `agent_type` for a tmux-pane teammate; whether frontmatter
+  `Bash(...)` allowlists work for subagents; `onFailure: "block"` on a PreToolUse timeout; whether
+  tmux-pane teammates honour the registry `tools:` list.
 
 ## Revisit when
 
 - The ledger records a `guard-timeout` event: the watchdog's 8 s or the ledger query is wrong.
 - A review is lost to the output-token limit after 0.4.0: the 80-line cap or D4's write-as-you-go
   rule is not holding.
-- `lane audit` finds a write by a read-only agent outside `.lanes/reports/`: D3's hook has a gap.
+- A commit, a changed file or a ledger event shows a write by a read-only agent outside
+  `.lanes/reports/` and its scratch (the lane audit cannot see scratch writes; a reviewer's
+  `git status` in the lane, or a changed T3 file, can): D3's hook has a gap.
+- A new release of an allowlisted tool adds an option that writes or runs a program (as ripgrep
+  15.2 added `--hostname-bin`): its fixed option set needs a review.

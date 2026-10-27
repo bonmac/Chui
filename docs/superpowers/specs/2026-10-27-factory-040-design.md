@@ -175,8 +175,10 @@ the plan (D1) is kept self-contained so the user may pull it into 0.3.0.
 - `dispatch_limit` on a 20,000-line ledger answers in under 8 s or denies.
 - A reviewer subagent's `sed -i`, `git commit` and `tee` are denied; its `git diff`, `dod.jl` and a
   Write to `.lanes/reports/reviewer.md` are allowed.
-- Every generated agent file starts with the pre-flight and report fragments.
+- Every generated agent file carries the pre-flight and report fragments between its Mode line and
+  its body; only read-only agents carry the verdict fragment (critic round 2, A2).
 - `lane audit --report` rejects a report without a verdict line.
-- `check_claims --strict` fails when the skill's cap disagrees with the registry.
+- `check_claims --strict` fails when the repo CLAUDE.md's cap marker disagrees with the registry;
+  the managed skill carries no number (D7 as revised).
 - `gen.jl --check`, the factory suite on `julia` and `julia +lts`, `check_docs`, `dod.jl` green;
   reviewer and critic final reports `MAY MERGE`.
