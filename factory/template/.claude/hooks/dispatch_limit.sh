@@ -61,10 +61,10 @@ _out="$lock.out.$$" _tok="$$.$(date +%s)"
 printf '%s\n' "$_tok" >"$lock/owner" 2>/dev/null || { rmdir "$lock" 2>/dev/null; deny "cannot write $lock/owner (fails closed)."; }
 trap '[ "$(cat "$lock/owner" 2>/dev/null)" != "$_tok" ] || { rm -f "$lock/owner"; rmdir "$lock"; } 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT
 trap 'exit 2' INT HUP
-FACTORY_LEDGER_LOCKED=1 # ledger() appends without taking the lock again (0.4.0, _lib.sh)
+FACTORY_LEDGER_LOCKED=1 # ledger() appends to pending and folds it, without taking the lock again (critic round 3 M1, _lib.sh)
 fold_pending            # review round 1 B1: pending lines go into the ledger first (they are newer than its tail)
 open=0 names=""
-set -- # the ledger, then pending as its tail (appended by ledger() after the fold above, while this lock is held)
+set -- # the ledger, then pending as its tail (lines that timed out into it after the fold above, while this lock is held)
 for _lf in "$LEDGER_FILE" "$PENDING_FILE"; do [ ! -f "$_lf" ] || set -- "$@" "$_lf"; done
 if [ $# -gt 0 ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
     # The count is a `watched` step (background + wait), the only form the watchdog's TERM can interrupt.

@@ -71,7 +71,8 @@
         t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = slow))
         @test res[1] == 2 && occursin("dispatch_limit.sh exceeded 1 s", res[3]) || (println("watchdog: ", res); false)
         @test t < 3 || (println("watchdog took $t s"); false)
-        @test any(l -> occursin("\"guard-timeout\"", l) && occursin("dispatch_limit.sh", l), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        # critic round 3 n1: the watchdog's guard-timeout goes to the pending file (folded by the next lock taker)
+        @test any(l -> occursin("\"guard-timeout\"", l) && occursin("dispatch_limit.sh", l), readlines(joinpath(r, ".lanes/ledger.pending.jsonl")))
         @test !isdir(joinpath(r, ".lanes/.dispatch.lock"))
         @test !any(l -> occursin("\"ev\":\"dispatch\"", l), readlines(joinpath(r, ".lanes/ledger.jsonl")))
         delete!(slow, "FACTORY_TEST")                                      # not a test run: the slow path is ignored
@@ -101,7 +102,7 @@
         @test res[1] == 2 && occursin("exceeded 1 s", res[3]) || (println("watchdog in lock wait: ", res); false)
         @test t < 2 || (println("watchdog in lock wait answered in $t s"); false)
         @test isdir(joinpath(r, ".lanes/.dispatch.lock"))
-        @test any(contains("\"guard-timeout\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test any(contains("\"guard-timeout\""), readlines(joinpath(r, ".lanes/ledger.pending.jsonl")))   # n1: pending, not the ledger
         @test sleeper_gone(pidf)
         # (review round 1 m2) a denial during the lock wait (a stale lock that is not an empty directory) exits
         # before the lock is ours: the EXIT trap set with the watchdog kills the sleeper; the lock stays

@@ -108,3 +108,5 @@ end
     r = Lane.run_out(`true`; input = zeros(UInt8, 1 << 24))
     @test r isa Tuple{Bool, String}
 end
+
+include("test_lane_040c.jl")   # critic round 3 (fix7) M1, n1: lane.jl's appends and a guard-timeout go through pending

@@ -25,9 +25,11 @@ watchdog() {
 watchdog_fire() {
     WD_PID=""
     watchdog_stop
-    FACTORY_LEDGER_LOCKED=1 # review round 1 m1: a fire during the lock wait must not wait on that lock again
+    # review round 1 m1: a fire during the lock wait must not wait on that lock again; critic round 3 n1: nor append to the
+    # ledger without it (a compact could drop the line): the event goes to the pending file, folded by the next lock taker
+    FACTORY_LEDGER_LOCKED=pending
     ledger guard-timeout hook "$WD_HOOK" secs "$WD_SECS"
-    deny "$WD_HOOK exceeded $WD_SECS s; fails closed. The lane count took too long: a huge .lanes/ledger.jsonl? Run scripts/lane compact, or raise FACTORY_WATCHDOG_SECS (the host allows at 10 s)."
+    deny "$WD_HOOK exceeded $WD_SECS s; fails closed. A slow step: the lane count (a huge .lanes/ledger.jsonl? Run scripts/lane compact) or a git read of the TDD dispatch check; or raise FACTORY_WATCHDOG_SECS (the host allows at 10 s)."
 }
 watchdog_stop() {
     [ -z "$WD_PID" ] || kill "$WD_PID" 2>/dev/null
