@@ -9,6 +9,9 @@
 # catches anyway, so settings.json runs this one plainly, not through the fail-closed wrapper.
 . "$(dirname -- "$0")/_lib.sh"
 have_jq || exit 0
+# final review m4: a read-only agent (READ_ONLY_AGENTS, limits.env) is never told to run runic: its guard refuses it
+_t=$(field '.agent_type')
+[ -z "$_t" ] || case ${READ_ONLY_AGENTS:-} in *" $_t "*) exit 0 ;; esac
 command -v runic >/dev/null 2>&1 || exit 0
 file=$(field '.tool_input.file_path')
 [ -n "$file" ] || file=$(field '.tool_input.path')

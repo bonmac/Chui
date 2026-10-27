@@ -57,6 +57,7 @@ root_hint() {
 
 if [ -f "$HOOKS_DIR/limits.env" ]; then . "$HOOKS_DIR/limits.env"; fi
 LEDGER_FILE="$ROOT/${LEDGER:-.lanes/ledger.jsonl}"
+PENDING_FILE="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" # appends made while the lock was held (ledger(), below)
 
 # ledger EVENT [KEY VALUE]...: append one JSON line; never fails the hook.
 ledger() {
@@ -69,21 +70,32 @@ ledger() {
         args="$args --arg $1 ${_v:--}"
         shift 2
     done
-    # 0.4.0: `scripts/lane compact` rewrites the file under .lanes/.dispatch.lock (read, filter, rename), so an
-    # append takes that lock too, or it could land between the read and the rename and be lost. Waits about
-    # 1 s, then appends anyway (advisory); a lock it did not take (dispatch_limit's: FACTORY_LEDGER_LOCKED=1,
-    # or a stale one) is left alone.
-    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0
+    # 0.4.0 (final review M1): never appends to the ledger without .lanes/.dispatch.lock (`lane compact` rewrites
+    # it under that lock). After about 1 s the event goes to PENDING_FILE instead; with the lock, pending is folded
+    # first (fold_pending). A lock it did not take (dispatch_limit's: FACTORY_LEDGER_LOCKED=1, a stale one) stays.
+    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to=$LEDGER_FILE
     if [ "${FACTORY_LEDGER_LOCKED:-}" != 1 ]; then
         until mkdir "$_lk" 2>/dev/null; do _i=$((_i + 1)); [ "$_i" -lt 10 ] || break; sleep 0.1; done
-        [ "$_i" -ge 10 ] || _mine=1
+        if [ "$_i" -lt 10 ]; then _mine=1; fold_pending; else _to=$PENDING_FILE; fi
     fi
     # 0.2.8: after a truncated last line (a crash mid-write) start a new line, or this record is lost
-    [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
-    # shellcheck disable=SC2086
-    jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" \
-        --arg session "$(session)" $args '$ARGS.named' >>"$LEDGER_FILE" 2>/dev/null || true
+    [ ! -s "$_to" ] || [ -z "$(tail -c 1 "$_to" 2>/dev/null)" ] || printf '\n' >>"$_to" 2>/dev/null
+    # shellcheck disable=SC2086 # the line is built first, then appended in one printf (a short open-to-write window)
+    _line=$(jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" --arg session "$(session)" $args '$ARGS.named' 2>/dev/null) &&
+        printf '%s\n' "$_line" >>"$_to" 2>/dev/null
     [ -z "$_mine" ] || rmdir "$_lk" 2>/dev/null
+}
+# fold_pending: the caller holds the lock (review round 1 B1, B2). Pending lines are newer than the ledger's tail, so
+# a lock taker appends them first, each file (a crash's leftover `.<epoch>.<pid>` first) renamed, appended, removed:
+# a writer's `>>` after the rename makes a new pending file. dispatch_limit, ledger() and lane.jl's with_lock call it.
+fold_pending() {
+    [ ! -f "$PENDING_FILE" ] || mv "$PENDING_FILE" "$PENDING_FILE.$(date +%s).$$" 2>/dev/null
+    for _pf in "$PENDING_FILE".*; do
+        [ -f "$_pf" ] || continue
+        [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
+        _sz=$(wc -c <"$_pf" | tr -d ' '); head -c "$_sz" "$_pf" >>"$LEDGER_FILE" 2>/dev/null || continue # then re-read: a write that opened it before the mv
+        tail -c +"$((_sz + 1))" "$_pf" >>"$LEDGER_FILE" 2>/dev/null && rm -f "$_pf"
+    done
 }
 # Lane counting (lane_key, OPEN_LANES_JQ, LANE_TTL_SECS) lives in _lanes.sh (0.2.8).
 

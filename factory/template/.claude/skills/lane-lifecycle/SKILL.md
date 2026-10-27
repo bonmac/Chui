@@ -47,7 +47,7 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   reported) must pass; a path outside `--owns` is a finding, not a formality. It diffs against
   the local base when that contains `origin/<base>` (local merges not yet pushed are not the
   lane's); `--base B` audits against another base.
-- A lane's report: SendMessage, or `.lanes/reports/<name>.md` (`<name>-<round>.md` per review
+- A lane's report: SendMessage, or `.lanes/reports/<name>.md` (`<name>--r<round>.md` per review
   round) in its worktree, the repo root or, from a lane session, the main checkout
   (`teammate_idle` reads all three). The file counts as a report only once its first line is
   final: the Verdict line for a reviewer, critic or verifier (`Verdict: MAY MERGE | MERGE WITH

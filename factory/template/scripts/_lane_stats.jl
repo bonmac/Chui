@@ -1,9 +1,7 @@
 # _lane_stats.jl: the ledger side of scripts/lane.jl (factory 0.4.0, D2 and D11): `compact`, `stats`
-# and `handoff`. `include`d inside `module Lane`, never run. Stdlib + jq (as the hooks).
-#
-# The open-lane rule lives ONCE, in .claude/hooks/_lanes.sh (OPEN_LANES_JQ, LANE_TTL_SECS): this file
-# sources that script through `sh` and runs the same jq query dispatch_limit.sh runs, so what
-# `compact` keeps is what the cap counts.
+# and `handoff`. `include`d inside `module Lane`, never run. Stdlib + jq (as the hooks). The open-lane rule lives
+# ONCE, in .claude/hooks/_lanes.sh (OPEN_LANES_JQ, LANE_TTL_SECS): sourced through `sh`, its query runs as
+# dispatch_limit.sh runs it, so what `compact` keeps is what the cap counts.
 
 "`_lanes.sh`: the repo's own copy, else the one beside this script (the factory template). `nothing` if neither exists."
 function lanes_sh(repo)
@@ -13,12 +11,7 @@ function lanes_sh(repo)
     return nothing
 end
 
-"""
-    ledger_file(repo, consequence) -> path or nothing
-
-`ledger_path`, or `nothing` after one line on stderr when the registry does not parse or its
-`[lanes] ledger` is not a string (re-review n4; round 1 m1: `stats` and `handoff` too, no stack trace).
-"""
+"`ledger_path`, or `nothing` after one line on stderr when the registry does not parse or its `[lanes] ledger` is not a string (re-review n4, round 1 m1)."
 function ledger_file(repo, consequence)
     return try
         ledger_path(repo)
@@ -29,56 +22,95 @@ function ledger_file(repo, consequence)
 end
 
 """
-    with_lock(f, lock) -> f() or nothing
-
-Run `f` holding the hooks' ledger lock (`.lanes/.dispatch.lock`, mkdir, as dispatch_limit.sh takes it),
+`with_lock(f, lock)`: run `f` holding the hooks' ledger lock (`.lanes/.dispatch.lock`, mkdir, as dispatch_limit.sh takes it),
 waited for up to 5 s and never broken: `nothing` when it was not acquired. Every reader and writer of
 the ledger in lane.jl goes through it, so `compact`'s read-rewrite-rename never races an append (M2).
+The lock holds an `owner` token and is removed only while that token is still this call's (final review
+n1: dispatch_limit breaks a lock older than a minute and takes its own, which a plain `rm` here removed).
+With `ledger`, the pending files are folded into it first (`fold_pending!`, review round 1 B1).
 """
-function with_lock(f, lock)
-    try
-        mkpath(dirname(lock))
-    catch
-        return nothing
-    end
+function with_lock(f, lock; ledger = nothing)
+    tryor(() -> (mkpath(dirname(lock)); true), false) || return nothing
     for _ in 1:50
-        held = try
-            mkdir(lock); true
-        catch
-            false
-        end
-        held || (sleep(0.1); continue)
+        tryor(() -> (mkdir(lock); true), false) || (sleep(0.1); continue)
+        own, tok = joinpath(lock, "owner"), "$(getpid())-$(time_ns())"
+        tryor(() -> (write(own, tok); true), false) || (rm(lock; force = true, recursive = true); return nothing)   # no token: never removable
         try
+            ledger === nothing || fold_pending!(ledger)
             return f()
         finally
-            rm(lock; force = true)
+            tryor(() -> read(own, String), "") == tok && rm(lock; force = true, recursive = true)
         end
     end
     return nothing
 end
-
-"Run `cmd`; returns (ok, stdout). Stderr is dropped."
-function run_out(cmd)
-    out = IOBuffer()
-    ok = success(pipeline(ignorestatus(cmd); stdout = out, stderr = devnull))
-    return ok, String(take!(out))
+"`f()`, or `d` when it throws."
+tryor(f, d) = try
+    f()
+catch
+    d
 end
 
-"""
-    open_lanes(file, lanes_sh) -> Dict(session => sorted keys) or nothing
+"Run `cmd` with `input` on stdin (devnull when empty); returns (ok, stdout), `(false, \"\")` when the run throws (an EPIPE: review round 1 m1). Stderr is dropped."
+function run_out(cmd; input = UInt8[])
+    out = IOBuffer()
+    ok = tryor(() -> success(pipeline(ignorestatus(cmd); stdin = isempty(input) ? devnull : IOBuffer(input), stdout = out, stderr = devnull)), nothing)
+    return ok === nothing ? (false, "") : (ok, String(take!(out)))
+end
 
-The open dispatches of every session of the ledger `file`, by the hooks' own query and TTL
+"The hooks' pending file beside ledger `f` (_lib.sh's PENDING_FILE: its appends while the lock was held, final review M1)."
+pending_file(f) = joinpath(dirname(f), "ledger.pending.jsonl")
+"""
+`fold_pending!(f)`: under the lock (review round 1 B1, B2), append the pending files to ledger `f`, a crash's leftover
+`ledger.pending.jsonl.<epoch>.<pid>` first: each is renamed (atomic: a writer's `>>` then makes a new pending file),
+appended, read again for a write that had opened it before the rename, and removed. As _lib.sh's `fold_pending`.
+"""
+function fold_pending!(f)
+    pf, dir = pending_file(f), dirname(f)
+    isfile(pf) && mv(pf, "$pf.$(lpad(floor(Int, time()), 10, '0')).$(getpid())"; force = true)
+    isdir(dir) || return nothing
+    for q in joinpath.(dir, sort!(filter(n -> startswith(n, basename(pf) * "."), readdir(dir))))
+        b = read(q); append_lines(f, b)
+        c = read(q); length(c) > length(b) && append_lines(f, c[(length(b) + 1):end])
+        rm(q; force = true)
+    end
+    return nothing
+end
+"Append the bytes `b` to `f` as whole lines (a torn last line of `f` is ended first)."
+function append_lines(f, b)
+    isempty(b) && return nothing
+    torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
+    open(o -> write(o, torn ? "\n" : "", joined(b)), f, "a")
+    return nothing
+end
+readall(p) = isfile(p) ? read(p) : UInt8[]
+"The byte vectors `parts`, concatenated, each non-empty one ended by a newline (one stream of ledger lines)."
+function joined(parts...)
+    io = IOBuffer()
+    for b in parts
+        write(io, b)
+        isempty(b) || last(b) == UInt8('\n') || write(io, '\n')
+    end
+    return take!(io)
+end
+"A ledger's lines as the hooks read them: a path is the ledger AND its pending file (M1); bytes are used as given."
+ledger_bytes(src) = src isa AbstractString ? joined(readall(src), readall(pending_file(src))) : src
+
+"""
+    open_lanes(src, lanes_sh) -> Dict(session => sorted keys) or nothing
+
+The open dispatches of every session of the ledger `src` (`ledger_bytes`), by the hooks' own query and TTL
 (`FACTORY_LANE_TTL_HOURS` applies, as in the hooks). Sessions with no open lane are absent.
 `nothing` when the query cannot be read or jq fails (the caller must not rewrite anything then).
 """
-function open_lanes(file, lanes_sh)
+function open_lanes(src, lanes_sh)
     ok, vars = run_out(`sh -c $(raw". \"$1\" && printf '%s\n%s' \"$LANE_TTL_SECS\" \"$OPEN_LANES_JQ\"") sh $lanes_sh`)
     ok && occursin('\n', vars) || return nothing
     ttl, q = split(vars, '\n'; limit = 2)
     # bind `$s` per dispatch session of the file, then run the hooks' query unchanged
     prog = "[inputs | fromjson? // empty | objects] as \$all | [\$all[] | select(.ev == \"dispatch\") | .session // \"-\" | strings] | unique[] as \$s" *
         " | (\$all | ($q)) | select(.count > 0) | \"\\(\$s)\\t\\(.ids | join(\"\\t\"))\""
-    ok, out = run_out(`jq -Rrn --argjson ttl $ttl $prog $file`)
+    ok, out = run_out(`jq -Rrn --argjson ttl $ttl $prog`; input = ledger_bytes(src))
     ok || return nothing
     open = Dict{String, Vector{String}}()
     for l in eachline(IOBuffer(out))
@@ -89,37 +121,23 @@ function open_lanes(file, lanes_sh)
 end
 
 "Undo jq's @tsv escapes (the hooks sanitise their values, `lane` writes paths and verdicts)."
-function untsv(s)
-    occursin('\\', s) || return String(s)
-    io = IOBuffer()
-    cs = collect(s)
-    i = 1
-    while i <= length(cs)
-        if cs[i] == '\\' && i < length(cs)
-            c = cs[i + 1]
-            print(io, c == 't' ? '\t' : c == 'n' ? '\n' : c == 'r' ? '\r' : c)
-            i += 2
-        else
-            print(io, cs[i])
-            i += 1
-        end
-    end
-    return String(take!(io))
-end
+untsv(s) = replace(String(s), r"\\(.)"s => m -> (c = m[2]; c == 't' ? "\t" : c == 'n' ? "\n" : c == 'r' ? "\r" : string(c)))
 
 const LEDGER_FIELDS = (:line, :ts, :ev, :session, :key, :name, :agent_id, :ref, :desc, :lane, :verdict, :teammate, :subagent_type)
 
 """
-    ledger_rows(file) -> Vector{NamedTuple}
+    ledger_rows(src) -> Vector{NamedTuple}
 
-One row per well-formed ledger line (a torn or malformed line is skipped, as the hooks skip it):
-`LEDGER_FIELDS`, missing values as `"-"` (the hooks' own placeholder), `line` the 1-based line number.
+One row per well-formed line of `src` (`ledger_bytes`: a path reads the pending file too; a torn or malformed
+line is skipped, as the hooks skip it): `LEDGER_FIELDS`, missing values as `"-"` (the hooks' own placeholder),
+`line` the 1-based line number.
 """
-function ledger_rows(file)
-    isfile(file) || return NamedTuple[]
+function ledger_rows(src)
+    bytes = ledger_bytes(src)
+    isempty(bytes) && return NamedTuple[]
     prog = "fromjson? // empty | objects | [input_line_number, " * join((".$f" for f in LEDGER_FIELDS[2:end]), ", ") * "] | map(. // \"-\" | tostring) | @tsv"
-    ok, out = run_out(`jq -Rr $prog $file`)
-    ok || error("jq failed on $file")
+    ok, out = run_out(`jq -Rr $prog`; input = bytes)
+    ok || error("jq failed on the ledger")
     rows = NamedTuple[]
     for l in eachline(IOBuffer(out))
         v = untsv.(split(l, '\t'))
@@ -130,8 +148,8 @@ function ledger_rows(file)
 end
 
 const REPORTERS = ("reviewer", "critic", "verifier")   # the template's read_only agents: the fallback below
-"The dispatch name a report file is of: its base name before `-<round>.md` (or `.md`)."
-report_name(path) = replace(basename(path), r"(-[0-9]+)?\.md$" => "")
+"The dispatch name a report file is of: `<name>.md` or `<name>--r<digits>.md` (final review M2: a plain `-<digits>` is part of the name)."
+report_name(path) = replace(basename(path), r"(--r[0-9]+)?\.md$" => "")
 """
     reporters(repo) -> Vector{String}
 
@@ -145,27 +163,17 @@ function reporters(repo)
     return m === nothing ? collect(REPORTERS) : String.(split(m.captures[1]))
 end
 """
-    report_dispatch(repo, path) -> problem or nothing
-
-Review round 4 (A2): a Verdict report passes `lane audit --report` only when it comes from a read-only
-reviewer: the ledger holds a `dispatch` event (dispatch_limit.sh) whose name is the report's base name and
-whose subagent_type is reviewer, critic or verifier. Every agent's report fragment had asked for a Verdict
-line, so an implementer's own report (`.lanes/reports/f040-commands.md`: MAY MERGE for a HEAD the reviewer
-graded FIX FIRST) had passed as a review. No ledger, or an unreadable one, is no such dispatch.
+`report_dispatch(repo, path)` -> problem or nothing. Review round 4 (A2): a Verdict report passes `lane audit
+--report` only when the ledger (and its pending file) holds a `dispatch` of the report's name whose subagent_type
+is read-only (`reporters`): an implementer's own report had passed as a review. The name (final review M2) is the
+file's base name when a dispatch has exactly that name, else `report_name`. No or an unreadable ledger: no dispatch.
 """
 function report_dispatch(repo, path)
-    n = report_name(path)
-    lp = try
-        ledger_path(repo)
-    catch
-        ""
-    end
-    rows = isempty(lp) ? NamedTuple[] : try
-        ledger_rows(lp)
-    catch
-        NamedTuple[]
-    end
-    rs = reporters(repo)
+    lp = tryor(() -> ledger_path(repo), "")
+    rows = isempty(lp) ? NamedTuple[] : tryor(() -> ledger_rows(lp), NamedTuple[])
+    rs, base = reporters(repo), replace(basename(path), r"\.md$" => "")
+    n = any(r -> r.ev == "dispatch" && r.name == base, rows) ? base : report_name(path)
+    n in ("", "-") && return "report $(basename(path)) names no dispatch: an unnamed dispatch is recorded as `-` and can never pass (name the dispatch; review round 1 M1)"
     any(r -> r.ev == "dispatch" && r.name == n && r.subagent_type in rs, rows) && return nothing
     return "report $n is not from a read-only reviewer dispatch (no `dispatch` named `$n` with subagent_type $(join(rs, " | ")) in $(isempty(lp) ? "the lane ledger" : lp))"
 end
@@ -195,7 +203,10 @@ end
 D2: rewrite the ledger as `compact_keep` says, holding the hooks' lock (`with_lock`: `.lanes/.dispatch.lock`,
 mkdir, waited for 5 s, never broken) for the whole read, rewrite and rename (a temp file, then `mv`). The
 open set per session (the hooks' query) is recomputed on the result and must equal the one before, else
-nothing is replaced (exit 1).
+nothing is replaced (exit 1). Final review M1, round 1 B1/B2: the pending files are folded in first (`with_lock`,
+and again here for a direct call), the bytes appended to the ledger after the read (a writer whose lock was
+broken as stale) go into the new ledger whole, and what the hooks appended to pending while this held the lock
+is folded after the rename (`fold_pending!`: newer than every line). `before_mv` is a test hook.
 """
 function cmd_compact(repo, opts; io = stdout)
     keep = tryparse(Int, get(opts, "--keep", "200"))
@@ -205,34 +216,37 @@ function cmd_compact(repo, opts; io = stdout)
     f = ledger_file(repo, "nothing compacted")
     f === nothing && return 1
     lock = joinpath(dirname(f), ".dispatch.lock")
-    rc = with_lock(() -> compact!(f, sh, keep; io), lock)
+    rc = with_lock(() -> compact!(f, sh, keep; io), lock; ledger = f)
     rc === nothing && return (println(stderr, "lane: the ledger lock $lock is held (waited 5 s); nothing compacted. If no hook is running, remove that directory."); 1)
     return rc
 end
 
-function compact!(f, sh, keep; io)
+function compact!(f, sh, keep; io, before_mv = () -> nothing)
+    fold_pending!(f)
     isfile(f) || return (println(io, "compacted 0 -> 0 lines, 0 open lanes kept, 0 non-JSON dropped"); 0)
-    before = open_lanes(f, sh)
-    before === nothing && return (println(stderr, "lane: the open-lane query (_lanes.sh via jq) failed on $f; nothing compacted"); 1)
-    lines = readlines(f)
-    rows = ledger_rows(f)
-    keys = unique!(reduce(vcat, values(before); init = String[]))
+    buf = read(f)
+    lines = readlines(IOBuffer(buf))
+    rows = ledger_rows(buf)
     kept = compact_keep(rows, keep)
+    body = IOBuffer()
+    for (i, r) in enumerate(rows)
+        kept[i] && println(body, lines[r.line])
+    end
+    before_mv()
+    late = open(h -> (seek(h, length(buf)); read(h)), f)   # M1: appended past the read
+    before = open_lanes(joined(buf, late), sh)
+    before === nothing && return (println(stderr, "lane: the open-lane query (_lanes.sh via jq) failed on $f; nothing compacted"); 1)
+    new = joined(take!(body), late)
+    after = open_lanes(new, sh)
+    after == before || return (println(stderr, "lane: compaction would change the open lanes ($before -> $after); nothing replaced"); 1)
     tmp = f * ".tmp"
-    open(tmp, "w") do o
-        for (i, r) in enumerate(rows)
-            kept[i] && println(o, lines[r.line])
-        end
-    end
-    after = open_lanes(tmp, sh)
-    if after != before
-        rm(tmp; force = true)
-        println(stderr, "lane: compaction would change the open lanes ($before -> $after); nothing replaced")
-        return 1
-    end
+    write(tmp, new)
     mv(tmp, f; force = true)
+    fold_pending!(f)   # the hooks' appends to pending while this held the lock: newer than every line above
+    keys = unique!(reduce(vcat, values(before); init = String[]))
+    folded = count(==(UInt8('\n')), joined(late))
     # n1: a torn or malformed line is neither a row nor kept
-    println(io, "compacted $(length(lines)) -> $(count(kept)) lines, $(length(keys)) open lanes kept, $(length(lines) - length(rows)) non-JSON dropped")
+    println(io, "compacted $(length(lines)) -> $(count(kept)) lines, $(length(keys)) open lanes kept, $(length(lines) - length(rows)) non-JSON dropped", folded > 0 ? ", $folded late lines appended" : "")
     return 0
 end
 

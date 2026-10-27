@@ -33,7 +33,8 @@ until mkdir "$lock" 2>/dev/null; do
     # it aside, then checking that what moved is still the stale one. If another hook broke it and took
     # a fresh lock in between, what moved is that LIVE lock: put it back and deny, never remove it
     # (re-review m1′: removing it let a third hook enter alongside its holder). Not an empty
-    # directory (a file, a non-empty dir): put it back and deny (reviewer B1: it spun).
+    # directory (a file, a non-empty dir): put it back and deny (reviewer B1: it spun). Its `owner`
+    # token (this hook's, lane.jl's with_lock: final review n1) does not count as content.
     if [ -n "$(find "$lock" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
         _aside="$lock.stale.$$"
         if mv "$lock" "$_aside" 2>/dev/null; then
@@ -41,7 +42,7 @@ until mkdir "$lock" 2>/dev/null; do
                 [ -e "$lock" ] || mv "$_aside" "$lock" 2>/dev/null
                 deny "the lane ledger lock changed hands while breaking a stale one; retry the dispatch."
             }
-            rmdir "$_aside" 2>/dev/null && continue
+            { [ ! -f "$_aside/owner" ] || rm -f "$_aside/owner"; rmdir "$_aside"; } 2>/dev/null && continue
             [ -e "$lock" ] || mv "$_aside" "$lock" 2>/dev/null
             deny "cannot break the stale lock $lock: it is not an empty directory. Inspect and remove it by hand."
         fi
@@ -50,18 +51,24 @@ until mkdir "$lock" 2>/dev/null; do
     [ "$_n" -lt 50 ] || deny "the lane ledger lock $lock is held (waited 5 s), so the open-lane cap cannot be checked (fails closed). Retry; if no hook is running, remove that directory."
     sleep 0.1
 done
-_out="$lock.out.$$"
-trap 'rmdir "$lock" 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT # the lock is ours from here
+_out="$lock.out.$$" _tok="$$.$(date +%s)"
+# n1 (final review): the lock holds this hook's `owner` token and is removed at exit only while it is still ours
+# (a lock broken as stale and taken by another hook is that hook's); no token written: release it and deny
+printf '%s\n' "$_tok" >"$lock/owner" 2>/dev/null || { rmdir "$lock" 2>/dev/null; deny "cannot write $lock/owner (fails closed)."; }
+trap '[ "$(cat "$lock/owner" 2>/dev/null)" != "$_tok" ] || { rm -f "$lock/owner"; rmdir "$lock"; } 2>/dev/null; rm -f "$_out"; watchdog_stop' EXIT
 trap 'exit 2' INT HUP
 FACTORY_LEDGER_LOCKED=1 # ledger() appends without taking the lock again (0.4.0, _lib.sh)
+fold_pending            # review round 1 B1: pending lines go into the ledger first (they are newer than its tail)
 open=0 names=""
-if [ -f "$LEDGER_FILE" ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
+set -- # the ledger, then pending as its tail (appended by ledger() after the fold above, while this lock is held)
+for _lf in "$LEDGER_FILE" "$PENDING_FILE"; do [ ! -f "$_lf" ] || set -- "$@" "$_lf"; done
+if [ $# -gt 0 ]; then # a malformed line (a crash mid-write) is skipped, not fatal (0.2.3)
     # The count is a `watched` step (background + wait), the only form the watchdog's TERM can interrupt.
     # FACTORY_SLOW_JQ (seconds) is a test-only sleep inside that step, honoured only under FACTORY_TEST=1.
     _slow=""
     [ "${FACTORY_TEST:-}" != 1 ] || _slow=${FACTORY_SLOW_JQ:-}
     watched "$_out" sh -c '[ -z "$1" ] || sleep "$1"; shift; exec jq "$@"' sh "$_slow" -Rrn --arg s "$(session)" --argjson ttl "$LANE_TTL_SECS" \
-        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$LEDGER_FILE" ||
+        "[inputs | fromjson? // empty | objects] | $OPEN_LANES_JQ | \"\\(.count) \\(.ids | join(\" \"))\"" "$@" ||
         deny "cannot read the lane ledger $LEDGER_FILE, so the open-lane cap cannot be checked (fails closed). Repair or move the file."
     out=$(cat "$_out" 2>/dev/null)
     open=${out%% *} names=${out#* }

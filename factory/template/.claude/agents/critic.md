@@ -22,9 +22,9 @@ the wrong tree, branch or base is a finding, never something to work around.
 
 ## Report (one protocol for every agent)
 
-- Write findings to `.lanes/reports/<name>.md` (a later round: `<name>-<round>.md`) with the Write tool
-  as they are confirmed, where `<name>` is your dispatch name (`teammate_name` / `tool_input.name`),
-  else your agent type. The file counts as a report only once its first line is final.
+- Write findings to `.lanes/reports/<name>.md` (a later round: `<name>--r<round>.md`, a double dash and
+  `r`) with the Write tool as they are confirmed, where `<name>` is exactly your dispatch name
+  (`teammate_name` / `tool_input.name`; the brief names it). The file counts once its first line is final.
 - Line 1 of a write agent's report: `Status: DONE | PARTIAL | BLOCKED` (exactly one, exact case, no
   formatting). While writing, line 1 is `Status: PARTIAL` (the file is then not yet a report); replace
   it last. A read-only agent's line 1 is the Verdict line (its own section below), never a Status.
@@ -36,8 +36,9 @@ the wrong tree, branch or base is a finding, never something to work around.
 
 - Line 1: `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (exactly one of the three, exact case,
   no formatting); line 2: `Head: <sha>`, the HEAD the report covers. `scripts/lane audit --report`
-  matches both lines anchored, requires that the report's name is a reviewer, critic or verifier
-  dispatch, and fails a stale Head or a dirty lane.
+  matches both lines anchored, requires that the report's name (`<name>.md` or `<name>--r<round>.md`)
+  is a reviewer, critic or verifier dispatch, and fails a stale Head or a dirty lane. The lead runs it:
+  your guard refuses `--report` (a passing audit writes the verdict to the ledger).
 - While writing, line 1 is `Verdict: PENDING` (the file is then not yet a report); replace it last.
 
 ## Operating rules

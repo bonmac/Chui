@@ -16,7 +16,7 @@
         @test hook("teammate_idle.sh", idle("gamma"), root)[1] == 0          # report on disk
         @test hook("teammate_idle.sh", "{}", root)[1] == 0
         # 0.4.0 (critic): a report counts only with a verdict first line (D5), by name `<name>.md` or
-        # `<name>-*.md`; anything else is partial and the idle is blocked once, as with no report
+        # `<name>--r<digits>.md` (final review M2); anything else is partial and the idle is blocked once, as with no report
         write(joinpath(root, ".lanes/reports/partial.md"), "Findings so far\n- one\n")
         rc, _, err = hook("teammate_idle.sh", idle("partial"), root)
         @test rc == 2 && occursin("partial", err) && occursin("Verdict:", err) || (println("partial: $rc $err"); false)
@@ -26,16 +26,16 @@
         write(joinpath(root, ".lanes/reports/other-verdict.md"), "Verdict: APPROVE\n")
         @test hook("teammate_idle.sh", idle("other"), root)[1] == 2
         for (n, v) in (("fixes", "MERGE WITH FIXES"), ("fixfirst", "FIX FIRST"))
-            write(joinpath(root, ".lanes/reports/$n-2.md"), "Verdict: $v\n\n- x\n")   # <name>-<round>.md
-            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n-2.md not counted"); false)
+            write(joinpath(root, ".lanes/reports/$n--r2.md"), "Verdict: $v\n\n- x\n")   # <name>--r<round>.md
+            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n--r2.md not counted"); false)
         end
-        # (review round 1 m3) `<name>-<digits>.md` only: `f040-hooks.md` is the f040-hooks lane's, not f040's
+        # (review round 1 m3) `<name>--r<digits>.md` only: `f040-hooks.md` is the f040-hooks lane's, not f040's
         write(joinpath(root, ".lanes/reports/f040-hooks.md"), "Verdict: MAY MERGE\n")
         @test hook("teammate_idle.sh", idle("f040"), root)[1] == 2 || (println("f040 claimed f040-hooks.md"); false)
         write(joinpath(root, ".lanes/reports/rev-1a.md"), "Verdict: MAY MERGE\n")
         @test hook("teammate_idle.sh", idle("rev"), root)[1] == 2 || (println("rev claimed rev-1a.md"); false)
-        write(joinpath(root, ".lanes/reports/reviewer-2.md"), "Verdict: MAY MERGE\n")
-        @test hook("teammate_idle.sh", idle("reviewer"), root)[1] == 0 || (println("reviewer-2.md not counted"); false)
+        write(joinpath(root, ".lanes/reports/reviewer--r2.md"), "Verdict: MAY MERGE\n")
+        @test hook("teammate_idle.sh", idle("reviewer"), root)[1] == 0 || (println("reviewer--r2.md not counted"); false)
         @test occursin("\"idle-reported\"", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         # 0.2.6 (factory-026 item 5): a lane's session (root = its worktree) writes the report there; it counts
         for wt in (".worktrees/delta", ".claude/worktrees/epsilon")

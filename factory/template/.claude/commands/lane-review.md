@@ -53,7 +53,8 @@ round (1, then +1 per re-review), `<base>` its recorded base, `<mb>` the merge b
    enforce, never a general-purpose agent told to review) with a `name` (for example `<lane>-review`) and:
    the brief or plan, `<base>`, `<mb>`, `<sha>`, the file scope (the `--owns` globs), the step 2
    output, the evidence names `base-<mb>` and `lane-<sha>` (step 3) and the report path
-   `.lanes/reports/<reviewer name>-<round>.md` (the dispatch name; `write_guard` allows it).
+   `.lanes/reports/<reviewer name>.md`, or `<reviewer name>--r<round>.md` from round 2 (the exact
+   dispatch name, a double dash and `r`; `write_guard` allows it; an unnamed dispatch can never pass step 7).
    Its report's line 1 is `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the
    three, exact case, nothing else on the line), line 2 `Head: <sha>`, at most 80 lines, each
    command quoted as command, exit code, last 20 lines. For a T2/T3 change also dispatch the
@@ -62,7 +63,7 @@ round (1, then +1 per re-review), `<base>` its recorded base, `<mb>` the merge b
    the Verdict line is partial. Check each finding yourself: file:line and evidence; every
    blocker carries a `Reproducer:` command, closed only when it is quoted RED before the fix and
    GREEN after.
-7. `scripts/lane audit <lane> --report .lanes/reports/<reviewer name>-<round>.md` (the path
+7. `scripts/lane audit <lane> --report .lanes/reports/<the step 5 report file>` (the path
    where the reviewer wrote it: the lane worktree or the repo root). It fails on a missing or
    misspelled Verdict line, on a line 2 that is not `Head: <sha>`, on a `Head:` that is not the
    lane's current HEAD (a stale round: the lane moved after the review, so re-review with
