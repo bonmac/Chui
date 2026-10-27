@@ -169,6 +169,34 @@ end
     end
 end
 
+# Lead's ruling (2ec8012): a deletion-only test-fix may also change a @testsnippet/@testmodule that
+# remaining items use. `requested(...).must_pass` is then non-empty, which does not matter: red records
+# the removed items (no package run: red_removed only runs `git diff --stat`), and E1 accepts it.
+const TF_SNIP_MAIN = "@testsnippet XSnip begin\n    k = 1\nend\n\n" * tf_item("x one") * "\n" *
+    "@testitem \"x two\" setup = [XSnip] begin\n    @test k == 1\nend\n"
+@testset "deletion-only test-fix that also edits a setup snippet (0.3.1 finding 4)" begin
+    d = tmp_repo(Dict(".gitignore" => TF_IGNORE, "src/P.jl" => "module P\nend\n", "test/x_tests.jl" => TF_SNIP_MAIN))
+    sh(`git -C $d checkout -q -b lane`)
+    edited = replace(replace(TF_SNIP_MAIN, "k = 1" => "k = 2 - 1"), tf_item("x one") * "\n" => "")
+    s = tf_commit!(d, :tw, Dict("test/x_tests.jl" => edited), "test: drop x one, tidy XSnip\n\nTDD: test-fix")
+    req = TF_TDD.requested(d, s)
+    @test isempty(req.red)
+    @test [m.name for m in req.must_pass] == ["x two"]    # the snippet edit counts: not vacuous
+    @test TF_TDD.removed_items(d, s) == ["x one"]
+    code, out = tf_call(TF_TDD.red, d)
+    @test code == 0
+    @test !occursin("adds or changes no @testitem", out)
+    ev = tf_ev(d, "red")
+    @test isfile(ev)
+    if isfile(ev)
+        part = tf_tdd_part(ev)
+        @test occursin(Regex("(?m)^red $(tf_sha7(s)): OK\\b"), part)
+        @test TF_TDD.removed_names(TF_TDD.evidence_file(ev)) == ["x one"]
+    end
+    @test tf_clean(d)
+    @test tf_e1(d, s) == String[]
+end
+
 # ---- slow: tdd.jl red and green on a scratch package ----
 
 const TF_PROJECT = """
