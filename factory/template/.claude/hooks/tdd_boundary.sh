@@ -67,6 +67,9 @@ case $at in test-writer | implementer) ;; *) case $cmd in *commit* | *\\* | *\'*
 case $at:$cmd in test-writer:*"\$'"* | test-writer:*'$"'* | implementer:*"\$'"* | implementer:*'$"'*) # R2-B1: segments() cannot model them
     tdeny ansi-c-quote §0.6 "a $at may not use \$'...' or \$\"...\" quoting (bash and zsh expand its escapes into any path); write the plain word" ;;
 esac
+case $at:$cmd in test-writer:*'$'* | test-writer:*'`'* | test-writer:*'<<'*) # R3-B1: segments() drops heredoc bodies, which bash expands
+    tdeny tw-heredoc §0.6 "a test-writer's command may not contain \$, a backquote or a heredoc (<<, <<<); write plain words: put a commit message in plain quotes (-m \"test: ...\"), no \$, backquotes or heredocs" ;;
+esac
 [ "$at" != implementer ] || impl_libs
 segs=$(printf '%s\n' "$cmd" | segments)
 set -f

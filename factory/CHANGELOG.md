@@ -67,7 +67,7 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   **Deviation from the spec:** its single `tdd_boundary` register row is split into
   `tdd_boundary` and `tdd_commit_post`, because every hook must be its own `prevented_by` file
   (the `test_gen` register invariant).
-- **Deviations from the spec and plan in the hooks** (the full list, after review rounds 1 and 2):
+- **Deviations from the spec and plan in the hooks** (the full list, after review rounds 1 to 3):
   - **A fourth hook file.** The plan named `tdd_boundary.sh` and `tdd_commit_post.sh`; the
     150-line hook cap adds the sourced `_tdd_allow.sh` (allowlists, the implementer's Bash write
     check) and `_tdd_commit_guard.sh` (the Pre half of the commit guard). The `tdd_boundary` row's
@@ -104,7 +104,14 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     implementer's Bash write target with `{` or `}` is denied. Review 2: a test-writer's or an
     implementer's Bash command containing `$'` or `$"` is denied whole (rule `ansi-c-quote`),
     before it is split: bash_guard's parser drops the `$` and mangles `\x` escapes, so
-    `cat test/$'\x2e\x2e'/src/a.jl` passed the path check. The lead is unaffected.
+    `cat test/$'\x2e\x2e'/src/a.jl` passed the path check. The lead is unaffected. Review 3: a
+    test-writer's raw Bash command containing `$`, a backquote or `<<` anywhere (heredocs and
+    `<<<` included) is denied whole (rule `tw-heredoc`), before it is split: bash_guard's parser
+    drops heredoc bodies, so `cat <<EOF` / `$(cat src/a.jl)` / `EOF` reached the checks as a
+    plain `cat` while bash expanded the body. The deny tells the test-writer to put a commit
+    message in plain quotes (`-m "test: …"`). The implementer and the lead keep heredocs
+    (`git commit -m "$(cat <<'EOF' … EOF)"`); an implementer's unmodelled write inside a heredoc
+    body is caught only at commit, by the staged-path check (H3/H4).
   - **A `.git` marks a checkout** only as a directory or as a `gitdir:` file whose worktree record
     points back, and (review 2) only when the directory entry is named exactly `.git`: on a
     case-insensitive APFS a written `test/.GIT/HEAD` made `[ -d test/.git ]` true. A role never

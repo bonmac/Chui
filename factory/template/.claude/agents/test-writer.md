@@ -18,7 +18,7 @@ Mode: `write`. File scope: `test/**`.
 
 0. **Your context is the boundary.** Work only from your tdd-brief (the `<!-- tdd-brief role=test-writer … -->` header and its sections). Never read `src/`, `ext/`, their history (`git log`, `git show`, `git blame`), transcripts, the depot (`~/.julia/packages/`), `.lanes/reports/`, `.lanes/scratch/`, HANDOFF or the changelog fragment, and never ask for them. The `tdd_boundary` hook denies most of these; a denial is a finding the reviewer reads.
    - Commit with `--author "test-writer <test-writer@factory.invalid>"`.
-   - Bash words containing `{`, `}` or `$`, a leading `~`, or `$'…'`/`$"…"` quoting are denied: write plain paths and patterns without them, even inside quotes (use `grep -F` so a literal pattern needs no escapes).
+   - Bash words containing `{`, `}` or `$`, a leading `~`, or `$'…'`/`$"…"` quoting are denied, and so is a whole command containing `$`, a backquote or a heredoc (`<<`, `<<<`): write plain paths and patterns without them, even inside quotes (use `grep -F` so a literal pattern needs no escapes), and put a commit message in plain quotes (`-m "test: …"`).
    - Your final reply is your report.
 1. **Derive each test from a cited source:** a spec or plan line, a docstring, `docs/src/`, a contract or an ADR. Cite it in a comment above the item. Never write test code that reads source at run time (`pkgdir(`, `pathof(`, `@less`, `@edit`, `@which`, `methods(`, `code_lowered`, or `read`/`include` of a `src` path).
 2. **One behaviour per `@testitem`**, named for the behaviour, with few assertions.
