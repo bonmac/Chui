@@ -1,5 +1,5 @@
 @testset "dod.jl" begin
-    risk = TOML.parsefile(joinpath(ROOT, "risk.toml"))
+    risk = TOML.parse(seed_fixture("risk.toml"))   # the package seed, whatever repo this is synced into (tw-032)
     # 0.3.0: a valid TDD lane (red by the test writer, green by the implementer), so `tdd` passes and
     # these cases test the other requirements; without `commits`, a src change fails `tdd` (review)
     okl = [
@@ -65,7 +65,7 @@
         @test frag(["src/A.jl", "test/a.jl", "CHANGELOG.md"]) == String[]      # the CHANGELOG.md path still works
         d = tmp_repo(
             Dict(
-                "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n",
+                "risk.toml" => seed_fixture("risk.toml"), "src/A.jl" => "x\n",
                 "changelog.d/old.md" => "- old\n"
             )
         )
@@ -90,7 +90,7 @@
     # 0.3.0 (cl-headings): `changelog.jl fold` refuses a fragment holding a Markdown heading, so dod
     # must not accept one as evidence (ChuiFrames had 14 such fragments, the coordinator 5)
     @testset "a fragment with a heading fails changelog (0.3.0)" begin
-        d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n"))
+        d = tmp_repo(Dict("risk.toml" => seed_fixture("risk.toml"), "docs/x.md" => "x\n"))
         sh(`git -C $d checkout -q -b feat/h`)
         commit!(
             d, Dict("docs/x.md" => "y\n", "changelog.d/lane-h.md" => "### Added\n\n- feat: X\n"),
@@ -119,7 +119,7 @@
     @testset "changelog fails on a MODIFIED fragment that now holds a heading" begin
         d = tmp_repo(
             Dict(
-                "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n",
+                "risk.toml" => seed_fixture("risk.toml"), "docs/x.md" => "x\n",
                 "changelog.d/old.md" => "- old\n"
             )
         )
@@ -140,7 +140,7 @@
     @testset "changelog passes on a modified fragment with list items only" begin
         d = tmp_repo(
             Dict(
-                "risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "docs/x.md" => "x\n",
+                "risk.toml" => seed_fixture("risk.toml"), "docs/x.md" => "x\n",
                 "changelog.d/old.md" => "- old\n"
             )
         )
@@ -157,7 +157,7 @@
     end
 
     @testset "CLI on a real branch" begin
-        d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
+        d = tmp_repo(Dict("risk.toml" => seed_fixture("risk.toml"), "src/A.jl" => "x\n"))
         sh(`git -C $d checkout -q -b feat/x`)
         # 0.3.0: a valid TDD lane, so `tdd` passes: the red is empty (no test/ yet, so `tests` still fails),
         # the green changes A, and the tests come as a backfill (no order rule; the test writer's phase)
@@ -315,19 +315,36 @@
         end
 
         @testset "risk.toml requires tdd and protects the tdd scripts" begin
-            seeded = TOML.parsefile(joinpath(ROOT, "risk.toml"))
+            # tw-032: the package seed (fixtures/seed/, equal to factory/template's seed) requires tdd;
+            # the host repo's own risk.toml need not (a coordinator has no tdd tier, migration list)
+            tdd_scripts = ("scripts/tdd.jl", "scripts/_tdd_classify.jl", "scripts/_tdd_history.jl", "scripts/_tdd_backfill.jl")
+            seeded = TOML.parse(seed_fixture("risk.toml"))
             for t in ("T1", "T2", "T3")
                 @test "tdd" in seeded["tiers"][t]["requires"] || (println("tier $t lacks tdd"); false)
             end
             @test !("tdd" in seeded["tiers"]["T0"]["requires"])
-            for f in ("scripts/tdd.jl", "scripts/_tdd_classify.jl", "scripts/_tdd_history.jl", "scripts/_tdd_backfill.jl")
+            for f in tdd_scripts
                 @test DoD.path_tier(seeded, f) == "T3" || (println("$f is not T3"); false)
             end
-            @test occursin(r"^#.*\btdd\b"m, read(joinpath(ROOT, "risk.toml"), String))   # the `requires` comment
+            @test occursin(r"^#.*\btdd\b"m, seed_fixture("risk.toml"))   # the `requires` comment
+            # every profile protects the tdd scripts: the host's own risk.toml, whichever it is
+            host = TOML.parsefile(joinpath(ROOT, "risk.toml"))
+            for f in tdd_scripts
+                @test DoD.path_tier(host, f) == "T3" || (println("host: $f is not T3"); false)
+            end
+            if IN_FACTORY   # the fixtures are the template's seeds, byte for byte; the coordinator's has no tdd tier
+                @test seed_fixture("risk.toml") == read(joinpath(ROOT, "risk.toml"), String)
+                @test seed_fixture("runtests.jl") == read(joinpath(ROOT, "test", "runtests.jl"), String)
+                coord = TOML.parsefile(joinpath(FACTORY, "profiles", "coordinator", "risk.toml"))
+                @test !any(t -> "tdd" in t["requires"], values(coord["tiers"]))
+                for f in tdd_scripts
+                    @test DoD.path_tier(coord, f) == "T3" || (println("coordinator: $f is not T3"); false)
+                end
+            end
         end
 
         dt_testset("dod main checks tdd on a real branch") do
-            d = tmp_repo(Dict("risk.toml" => read(joinpath(ROOT, "risk.toml"), String), "src/A.jl" => "x\n"))
+            d = tmp_repo(Dict("risk.toml" => seed_fixture("risk.toml"), "src/A.jl" => "x\n"))
             sh(`git -C $d checkout -q -b feat/t`)
             cm(files, author, msg) = (
                 for (p, c) in files

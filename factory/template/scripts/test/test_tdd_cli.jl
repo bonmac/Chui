@@ -109,7 +109,7 @@ function tj_repo()
             ".gitignore" => "/.lanes/\n/.worktrees/\n/Manifest*.toml\n/test/Manifest*.toml\n",
             "Project.toml" => TJ_PROJECT,
             "src/TddLane.jl" => tj_src(),
-            "test/runtests.jl" => read(joinpath(ROOT, "test", "runtests.jl"), String),
+            "test/runtests.jl" => seed_fixture("runtests.jl"),   # the package seed; a coordinator has no test/ (tw-032)
             "test/base_tests.jl" => TJ_BASE_TEST,
         )
         for f in readdir(SCRIPTS)

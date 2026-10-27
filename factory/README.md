@@ -177,3 +177,20 @@ uvx --from actionlint-py actionlint .github/workflows/*.yml
 # the coordinator's doc references with the coordinator profile's defaults
 julia --startup-file=no scripts/check_docs.jl --root ../.. --config ../profiles/coordinator/.agents/factory.toml
 ```
+
+The suite includes `test_profile_coordinator.jl`. It syncs the template into a scratch repo with
+`--profile coordinator` and runs that repo's own `scripts/test/runtests.jl` there, so a test that
+needs the package profile's seeds (a `tdd` tier in `risk.toml`, a seeded `test/runtests.jl`) fails
+in the factory too. By default it runs `test_dod.jl` only (about 30 s). The tdd files run there
+only with `FACTORY_GUARD_FULL=1` (about 4.5 min of package runs). **Every factory change that
+touches `scripts/test/` or the tdd scripts** (`scripts/tdd.jl`, `scripts/_tdd_*.jl`) runs it
+before merge, with 0 fail and 0 error:
+
+```sh
+cd factory/template
+FACTORY_GUARD_FULL=1 FACTORY_TEST_ONLY=test_profile_coordinator.jl julia --startup-file=no scripts/test/runtests.jl
+```
+
+`FACTORY_TEST_ONLY=<file>,...` selects files from `scripts/test/runtests.jl`'s list. A test of tdd
+or dod behaviour builds its scratch repo from `seed_fixture` (`scripts/test/fixtures/seed/`, the
+package seeds, which `test_dod.jl` checks against `template/`), never from the host repo's own copy.
