@@ -175,7 +175,7 @@ blind_spots = [
 
 [[checks]]
 id = "tdd_boundary"
-rule = "A test-writer reads and writes only allowlisted paths (test/, docs/, evidence, its briefs; never src/ext, transcripts, the depot or the mutate copy) and runs only allowlisted Bash; an implementer never writes test/**; every git commit's effective author is a role only when the caller is that role, and its staged paths fit the role; the lead dispatches a role only on a clean lane with a current tdd-brief, and the prompt is saved. The allowlists live in _tdd_allow.sh and the commit guard in _tdd_commit_guard.sh, both sourced by tdd_boundary.sh; the dispatch check lives in _lanes.sh, which dispatch_limit.sh also runs, so a denied dispatch is never recorded as an open lane"
+rule = "A test-writer reads and writes only allowlisted paths (test/, docs/, evidence, its briefs; never src/ext, transcripts, the depot or the mutate copy) and runs only allowlisted Bash; an implementer never writes test/**; every git commit's effective author is a role only when the caller is that role, and its staged paths fit the role; the lead dispatches a role only on a clean lane with a current tdd-brief, and the prompt is saved. The allowlists live in _tdd_allow.sh and the commit guard in _tdd_commit_guard.sh, both sourced by tdd_boundary.sh; the dispatch check lives in _lanes.sh, which dispatch_limit.sh also runs, prompt-save precondition included, so a denied dispatch is never recorded as an open lane (only a save write that fails after that check, e.g. a full disk, can leave one). A role caller's Bash command with $'...' or $\"...\" quoting is denied whole, and only an entry named exactly .git marks a checkout"
 prevented_by = ".claude/hooks/tdd_boundary.sh"
 runs_in = ["hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)", "hook PreToolUse(Agent|Task)"]
 test = "scripts/test/test_hooks_tdd.jl"
@@ -192,7 +192,7 @@ blind_spots = [
 
 [[checks]]
 id = "tdd_commit_post"
-rule = "Every git commit seen by the hooks is checked after it is made (author vs caller, phase vs role, paths vs role) and recorded as tdd-commit with the resulting sha in the session ledger (only first-parent commits since the call's HEAD whose committer time is within [entry mtime - 5 s, entry mtime + 600 s]); a violation is recorded as tdd-commit-violation, which audit E5 fails"
+rule = "Every git commit seen by the hooks is checked after it is made (author vs caller, phase vs role, paths vs role) and recorded as tdd-commit with the resulting sha in the session ledger (only first-parent commits since the call's HEAD whose committer time is within [entry mtime - 5 s, entry mtime + 600 s]); a violation is recorded as tdd-commit-violation, which audit E5 fails. Also blind (beyond the listed blind spots): a commit made in the same checkout while another call is in flight (up to 10 minutes) is attributed to that call's caller, no stronger than a forged ledger line; and the committer time decides the window, so a backdated commit gets no record and E5 fails it (fail-closed)"
 prevented_by = ".claude/hooks/tdd_commit_post.sh"
 runs_in = ["hook PostToolUse(Bash) and PostToolUseFailure(Bash)"]
 test = "scripts/test/test_hooks_tdd.jl"

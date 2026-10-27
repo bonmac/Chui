@@ -113,27 +113,14 @@ abspath() {
 }
 
 # phys ABS (0.3.0, the tdd hooks): ABS with symlinks resolved (a missing tail kept) as RP; one fork.
+# shellcheck disable=SC2034 # RP is read by _lanes.sh and _tdd_allow.sh
 phys() {
     _p=$1 _t="" _n=0
     while [ -L "$_p" ] && [ "$_n" -lt 20 ]; do _n=$((_n + 1)) _l=$(readlink "$_p"); case $_l in /*) _p=$_l ;; *) _p="${_p%/*}/$_l" ;; esac; done
     while [ -n "$_p" ] && [ ! -d "$_p" ]; do _t="/${_p##*/}$_t" _p=${_p%/*}; done
     _r=$(CDPATH='' cd -P -- "${_p:-/}" 2>/dev/null && pwd -P) && RP=${_r%/}$_t || RP=""
 }
-is_co() { # DIR (physical): DIR/.git marks a checkout as a directory, or a gitdir: file whose worktree record points back (M2)
-    [ -d "$1/.git" ] && return 0
-    [ -f "$1/.git" ] && read -r _g <"$1/.git" 2>/dev/null || return 1
-    case $_g in "gitdir: /"*/.git/worktrees/?*) read -r _b <"${_g#gitdir: }/gitdir" 2>/dev/null || return 1 ;; *) return 1 ;; esac
-    [ "$_b" = "$1/.git" ] || [ "$(CDPATH='' cd -P -- "${_b%/.git}" 2>/dev/null && pwd -P)" = "$1" ]
-}
-# co_of ABS: the checkout holding ABS (nearest ancestor that is_co, after phys) as CO, ABS relative to it as REL.
-# shellcheck disable=SC2034 # REL is read by the tdd hooks
-co_of() {
-    phys "$1"
-    CO=$RP
-    while [ -n "$CO" ] && ! is_co "$CO"; do CO=${CO%/*}; done
-    case $RP in "$CO"/*) REL=${RP#"$CO"/} ;; *) REL="" ;; esac
-}
-in_root() { case $CO in "$ROOT_P" | "$ROOT_P"/*) return 0 ;; esac; return 1; } # CO is at or under the session root
+# is_co, co_of and in_root (the checkout of a path) live in _tdd_allow.sh: only tdd_boundary.sh uses them.
 
 # allowed ABS: true if ABS is inside the repo root, a lane worktree or the reports of its main checkout (in_main), or a scratch location.
 allowed() {

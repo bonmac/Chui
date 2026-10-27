@@ -88,5 +88,9 @@ tdd_dispatch() {
     TD_MAIN=${_gl#gitdir: } && TD_MAIN=${TD_MAIN%/.git/worktrees/*}
     [ -n "$_he" ] && [ "$(git -C "$RP" rev-parse HEAD 2>/dev/null)" = "$_he" ] ||
         { td_no brief-head "head=$_he is not the HEAD of $_co: write the brief again (julia scripts/tdd.jl brief)"; return; }
-    [ -z "$(git -C "$RP" status --porcelain 2>/dev/null)" ] || td_no brief-dirty "$_co has uncommitted changes: commit or clean them before dispatching a $1"
+    [ -z "$(git -C "$RP" status --porcelain 2>/dev/null)" ] || { td_no brief-dirty "$_co has uncommitted changes: commit or clean them before dispatching a $1"; return; }
+    # review 2 (iii): the prompt-save step's precondition is checked here too, so dispatch_limit records no lane that
+    # tdd_boundary then denies at the save (only a write that fails after this check, e.g. a full disk, still can)
+    _sd="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
+    { mkdir -p "$_sd" && [ -w "$_sd" ]; } 2>/dev/null || td_no brief-save "cannot save the prompt under $_sd (fails closed)"
 }

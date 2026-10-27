@@ -67,7 +67,7 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
   **Deviation from the spec:** its single `tdd_boundary` register row is split into
   `tdd_boundary` and `tdd_commit_post`, because every hook must be its own `prevented_by` file
   (the `test_gen` register invariant).
-- **Deviations from the spec and plan in the hooks** (the full list, after review round 1):
+- **Deviations from the spec and plan in the hooks** (the full list, after review rounds 1 and 2):
   - **A fourth hook file.** The plan named `tdd_boundary.sh` and `tdd_commit_post.sh`; the
     150-line hook cap adds the sourced `_tdd_allow.sh` (allowlists, the implementer's Bash write
     check) and `_tdd_commit_guard.sh` (the Pre half of the commit guard). The `tdd_boundary` row's
@@ -83,8 +83,11 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     hooks)". Both the post hook and the sweep attribute to a call only the commits on
     `git log --first-parent <HEAD before>..HEAD` (at most 100) whose committer time is within
     [entry mtime − 5 s, entry mtime + 600 s]: a commit forged outside the hooks in a stale
-    entry's window is never recorded as the role's, and a merge of main records only the merge
-    commit, never main's role commits.
+    entry's window is never recorded as the role's (stale entries only: one made in the same
+    checkout while another call is in flight, up to 10 minutes, is recorded as that call's
+    caller's, no stronger than a forged ledger line; the `tdd_commit_post` row says so), and a
+    merge of main records only the merge commit, never main's role commits. The committer time
+    decides the window, so a backdated commit gets no record and fails E5 (fail-closed).
   - **E5 matches `tdd-commit-violation` records by the lane's commit shas only** (not also by
     checkout), so a violation stops failing the lane once the commit is replaced.
   - **Stricter role-commit rules than §0.5:** a role caller's `git commit` takes no `-a`/`-i`/
@@ -98,12 +101,26 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     undo the commit), not 0.
   - **Test-writer Bash extras:** `true`, `false`, `echo`, `printf` and `pwd`; any word with `$`,
     a backquote, `{`, `}` or a leading `~` is denied (brace expansion escaped `test/`), and an
-    implementer's Bash write target with `{` or `}` is denied.
+    implementer's Bash write target with `{` or `}` is denied. Review 2: a test-writer's or an
+    implementer's Bash command containing `$'` or `$"` is denied whole (rule `ansi-c-quote`),
+    before it is split: bash_guard's parser drops the `$` and mangles `\x` escapes, so
+    `cat test/$'\x2e\x2e'/src/a.jl` passed the path check. The lead is unaffected.
   - **A `.git` marks a checkout** only as a directory or as a `gitdir:` file whose worktree record
-    points back; a role never Writes/Edits a `.git` path (a planted `test/.git` moved the root).
+    points back, and (review 2) only when the directory entry is named exactly `.git`: on a
+    case-insensitive APFS a written `test/.GIT/HEAD` made `[ -d test/.git ]` true. A role never
+    Writes/Edits a `.git` path, in any letter case (a planted `test/.git` moved the root).
+    `is_co`, `co_of` and `in_root` moved from `_lib.sh` to `_tdd_allow.sh` (only
+    `tdd_boundary.sh` uses them; `_lib.sh` was at the 150-line cap); `phys` stays in `_lib.sh`.
   - **A denied TDD dispatch opens no lane.** `dispatch_limit.sh` runs the same dispatch check and
     denies without recording, since the two hooks run in parallel; the brief's `lane=` must be the
-    lane of a `.worktrees/<lane>` `checkout=`.
+    lane of a `.worktrees/<lane>` `checkout=`. Review 2: the check includes the prompt-save step's
+    precondition (the `dispatched/` directory can be created and written), so a save denial no
+    longer leaves a lane open; only a write that fails after the check (a full disk) still can.
+  - **Blind spots not in the pinned lists.** The register test pins the `tdd_boundary` and
+    `tdd_commit_post` blind-spot lists to the spec's ten, so the two review-2 additions (a commit
+    made while another call in the same checkout is in flight is attributed to that call's caller;
+    a backdated committer time gets no record and fails E5) are stated in the `tdd_commit_post`
+    row's rule text in `checks.toml` and `docs/CHECK_COVERAGE.md`.
 - **Tasks 1–7** (merged earlier as part 1): the failure-output fixtures for Julia 1.13.2 and
   1.10.12; the seeded `test/runtests.jl` `item=` selection and the `TDD_MATCHED` record;
   `scripts/_tdd_classify.jl` (ASSERTION, BEHAVIOUR, WRONG-REASON, PASSED, NOT-RUN, COLLATERAL,

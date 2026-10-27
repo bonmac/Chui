@@ -52,7 +52,7 @@ case $tool in
         exit 0 ;;
     Edit | Write | MultiEdit | NotebookEdit)
         case $at in test-writer | implementer) co_of "$(abspath "$fp" "$cwd")" ;; *) exit 0 ;; esac
-        case /$fp/ in */.git/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
+        case /$fp/ in */.[Gg][Ii][Tt]/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
         if [ -n "$TW" ]; then
             in_root && case $REL in test/runtests.jl | test/Project.toml) ;; test/?*) exit 0 ;; esac
             tdeny tw-write §0.6 "a test-writer writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
@@ -64,6 +64,9 @@ esac
 # Bash: the lead and other callers only meet the commit guard; the fast path skips a command that cannot commit
 case $at in test-writer | implementer) ;; *) case $cmd in *commit* | *\\* | *\'* | *\"*) ;; *) exit 0 ;; esac ;; esac
 [ ${#cmd} -le 65536 ] || tdeny too-long §0.6 "a command over 64 KiB cannot be checked in time"
+case $at:$cmd in test-writer:*"\$'"* | test-writer:*'$"'* | implementer:*"\$'"* | implementer:*'$"'*) # R2-B1: segments() cannot model them
+    tdeny ansi-c-quote §0.6 "a $at may not use \$'...' or \$\"...\" quoting (bash and zsh expand its escapes into any path); write the plain word" ;;
+esac
 [ "$at" != implementer ] || impl_libs
 segs=$(printf '%s\n' "$cmd" | segments)
 set -f

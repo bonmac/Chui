@@ -1,8 +1,31 @@
 # shellcheck shell=sh
 # shellcheck disable=SC2034,SC2154 # cwd, d and tdeny come from tdd_boundary.sh
 # _tdd_allow.sh (factory 0.3.0, spec §0.6): the test-writer's read and Bash allowlists and the implementer's
-# Bash write check, sourced by tdd_boundary.sh after _lib.sh (abspath, co_of, in_root) and _bash_guard_lib.sh
-# (git_dir). Functions only. Split from tdd_boundary.sh to keep each hook file under the 150-line cap.
+# Bash write check, and the checkout of a path (is_co, co_of, in_root), sourced by tdd_boundary.sh after _lib.sh
+# (abspath, phys) and _bash_guard_lib.sh (git_dir). Functions only. Split from tdd_boundary.sh to keep each hook
+# file under the 150-line cap.
+
+is_co() { # DIR (physical): DIR/.git marks a checkout as a directory, or a gitdir: file whose worktree record points back (M2)
+    [ -e "$1/.git" ] || return 1
+    # R2-M1: only an entry named exactly .git (on a case-insensitive APFS, test/.GIT also answers to .git); the glob
+    # reads the directory and matches names byte for byte, without a fork. The caller's noglob state is restored.
+    case $- in *f*) _nf=1 && set +f ;; *) _nf="" ;; esac
+    set -- "$1" "$1"/.gi[t]
+    [ -z "$_nf" ] || set -f
+    [ "$2" = "$1/.git" ] || return 1
+    [ -d "$1/.git" ] && return 0
+    [ -f "$1/.git" ] && read -r _g <"$1/.git" 2>/dev/null || return 1
+    case $_g in "gitdir: /"*/.git/worktrees/?*) read -r _b <"${_g#gitdir: }/gitdir" 2>/dev/null || return 1 ;; *) return 1 ;; esac
+    [ "$_b" = "$1/.git" ] || [ "$(CDPATH='' cd -P -- "${_b%/.git}" 2>/dev/null && pwd -P)" = "$1" ]
+}
+# co_of ABS: the checkout holding ABS (nearest ancestor that is_co, after phys) as CO, ABS relative to it as REL.
+co_of() {
+    phys "$1"
+    CO=$RP
+    while [ -n "$CO" ] && ! is_co "$CO"; do CO=${CO%/*}; done
+    case $RP in "$CO"/*) REL=${RP#"$CO"/} ;; *) REL="" ;; esac
+}
+in_root() { case $CO in "$ROOT_P" | "$ROOT_P"/*) return 0 ;; esac; return 1; } # CO is at or under the session root
 
 impl_libs() { # bash_guard's write-target model, with outside() redefined: a target under test/ is denied
     for _f in _bash_guard_cmd.sh _bash_guard_write.sh; do
