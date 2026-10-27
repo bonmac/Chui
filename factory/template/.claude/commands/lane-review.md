@@ -68,9 +68,12 @@ round (1, then +1 per re-review), `<base>` its recorded base, `<mb>` the merge b
    verdict in the ledger (`scripts/lane stats` shows it).
 8. Close the reviewer agent in the same step as reading its report (TaskStop, or let its call
    return; `scripts/lane release <name>` when it is already gone). The base checkout holds the
-   base evidence file (the path `evidence.jl latest base` printed in step 3), so keep it BEFORE
-   removing the checkout: `cp <that path> .worktrees/<lane>/.lanes/evidence/` (the lane's own
-   evidence directory, next to `lane-<sha>.txt`; a plain copy, no redirect). Only then
+   base evidence file: `evidence.jl latest base` (step 3) printed its path RELATIVE to that
+   root, so keep it BEFORE removing the checkout with
+   `cp .worktrees/<lane>/.lanes/scratch/base-<mb>/<that path> .worktrees/<lane>/.lanes/evidence/`
+   (for the coordinator, whose step 3 root is the subdirectory, insert `/factory/template`
+   before `/<that path>`; the target is the lane's own evidence directory, next to
+   `lane-<sha>.txt`; a plain copy, no redirect). Only then
    `git -C .worktrees/<lane> worktree remove .lanes/scratch/base-<mb>`.
 9. Output: the Verdict and Head lines, both audits, base vs lane `tests:` lines quoted from the
    two evidence files now both under `.worktrees/<lane>/.lanes/evidence/` (`base-<mb>.txt` is the
