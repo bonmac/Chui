@@ -59,8 +59,10 @@ implementer made them pass (0e16375).
   separate decision.
 - **Migration.** Sync 0.3.2; every changed file is managed (`scripts/ci.jl`, the two test files,
   `test_gen_tdd.jl`, `.agents/checks.toml`, `docs/CHECK_COVERAGE.md`). Then run
-  `julia scripts/gen.jl`. Nothing seeded changes. Packages see no behaviour change: their
-  fixtures sit at the root, which the old rule already excluded. The coordinator's
+  `julia scripts/gen.jl`. Nothing seeded changes. The format job behaves the same in packages:
+  their fixtures sit at the root, which the old rule already excluded. The Runic-clean test item
+  now covers only the managed `scripts/` files there, so an unformatted `src/` or `test/` file no
+  longer fails `scripts/test/runtests.jl`. It still fails the package's CI `ci.jl format` job. The coordinator's
   `test_ci_format.jl` passes after the sync.
 
 ## 0.3.1 (2026-10-27)
