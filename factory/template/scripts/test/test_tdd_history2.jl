@@ -307,6 +307,27 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         @test !th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", "/elsewhere", "f"^40)]), "E5")
     end
 
+    th_testset("B2 E5 violation for a sha not in the lane does not fail the lane", E...) do
+        d, c = th_lane()
+        th_red_ev!(d, c.red)
+        th_green_ev!(d, c.green)
+        recs = th_lane_recs(d, c)
+        @test !th_has(er(d, [recs; th_rec("tdd-commit-violation", "test-writer", d, "f"^40)]), "E5")   # same checkout
+        @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "test-writer", "/elsewhere", c.red)]), "E5")
+    end
+
+    th_testset("B2 E5 late-only record fails with the late hint", E...) do
+        d, c = th_lane()
+        th_red_ev!(d, c.red)
+        th_green_ev!(d, c.green)
+        recs = th_lane_recs(d, c)
+        recs[2] = th_rec("tdd-commit-late", "test-writer", d, c.red)
+        v = er(d, recs)
+        e5 = filter(s -> startswith(s, "E5 $(first(c.red, 7))"), v)
+        @test !isempty(e5) && any(s -> occursin("only a late swept record", s), e5)
+        @test !any(s -> occursin("late", s), er(d, th_lane_recs(d, c)[1:2]))   # green unrecorded: no hint without a late record
+    end
+
     th_testset("E5 default ledger is the outermost .lanes/ledger.jsonl above the lane", :audit) do
         # A coordinator-style root C holds the nested package repo C/Pkg.jl, which has its own .lanes;
         # the lane is the worktree C/Pkg.jl/.worktrees/lane.

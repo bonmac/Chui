@@ -278,3 +278,5 @@ tb_cm(d; author = TB_TW, phase = "red", extra = "") = "git -C $d commit -q -m \"
         @test isempty(readchomp(`git -C $L status --porcelain`)) && isempty(readchomp(`git -C $(t.pkg) status --porcelain`))
     end
 end
+
+include("test_hooks_tdd3.jl")   # review round 1: B1-B3, M1, M2, minors 5-7, nit 2
