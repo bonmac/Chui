@@ -1,0 +1,2 @@
+- Synced factory 0.3.1 into the coordinator (add 6, update 33, seeded-differs 8, no conflict). This brings the tw-033 0.3.0 amend to `scripts/test/test_ci.jl`, the Runic-clean template scripts, `owning_ledger`, unnamed TDD dispatch, and the deletion-only test-fix rule.
+- Test-writer spec §0.5 and the E5 row: a dated 0.3.1 note says the TDD ledger is the lane checkout's owning ledger, not the session's.
