@@ -302,8 +302,9 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         recs = th_lane_recs(d, c)
         @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", d, c.green)]), "E5")
         @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", "/elsewhere", c.stub)]), "E5")
-        @test th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", d, "f"^40)]), "E5")
-        # a violation for another checkout and a commit outside the lane is not this lane's
+        # B2 ruling: violations match by the lane's shas only; one in this checkout for a sha outside the
+        # lane (e.g. a sha a later commit replaced) is not this lane's
+        @test !th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", d, "f"^40)]), "E5")
         @test !th_has(er(d, [recs; th_rec("tdd-commit-violation", "implementer", "/elsewhere", "f"^40)]), "E5")
     end
 

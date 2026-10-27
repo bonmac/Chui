@@ -180,21 +180,8 @@ tb_cm(d; author = TB_TW, phase = "red", extra = "") = "git -C $d commit -q -m \"
         @test f.pre.rc == 0 && !f.ran && tb_head(L) != tb_head(t.pkg)   # the commit exists, the call failed
         @test any(r -> get(r, "sha", "") == tb_head(L) && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"))
     end
-    @testset "stale tdd-pending entry swept and recorded late" begin
-        t = tb_topo(); L = t.lane
-        tb_stage!(L, Dict("test/t2.jl" => "x\n"))
-        c, tu = tb_cm(L), tb_tu()
-        @test tb_run(t, tb_bash(c; cwd = L, tu)).rc == 0
-        pend = joinpath(t.S, ".lanes", "tdd-pending")
-        @test ispath(joinpath(pend, tu))
-        @test tb_exec(t, c, L)                           # the command ran; its post event never came (cancelled)
-        sha = tb_head(L)
-        ispath(pend) && sh(`find $pend -exec touch -t 202001010000 '{}' '+'`)   # stale by age too
-        @test tb_ok(t, tb_bash("ls"; agent = nothing, cwd = L))             # the next call, by the lead, sweeps
-        @test any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"))
-        @test tb_late(t, sha)
-        @test !ispath(joinpath(pend, tu))
-    end
+    # "stale tdd-pending entry swept and recorded late" moved to test_hooks_tdd3.jl under the B2 ruling
+    # ("B2 sweep records only in-window commits, as tdd-commit-late"): the sweep writes no tdd-commit.
     @testset "session root differs from checkout: record lands in the session ledger and audit finds it" begin
         t = tb_topo(); L = t.lane
         tb_stage!(L, Dict("test/t2.jl" => "x\n"))
