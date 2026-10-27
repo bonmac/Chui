@@ -107,7 +107,7 @@ function untsv(s)
     return String(take!(io))
 end
 
-const LEDGER_FIELDS = (:line, :ts, :ev, :session, :key, :name, :agent_id, :ref, :desc, :lane, :verdict, :teammate)
+const LEDGER_FIELDS = (:line, :ts, :ev, :session, :key, :name, :agent_id, :ref, :desc, :lane, :verdict, :teammate, :subagent_type)
 
 """
     ledger_rows(file) -> Vector{NamedTuple}
@@ -127,6 +127,34 @@ function ledger_rows(file)
         push!(rows, NamedTuple{LEDGER_FIELDS}((parse(Int, v[1]), v[2:end]...)))
     end
     return rows
+end
+
+const REPORTERS = ("reviewer", "critic", "verifier")   # the read_only agents of the registry (gen.jl: READ_ONLY_AGENTS)
+"The dispatch name a report file is of: its base name before `-<round>.md` (or `.md`)."
+report_name(path) = replace(basename(path), r"(-[0-9]+)?\.md$" => "")
+"""
+    report_dispatch(repo, path) -> problem or nothing
+
+Review round 4 (A2): a Verdict report passes `lane audit --report` only when it comes from a read-only
+reviewer: the ledger holds a `dispatch` event (dispatch_limit.sh) whose name is the report's base name and
+whose subagent_type is reviewer, critic or verifier. Every agent's report fragment had asked for a Verdict
+line, so an implementer's own report (`.lanes/reports/f040-commands.md`: MAY MERGE for a HEAD the reviewer
+graded FIX FIRST) had passed as a review. No ledger, or an unreadable one, is no such dispatch.
+"""
+function report_dispatch(repo, path)
+    n = report_name(path)
+    lp = try
+        ledger_path(repo)
+    catch
+        ""
+    end
+    rows = isempty(lp) ? NamedTuple[] : try
+        ledger_rows(lp)
+    catch
+        NamedTuple[]
+    end
+    any(r -> r.ev == "dispatch" && r.name == n && r.subagent_type in REPORTERS, rows) && return nothing
+    return "report $n is not from a read-only reviewer dispatch (no `dispatch` named `$n` with subagent_type reviewer, critic or verifier in $(isempty(lp) ? "the lane ledger" : lp))"
 end
 
 """

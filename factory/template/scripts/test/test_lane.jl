@@ -290,10 +290,11 @@ end
     lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
     @test lane("new", "rv", "--owns", "src/*")[1] == 0
     wt = joinpath(d, ".worktrees/rv"); commit!(wt, Dict("src/A.jl" => "b\n", "changelog.d/rv.md" => "- A\n"), "x")
-    led = joinpath(d, ".lanes/ledger.jsonl"); rep = tempname(); head = readchomp(`git -C $wt rev-parse HEAD`)
-    # accepted: the exact verdict line first, and a `Head: <sha>` line (full, or a prefix of 7+ characters) naming the lane's HEAD
+    led = joinpath(d, ".lanes/ledger.jsonl"); rep = tempname(); head = readchomp(`git -C $wt rev-parse HEAD`)   # round 4: the report is a reviewer's
+    open(io -> println(io, ledger_ev("t", "dispatch"; key = "r", name = basename(rep), subagent_type = "reviewer")), led, "a")
+    # accepted: the exact verdict line first, and line 2 `Head: <sha>` (full, or a prefix of 7+ characters) naming the lane's HEAD
     for (v, h) in (("MAY MERGE", head), ("MERGE WITH FIXES", first(head, 7)), ("FIX FIRST", first(head, 12)))
-        write(rep, "Verdict: $v\n\nScope: src/*\nHead: $h\nSummary: fine.\n")
+        write(rep, "Verdict: $v\nHead: $h\n\nScope: src/*\nSummary: fine.\n")
         n = length(readlines(led))
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 0 && occursin("verdict: $v", out) && occursin("lane audit: OK", out) || (print(out); false)
@@ -317,7 +318,7 @@ end
     # the Head line: missing, another commit (a stale round), too short, not a sha, decorated, trailing words
     stale = readchomp(`git -C $wt rev-parse "HEAD~1"`)
     for bad in ("", "Head: $stale\n", "Head: $(first(head, 6))\n", "Head: $(first(head, 7))g\n", "**Head: $head**\n", "Head: $head (lane)\n",
-            "head: $head\n", "Head:$head\n")
+            "head: $head\n", "Head:$head\n", "\nHead: $head\n", "Scope: x\nHead: $head\n")   # round 4: line 2 exactly, not line 3
         write(rep, "Verdict: MAY MERGE\n" * bad)
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 1 && occursin("[FAIL] report $rep", out) && occursin("Head", out) || (print(repr(bad), " => ", out); false)

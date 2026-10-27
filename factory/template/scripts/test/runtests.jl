@@ -11,7 +11,7 @@ const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
 const TEST_FILES = [
     "test_gen.jl", "test_hooks.jl", "test_hooks_lifecycle.jl", "test_bash_guard.jl", "test_dod.jl", "test_ratchet.jl",
-    "test_check_docs.jl", "test_contract_usage.jl", "test_ci.jl", "test_lane.jl", "test_changelog.jl", "test_check_claims.jl",
+    "test_check_docs.jl", "test_contract_usage.jl", "test_ci.jl", "test_lane.jl", "test_lane_040.jl", "test_changelog.jl", "test_check_claims.jl",
     "test_evidence.jl", "test_sync_factory.jl", "test_runtests_template.jl", "test_tdd.jl", "test_tdd_backfill.jl",
     "test_tdd_classify2.jl", "test_tdd_review.jl",
 ]
