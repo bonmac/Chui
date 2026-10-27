@@ -21,7 +21,13 @@ ev=$(field '.hook_event_name')
 AGENT_ID_JQ='.tool_response.agentId? // .tool_response.agent_id? // .tool_response.taskId?'
 case $ev in
     SubagentStart) ledger start agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')" ;;
-    SubagentStop) ledger stop agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')" ;;
+    SubagentStop) # 0.4.0 (D2): a stop is written only for an agent_id a `spawned` record names (a background
+        # subagent's); a teammate turn's stop closes nothing and was ledger noise (1,043 lines by 2026-10-27)
+        _a=$(field '.agent_id')
+        _a=$(printf '%s' "$_a" | tr -c 'A-Za-z0-9_./:@-' '_')
+        [ -z "$_a" ] || ! grep -F -- "\"agent_id\":\"$_a\"" "$LEDGER_FILE" 2>/dev/null | grep -qF -- '"ev":"spawned"' ||
+            ledger stop agent_id "$(field '.agent_id')" agent_type "$(field '.agent_type')"
+        ;;
     PostToolUse | PostToolUseFailure)
         case $(field '.tool_name') in
             TaskStop)

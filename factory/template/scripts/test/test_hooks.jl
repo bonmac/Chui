@@ -6,7 +6,7 @@ function hook(name, payload, root; env = Dict{String, String}(), hooks = TEST_HO
     return p.exitcode, String(take!(out)), String(take!(err))
 end
 # 0.2.4: tabs are escaped too; a raw tab is invalid JSON, which the guards now refuse (fail closed)
-json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t")
+json(s) = replace(s, "\\" => "\\\\", "\"" => "\\\"", "\n" => "\\n", "\t" => "\\t", "\r" => "\\r")   # 0.4.0: CR too (CRLF heredocs)
 bash(cmd; cwd = "") = "{\"session_id\":\"s1\",\"cwd\":\"$(json(cwd))\",\"tool_input\":{\"command\":\"$(json(cmd))\"}}"
 write_payload(path; key = "file_path") = "{\"session_id\":\"s1\",\"tool_input\":{\"$key\":\"$(json(path))\"}}"
 blocked(name, payload, root; kw...) = hook(name, payload, root; kw...)[1] == 2
@@ -299,6 +299,33 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_watchdog.sh"))
         rc, _, err = hook("dispatch_limit.sh", agent_payload, realpath(mktempdir()); hooks = h)
         @test rc == 2 && occursin("_watchdog.sh is missing", err)
+    end
+
+    @testset "bash_guard: bare cd, heredoc terminators, cd back (0.4.0)" begin
+        # a bare `cd` moves the tracked cwd to $HOME (before: it stayed, so `cd; touch x` wrote "inside the root")
+        home = "/opt/factory-test-home"                 # outside every allowed location (a mktempdir is scratch)
+        for c in ("cd; touch x", "cd && touch x", "cd -P; echo x > f", "cd\ntouch x")
+            rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root; env = Dict("HOME" => home))
+            @test rc == 2 && occursin("$home/", err) && !occursin("blocked: $root", err) || (println("bare cd: $c -> $rc $err"); false)
+        end
+        @test !blocked("bash_guard.sh", bash("cd; touch x"; cwd = "/opt"), root; env = Dict("HOME" => root))   # HOME inside the root
+        @test !blocked("bash_guard.sh", bash("cd; ls"; cwd = root), root; env = Dict("HOME" => home))
+        # heredoc terminators bash would not accept (it reads to end-of-file: nothing after them runs) end the
+        # body here too: trailing blank, `)`, leading blanks, CRLF. Before, the body fell back to being
+        # checked as commands and `pkill` in it was denied. What follows the terminator is checked.
+        body = "cat <<'EOF'\nPKILL=1\npkill -f x\n"
+        for term in ("EOF ", "EOF)", "EOF )", "  EOF", "\tEOF", "EOF\r", "EOF \r")
+            @test !blocked("bash_guard.sh", bash(body * term; cwd = root), root) || (println("heredoc terminator $(repr(term)) not accepted"); false)
+            @test blocked("bash_guard.sh", bash(body * term * "\npkill -f y"; cwd = root), root) || (println("after terminator $(repr(term)) unchecked"); false)
+        end
+        @test blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard"; cwd = root), root)
+        @test !blocked("bash_guard.sh", bash("echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\""; cwd = root), root)
+        @test blocked("bash_guard.sh", bash("cat <<NEVER\npkill -f x\n"; cwd = root), root)      # unterminated: still the fallback
+        @test blocked("bash_guard.sh", bash("cat <<'EOF'\nx\nEOFX\npkill -f x\n"; cwd = root), root)
+        # a denial inside a read-only root says how to get out
+        h = hooks_with_roots(REF_ROOTS)
+        rc, _, err = hook("bash_guard.sh", bash("cd ~/ro-fixture/ref-a && touch notes"; cwd = root), root; hooks = h)
+        @test rc == 2 && occursin("cd back to the repo root", err)
     end
 
     @testset "write_guard" begin

@@ -20,7 +20,9 @@ for report in "$ROOT/.lanes/reports/$safe.md" "$ROOT"/.worktrees/*/.lanes/report
     exit 0
 done
 mkdir -p "$ROOT/.lanes" 2>/dev/null || exit 0
+grep -qxF -- "$key unreported" "$seen" 2>/dev/null && exit 0 # 0.4.0: idle-unreported is logged once per key, not on every later idle
 if grep -qxF -- "$key" "$seen" 2>/dev/null; then
+    printf '%s unreported\n' "$key" >>"$seen" 2>/dev/null
     ledger idle-unreported teammate "$safe"
     exit 0
 fi

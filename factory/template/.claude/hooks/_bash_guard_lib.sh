@@ -12,6 +12,9 @@
 #   unquoted `...` splits too. A `#` that starts a word ends the line (its apostrophes are not quotes).
 # - Backslash-newline joins lines. A heredoc (<<WORD or <<-WORD, unquoted, not <<< and not inside
 #   $((...)) or ((...))) drops its body; a body never terminated is checked as commands after all.
+#   0.4.0: a terminator line with trailing blanks, a CR, leading blanks, or followed by `)` ends the
+#   body too (bash reads such a body to end-of-file, so nothing after it runs: checking what follows
+#   as commands is stricter, never a bypass); the `)...` rest is scanned, closing "$(cat <<EOF ... EOF)".
 # - Then 2>&1-style duplications go, &>, >& and >| become >, and ; & | ( ) split.
 segments() {
     awk -v SQ="'" 'BEGIN { sp = " \t;&|()<>" }
@@ -42,7 +45,9 @@ segments() {
           q = ""; k++; if (c == "`") { t[k] = "`"; b = b ";" } else { t[k] = 1; b = b "$("; i++; if (substr(s, i + 1, 1) == "(") ar = 1 } }
         else b = b (index(sp, c) ? "_" : c) }
       if (q != "") b = b "_"; else { if (k) b = b ";"; else out(); if (hd != "") { body = hd; hd = "" } } }
-    body != "" { l = $0; if (dash) sub(/^\t+/, "", l); if (l == body) { body = ""; nb = 0 } else hb[++nb] = $0; next }
+    body != "" { l = $0; sub(/\r$/, "", l); sub(/^[ \t]+/, "", l); sub(/[ \t]+$/, "", l); r = ""
+      if (substr(l, 1, length(body)) == body) { r = substr(l, length(body) + 1); sub(/^[ \t]+/, "", r) }
+      if (l == body || substr(r, 1, 1) == ")") { body = ""; nb = 0; if (r != "") scan(r) } else hb[++nb] = $0; next }
     { scan($0) }
     END { if (body != "") { body = ""; for (j = 1; j <= nb; j++) scan(hb[j]) } if (b != "") out() }'
 }
@@ -130,9 +135,11 @@ git_sub() {
     printf '%s' "${1:-}"
 }
 # newdir TARGET: the directory `cd TARGET` moves to, or empty if it cannot be known statically.
+# 0.4.0: a bare `cd` (or flags only) goes to $HOME; before, the tracked cwd stayed in the repo.
 newdir() {
     case $1 in
-        '' | -) return 0 ;;
+        '') printf '%s\n' "$HOME"; return 0 ;;
+        -) return 0 ;;
         '$HOME' | '${HOME}' | '$HOME/'* | '${HOME}/'*) ;;
         *'$'* | *'`'*) return 0 ;;
     esac

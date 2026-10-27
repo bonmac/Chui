@@ -247,6 +247,36 @@
         @test denied(pre("e1"), r, 1)
     end
 
+    @testset "quiet stops and once-per-key idle (0.4.0, D2)" begin
+        led(r) = joinpath(r, ".lanes/ledger.jsonl")
+        lines(r) = isfile(led(r)) ? readlines(led(r)) : String[]
+        substop(id) = "{\"session_id\":\"s2\",\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"$id\",\"agent_type\":\"\"}"
+        post(name, resp) = "{\"session_id\":\"s2\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Agent\",\"tool_use_id\":\"tu_$name\",\"tool_input\":{\"name\":\"$name\",\"description\":\"d\"},\"tool_response\":$resp}"
+        # the coordinator ledger held 1,043 `stop` lines from teammate turns, none of them a lane: a stop is
+        # written only for an agent_id that a `spawned` record names (a background subagent's)
+        r = realpath(mktempdir())
+        @test hook("lane_ledger.sh", substop("turn-1"), r)[1] == 0
+        @test hook("lane_ledger.sh", substop(""), r)[1] == 0
+        @test !any(contains("\"stop\""), lines(r)) || (println("stop written: ", lines(r)); false)
+        hook("lane_ledger.sh", post("bgl", "{\"status\":\"async_launched\",\"agentId\":\"a1fe55\"}"), r)
+        hook("lane_ledger.sh", substop("a1fe55"), r)
+        hook("lane_ledger.sh", substop("a1fe56"), r)
+        @test count(l -> occursin("\"ev\":\"stop\"", l), lines(r)) == 1
+        @test any(l -> occursin("\"ev\":\"stop\"", l) && occursin("\"agent_id\":\"a1fe55\"", l), lines(r))
+        # three idles of one teammate without a report: one idle-blocked, then ONE idle-unreported
+        r = realpath(mktempdir())
+        idle = "{\"session_id\":\"s1\",\"team_name\":\"t\",\"teammate_name\":\"quiet\"}"
+        @test hook("teammate_idle.sh", idle, r)[1] == 2
+        @test hook("teammate_idle.sh", idle, r)[1] == 0
+        @test hook("teammate_idle.sh", idle, r)[1] == 0
+        @test hook("teammate_idle.sh", idle, r)[1] == 0
+        @test count(contains("\"idle-unreported\""), lines(r)) == 1 || (println(lines(r)); false)
+        @test count(contains("\"idle-blocked\""), lines(r)) == 1
+        @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 2   # another key: its own cycle
+        @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 0
+        @test count(contains("\"idle-unreported\""), lines(r)) == 2
+    end
+
     @testset "precompact writes a snapshot; session_start re-injects it" begin
         repo = tmp_repo()
         @test hook("dispatch_limit.sh", "{\"session_id\":\"s3\",\"tool_input\":{\"name\":\"lane-pc\"}}", repo)[1] == 0
@@ -258,6 +288,28 @@
         rc, out, _ = hook("session_start.sh", "{\"source\":\"compact\"}", repo)
         @test rc == 0 && occursin("Pre-compaction snapshot", out)
         @test hook("session_start.sh", "{}", root)[1] == 0     # no snapshot: silent
+        # 0.4.0 (D2): a ledger over 2,000 lines is compacted by `scripts/lane compact` (a sibling lane's
+        # work): the call is checked with a `julia` stub on PATH that records its arguments
+        stub = mktempdir()
+        argf = joinpath(stub, "args.txt")
+        write(joinpath(stub, "julia"), "#!/bin/sh\nprintf '%s\\n' \"\$@\" >\"$argf\"\n")
+        chmod(joinpath(stub, "julia"), 0o755)
+        env = Dict("PATH" => stub * ":" * ENV["PATH"])
+        repo = tmp_repo(Dict("scripts/lane.jl" => "# stub\n"))
+        mkpath(joinpath(repo, ".lanes"))
+        pc = "{\"session_id\":\"s3\",\"trigger\":\"manual\"}"
+        write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2000)
+        @test hook("precompact.sh", pc, repo; env)[1] == 0
+        @test !isfile(argf)                                                   # 2,000 lines: not over the limit
+        write(joinpath(repo, ".lanes/ledger.jsonl"), "{\"ts\":\"t\",\"ev\":\"stop\",\"session\":\"s3\",\"agent_id\":\"a\"}\n"^2001)
+        @test hook("precompact.sh", pc, repo; env)[1] == 0
+        @test isfile(argf) || (println("julia not called for 2,001 lines"); false)
+        args = isfile(argf) ? readlines(argf) : String[]
+        @test any(a -> endswith(a, "scripts/lane.jl"), args) && "compact" in args || (println("args: $args"); false)
+        @test isfile(joinpath(repo, ".lanes/precompact.md"))                 # the snapshot is written first
+        rm(argf)
+        rm(joinpath(repo, "scripts/lane.jl"))                                # no lane.jl (a seeded repo without it): no call
+        @test hook("precompact.sh", pc, repo; env)[1] == 0 && !isfile(argf)
     end
 
     @testset "a denial from a factory/template session root says so" begin
