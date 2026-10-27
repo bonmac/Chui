@@ -27,3 +27,6 @@
     2,000 lines names the line count and `scripts/lane compact`; `teammate_idle.sh` counts a report
     (`<name>.md` or `<name>-*.md`) only when its first line is `Verdict: MAY MERGE | MERGE WITH FIXES
     | FIX FIRST`, else it is partial and the idle is blocked once; no `permissions.deny` list is added.
+  - The 0.4.0 hook testsets live in the new `scripts/test/test_hooks_040.jl`, included from
+    `test_hooks.jl`: that file and `test_hooks_lifecycle.jl` had passed the 400-line `scripts/*.jl`
+    budget of `ratchets.toml` (the full gate's `test_ratchet.jl` caught it).

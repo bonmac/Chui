@@ -262,67 +262,7 @@
         @test denied(pre("e1"), r, 1)
     end
 
-    @testset "quiet stops and once-per-key idle (0.4.0, D2)" begin
-        led(r) = joinpath(r, ".lanes/ledger.jsonl")
-        lines(r) = isfile(led(r)) ? readlines(led(r)) : String[]
-        substop(id) = "{\"session_id\":\"s2\",\"hook_event_name\":\"SubagentStop\",\"agent_id\":\"$id\",\"agent_type\":\"\"}"
-        post(name, resp) = "{\"session_id\":\"s2\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Agent\",\"tool_use_id\":\"tu_$name\",\"tool_input\":{\"name\":\"$name\",\"description\":\"d\"},\"tool_response\":$resp}"
-        # the coordinator ledger held 1,043 `stop` lines from teammate turns, none of them a lane: a stop is
-        # written only for an agent_id that a `spawned` record names (a background subagent's)
-        r = realpath(mktempdir())
-        @test hook("lane_ledger.sh", substop("turn-1"), r)[1] == 0
-        @test hook("lane_ledger.sh", substop(""), r)[1] == 0
-        @test !any(contains("\"stop\""), lines(r)) || (println("stop written: ", lines(r)); false)
-        hook("lane_ledger.sh", post("bgl", "{\"status\":\"async_launched\",\"agentId\":\"a1fe55\"}"), r)
-        hook("lane_ledger.sh", substop("a1fe55"), r)
-        hook("lane_ledger.sh", substop("a1fe56"), r)
-        @test count(l -> occursin("\"ev\":\"stop\"", l), lines(r)) == 1
-        @test any(l -> occursin("\"ev\":\"stop\"", l) && occursin("\"agent_id\":\"a1fe55\"", l), lines(r))
-        # three idles of one teammate without a report: one idle-blocked, then ONE idle-unreported
-        r = realpath(mktempdir())
-        idle = "{\"session_id\":\"s1\",\"team_name\":\"t\",\"teammate_name\":\"quiet\"}"
-        @test hook("teammate_idle.sh", idle, r)[1] == 2
-        @test hook("teammate_idle.sh", idle, r)[1] == 0
-        @test hook("teammate_idle.sh", idle, r)[1] == 0
-        @test hook("teammate_idle.sh", idle, r)[1] == 0
-        @test count(contains("\"idle-unreported\""), lines(r)) == 1 || (println(lines(r)); false)
-        @test count(contains("\"idle-blocked\""), lines(r)) == 1
-        @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 2   # another key: its own cycle
-        @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 0
-        @test count(contains("\"idle-unreported\""), lines(r)) == 2
-    end
-
-    @testset "ledger appends take the dispatch lock; a denial names a big ledger (0.4.0 critic)" begin
-        # `scripts/lane compact` rewrites the ledger under .lanes/.dispatch.lock: an append that ignored the
-        # lock could land between its read and its rename and be lost. ledger() waits for the lock briefly
-        # (about 1 s), then appends anyway; a lock it did not take is left alone.
-        start = "{\"session_id\":\"s2\",\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"b1\"}"
-        r = realpath(mktempdir())
-        lk = joinpath(r, ".lanes/.dispatch.lock")
-        mkpath(lk)
-        t = @elapsed (rc = hook("lane_ledger.sh", start, r)[1])
-        @test rc == 0 && 0.5 < t < 5 || (println("held lock: rc=$rc in $t s"); false)
-        @test any(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
-        @test isdir(lk)
-        t = @elapsed hook("lane_ledger.sh", start, r; env = Dict("FACTORY_LEDGER_LOCKED" => "1"))   # the caller holds it
-        @test t < 0.5
-        rm(lk)
-        hook("lane_ledger.sh", start, r)
-        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 3
-        # a denial on a ledger over 2,000 lines says so and names `scripts/lane compact`
-        big(n) = "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"a\"}\n"^n
-        pre = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"n1\",\"description\":\"d\"}}"
-        r = realpath(mktempdir())
-        mkpath(joinpath(r, ".lanes"))
-        write(joinpath(r, ".lanes/ledger.jsonl"), big(2001))
-        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
-        @test rc == 2 && occursin("2001 lines", err) && occursin("run scripts/lane compact", err) || (println(err); false)
-        r = realpath(mktempdir())
-        mkpath(joinpath(r, ".lanes"))
-        write(joinpath(r, ".lanes/ledger.jsonl"), big(5))
-        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
-        @test rc == 2 && !occursin("lane compact", err)
-    end
+    # 0.4.0 testsets (quiet stops, once-per-key idle, the ledger lock, the big-ledger denial): test_hooks_040.jl
 
     @testset "precompact writes a snapshot; session_start re-injects it" begin
         repo = tmp_repo()
