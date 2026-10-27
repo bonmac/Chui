@@ -88,36 +88,39 @@ output_format = "behaviours and their sources, test items written, tdd.jl red ou
 slug = "law_tester"
 name = "law-tester"
 role = "Writes algebraic-law tests (identity, associativity, functor/monad laws) for every typeclass instance."
-description = "Use when a type gains or changes an instance of an ecosystem typeclass, or a law kit changes."
+description = "Use when a type gains or changes an instance of an ecosystem typeclass, or a law kit changes; in a test-first lane, dispatched by the lead with a tdd-brief (role=law-tester), before the code."
 model = "inherit"
 color = "yellow"
 default_mode = "write"
+disallowed_tools = ["Agent", "Task", "SendMessage"]
 file_scope = ["test/laws/**"]
-scorecard = ["every instance covered by its laws", "generators cover edge cases", "a planted violation fails"]
+scorecard = ["every instance covered by its laws", "generators cover edge cases", "a planted violation fails", "in a test-first lane: commits authored law-tester with a TDD phase trailer"]
 output_format = "instances covered, laws per instance, commands run with output, gaps, scorecard"
 
 [[agents]]
 slug = "property_tester"
 name = "property-tester"
 role = "Writes property-based tests (Supposition.jl) for invariants that are not algebraic laws."
-description = "Use to add property tests for an invariant named in a spec or plan."
+description = "Use to add property tests for an invariant named in a spec or plan; in a test-first lane, dispatched by the lead with a tdd-brief (role=property-tester), before the code."
 model = "inherit"
 color = "yellow"
 default_mode = "write"
+disallowed_tools = ["Agent", "Task", "SendMessage"]
 file_scope = ["test/property/**"]
-scorecard = ["invariant stated in words first", "shrinking produces a readable counterexample", "seed recorded"]
+scorecard = ["invariant stated in words first", "shrinking produces a readable counterexample", "seed recorded", "in a test-first lane: commits authored property-tester with a TDD phase trailer"]
 output_format = "invariants, generators, commands run with output, counterexamples found, scorecard"
 
 [[agents]]
 slug = "differential_tester"
 name = "differential-tester"
 role = "Compares results against reference implementations (R via Rscript, Python via uv)."
-description = "Use to check parity with dplyr/data.table/pandas/polars or another reference on the same inputs."
+description = "Use to check parity with dplyr/data.table/pandas/polars or another reference on the same inputs; in a test-first lane, dispatched by the lead with a tdd-brief (role=differential-tester), before the code."
 model = "inherit"
 color = "orange"
 default_mode = "write"
+disallowed_tools = ["Agent", "Task", "SendMessage"]
 file_scope = ["test/differential/**"]
-scorecard = ["reference version recorded", "inputs include edge cases (missing, empty, ties)", "every difference explained or filed"]
+scorecard = ["reference version recorded", "inputs include edge cases (missing, empty, ties)", "every difference explained or filed", "in a test-first lane: commits authored differential-tester with a TDD phase trailer"]
 output_format = "references and versions, cases, differences found, commands run with output, scorecard"
 
 [[agents]]

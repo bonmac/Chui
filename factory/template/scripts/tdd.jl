@@ -24,7 +24,7 @@ module Tdd
     include(joinpath(@__DIR__, "evidence.jl"))   # module Tdd.Evidence
     include(joinpath(@__DIR__, "_tdd_backfill.jl"))
 
-    const ROLES = ("test-writer", "implementer")
+    const ROLES = (TEST_ROLES..., "implementer")   # critic C1: the test-side roles of _tdd_history.jl
     const RED_PHASES = ("red", "test-fix")
 
     # -----------------------------------------------------------------------------------------
@@ -32,7 +32,7 @@ module Tdd
 
     is_dirty(root) = !isempty(something(git(root, "status", "--porcelain"), ""))
     "The `TDD:` trailer of commit `rev` (`\"\"` when it has none)."
-    phase(root, rev) = String(strip(first(split(something(git(root, "log", "-1", "--format=%(trailers:key=TDD,valueonly)", rev), ""), '\n'))))
+    phase(root, rev) = git_trailer(root, rev, "TDD")   # git's parse, as lane_commits and the post hook (critic C2)
     "The shas of the non-merge commits in `base..HEAD`, oldest first; `nothing` when `base` has no merge
     base with HEAD. (`lane_commits` in _tdd_history.jl returns them as `LaneCommit`s.)"
     function lane_shas(root, base)
@@ -145,7 +145,7 @@ module Tdd
         i = findlast(c -> c.phase in RED_PHASES && any(s -> s.name == name, requested(root, c.sha).red), commits)
         i === nothing && return nothing
         for c in commits[(i + 1):end]
-            (c.phase == "test-fix" && c.author == role_author("test-writer")) || continue
+            (c.phase == "test-fix" && c.author in role_author.(TEST_ROLES)) || continue
             isempty(spans_at(root, "$(c.sha)^", [name])) && continue   # not the commit that removed it
             isempty(spans_at(root, c.sha, [name])) || continue
             isempty(requested(root, c.sha).red) && continue            # no replacement
@@ -285,7 +285,7 @@ module Tdd
         b = IOBuffer()
         println(b, "<!-- tdd-brief role=$role lane=$lane checkout=$checkout head=$head -->")
         println(b, "## Task\n\n(the lead pastes the plan task text here)\n\n## Spec\n\n(the lead names the spec path here)\n")
-        if role == "test-writer"
+        if role != "implementer"   # a test-side role (critic C1) gets the test-writer's brief
             stubs = filter(c -> phase(root, c) == "stub", commits)
             bad = filter(c -> !stub_declares_only(root, c), stubs)
             if !isempty(bad)

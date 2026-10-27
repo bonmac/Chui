@@ -2,7 +2,8 @@
 # shellcheck disable=SC1091,SC2034,SC2154 # eval sets the payload fields; the guard reads AN, AE and CWD_OK
 # tdd_boundary.sh (factory 0.3.0, spec §0.6): PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)
 # and PreToolUse(Agent|Task). The role is the payload's agent_type ONLY (plan Task 0: a named teammate has no
-# agent_id; the lead is the caller with no agent_type). A test-writer reads and writes only allowlisted paths
+# agent_id; the lead is the caller with no agent_type). A test-side role (test_role, _lib.sh: the test-writer and
+# the law/property/differential testers, critic C1) reads and writes only allowlisted paths
 # and runs only allowlisted Bash (_tdd_allow.sh); an implementer writes no test/**; every caller's `git commit`
 # passes the commit guard (_tdd_commit_guard.sh, §0.5); only the lead dispatches a role, on a clean lane with
 # a current tdd-brief, and the prompt is saved. Paths resolve, symlinks followed, to their checkout (co_of).
@@ -24,7 +25,7 @@ eval "$(printf '%s' "$PAYLOAD" | jq -r 'select(type == "object") | (.tool_input 
 case $tu in '' | *[!A-Za-z0-9_-]*) tu="x$$" ;; esac
 cwd=${cwd:-$ROOT}
 TW="" CWD_OK=1 PENDING=""
-[ "$at" != test-writer ] || TW=1
+! test_role "$at" || TW=1 # critic C1: every test-side role (_lib.sh) gets the test-writer's boundary
 tdeny() { ledger tdd-boundary-denied agent_type "${at:--}" tool "${tool:--}" rule "$1"; deny "tdd_boundary $2 ($1): $3"; }
 for _f in "$PEND"/*; do # the sweep (§0.5): an entry left by a cancelled call (no post event) is recorded late
     [ -e "$_f" ] && [ -n "$(find "$PEND" -mindepth 1 -maxdepth 1 -mmin +"$TDD_STALE_MIN" 2>/dev/null)" ] &&
@@ -32,7 +33,7 @@ for _f in "$PEND"/*; do # the sweep (§0.5): an entry left by a cancelled call (
     break
 done
 dispatch() { # the lead dispatches a role only on a clean lane worktree with a current tdd-brief (_lanes.sh); the prompt is saved
-    case $sub in test-writer | implementer) ;; *) exit 0 ;; esac
+    tdd_role "$sub" || exit 0
     tdd_dispatch "$sub" "$at" || tdeny "$TD_RULE" §0.6 "$TD_MSG"
     _dir="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
     { mkdir -p "$_dir" && printf '%s\n' "$TD_PR" >"$_dir/$(date -u +%Y%m%dT%H%M%SZ)-$sub-$tu.md"; } 2>/dev/null ||
@@ -51,24 +52,25 @@ case $tool in
         tw_read_ok "$(abspath "$_t" "$cwd")" || tdeny tw-read §0.6 "$TW_READ; not $_t"
         exit 0 ;;
     Edit | Write | MultiEdit | NotebookEdit)
-        case $at in test-writer | implementer) co_of "$(abspath "$fp" "$cwd")" ;; *) exit 0 ;; esac
+        tdd_role "$at" || exit 0
+        co_of "$(abspath "$fp" "$cwd")"
         case /$fp/ in */.[Gg][Ii][Tt]/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
         if [ -n "$TW" ]; then
             in_root && case $REL in test/runtests.jl | test/Project.toml) ;; test/?*) exit 0 ;; esac
-            tdeny tw-write §0.6 "a test-writer writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
+            tdeny tw-write §0.6 "a $at writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
         fi
         case $REL in test | test/*) tdeny impl-test-write §0.6 "an implementer never writes test/**: $fp; send the lead a written test-fix request" ;; esac
         exit 0 ;;
     *) exit 0 ;;
 esac
 # Bash: the lead and other callers only meet the commit guard; the fast path skips a command that cannot commit
-case $at in test-writer | implementer) ;; *) case $cmd in *commit* | *\\* | *\'* | *\"*) ;; *) exit 0 ;; esac ;; esac
+tdd_role "$at" || case $cmd in *commit* | *\\* | *\'* | *\"*) ;; *) exit 0 ;; esac
 [ ${#cmd} -le 65536 ] || tdeny too-long §0.6 "a command over 64 KiB cannot be checked in time"
-case $at:$cmd in test-writer:*"\$'"* | test-writer:*'$"'* | implementer:*"\$'"* | implementer:*'$"'*) # R2-B1: segments() cannot model them
+! tdd_role "$at" || case $cmd in *"\$'"* | *'$"'*) # R2-B1: segments() cannot model them
     tdeny ansi-c-quote §0.6 "a $at may not use \$'...' or \$\"...\" quoting (bash and zsh expand its escapes into any path); write the plain word" ;;
 esac
-case $at:$cmd in test-writer:*'$'* | test-writer:*'`'* | test-writer:*'<<'*) # R3-B1: segments() drops heredoc bodies, which bash expands
-    tdeny tw-heredoc §0.6 "a test-writer's command may not contain \$, a backquote or a heredoc (<<, <<<); write plain words: put a commit message in plain quotes (-m \"test: ...\"), no \$, backquotes or heredocs" ;;
+[ -z "$TW" ] || case $cmd in *'$'* | *'`'* | *'<<'*) # R3-B1: segments() drops heredoc bodies, which bash expands
+    tdeny tw-heredoc §0.6 "a $at's command may not contain \$, a backquote or a heredoc (<<, <<<); write plain words: put a commit message in plain quotes (-m \"test: ...\"), no \$, backquotes or heredocs" ;;
 esac
 [ "$at" != implementer ] || impl_libs
 segs=$(printf '%s\n' "$cmd" | segments)

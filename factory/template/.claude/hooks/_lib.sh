@@ -122,6 +122,11 @@ phys() {
 }
 # is_co, co_of and in_root (the checkout of a path) live in _tdd_allow.sh: only tdd_boundary.sh uses them.
 
+# test_role ROLE / tdd_role ROLE (factory 0.3.0, critic C1): the one list of test-side roles (they author the test
+# phases and share the test-writer's boundary); a TDD role is a test-side role or the implementer.
+test_role() { case $1 in test-writer | law-tester | property-tester | differential-tester) return 0 ;; esac; return 1; }
+tdd_role() { [ "$1" = implementer ] || test_role "$1"; }
+
 # allowed ABS: true if ABS is inside the repo root, a lane worktree or the reports of its main checkout (in_main), or a scratch location.
 allowed() {
     in_main "$1" && return 0

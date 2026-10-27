@@ -42,12 +42,12 @@ impl_libs() { # bash_guard's write-target model, with outside() redefined: a tar
     }
 }
 
-TW_READ="a test-writer reads only test/, docs/, Project.toml, .lanes/evidence/red-* and green-*, .lanes/briefs/<lane>/test-writer-* (in the coordinator also contracts/ and adr/)"
-tw_read_ok() { # ABS: on the read allowlist, in a checkout under the session root, symlinks followed
+TW_READ="a test-side role reads only test/, docs/, Project.toml, .lanes/evidence/red-* and green-*, its own .lanes/briefs/<lane>/<role>-* (in the coordinator also contracts/ and adr/)"
+tw_read_ok() { # ABS: on a test-side role's read allowlist (its own briefs only, critic C1), in a checkout under the session root
     co_of "$1"
     in_root || return 1
     case $REL in
-        test | test/* | docs | docs/* | Project.toml | .lanes/evidence/red-* | .lanes/evidence/green-* | .lanes/briefs/*/test-writer-*) return 0 ;;
+        test | test/* | docs | docs/* | Project.toml | .lanes/evidence/red-* | .lanes/evidence/green-* | .lanes/briefs/*/"$at"-*) return 0 ;;
         contracts | contracts/* | adr | adr/*) [ "$CO" = "$ROOT_P" ] ;;
         *) return 1 ;;
     esac

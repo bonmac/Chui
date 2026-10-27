@@ -57,8 +57,8 @@ OPEN_LANES_JQ='now as $now
      | $d.key] | unique as $ids
   | {ids: $ids, count: ($ids | length)}'
 
-# tdd_dispatch SUB AGENT_TYPE (factory 0.3.0, spec §0.6; review 1 M1): tdd_boundary's check of a test-writer or
-# implementer dispatch, run by tdd_boundary.sh AND dispatch_limit.sh (parallel hooks of one Agent|Task call, no
+# tdd_dispatch SUB AGENT_TYPE (factory 0.3.0, spec §0.6; review 1 M1): tdd_boundary's check of a TDD role's
+# dispatch (tdd_role, _lib.sh: a test-side role or the implementer; critic C1), run by tdd_boundary.sh AND dispatch_limit.sh (parallel hooks of one Agent|Task call, no
 # order), so a dispatch tdd_boundary denies is never recorded as an open lane. Only the lead (no agent_type)
 # dispatches a role, on a clean lane worktree whose HEAD is the brief's head=, with lane= its lane. Returns 0
 # (allowed, or not a role dispatch) or 1 with TD_RULE and TD_MSG. Sets TD_PR (the prompt), TD_LN, TD_MAIN.
@@ -66,7 +66,7 @@ td_no() { TD_RULE=$1 TD_MSG=$2; return 1; }
 # shellcheck disable=SC2034 # TD_* are read by tdd_boundary.sh and dispatch_limit.sh
 tdd_dispatch() {
     TD_RULE="" TD_MSG="" TD_PR="" TD_LN="" TD_MAIN=""
-    case $1 in test-writer | implementer) ;; *) return 0 ;; esac
+    tdd_role "$1" || return 0
     [ -z "$2" ] || { td_no dispatch-not-lead "only the lead (no agent_type) dispatches a $1; this caller is $2"; return; }
     TD_PR=$(field '.tool_input.prompt | strings')
     _ro="" _co="" _he="" _hd=${TD_PR%%"

@@ -18,12 +18,10 @@ done
 . "$d/_lanes.sh"
 need_jq
 payload_ok || deny "cannot parse the hook payload as a JSON object, so the dispatch cannot be keyed or counted (fails closed)."
-# 0.3.0 (review 1 M1): a test-writer/implementer dispatch tdd_boundary.sh denies is denied here too, unrecorded:
+# 0.3.0 (review 1 M1): a TDD role's dispatch (tdd_role, _lib.sh) tdd_boundary.sh denies is denied here too, unrecorded:
 # the two hooks run in parallel, so recording it would leave a phantom open lane (tdd_dispatch, _lanes.sh)
 st=$(field '.tool_input.subagent_type | strings')
-case $st in test-writer | implementer)
-    tdd_dispatch "$st" "$(field '.agent_type | strings')" || deny "tdd_boundary §0.6 ($TD_RULE): $TD_MSG (no lane recorded)." ;;
-esac
+! tdd_role "$st" || tdd_dispatch "$st" "$(field '.agent_type | strings')" || deny "tdd_boundary §0.6 ($TD_RULE): $TD_MSG (no lane recorded)."
 max=${FACTORY_MAX_OPEN_LANES:-${MAX_OPEN_LANES:-4}}
 lock="$(dirname "$LEDGER_FILE")/.dispatch.lock"
 mkdir -p "$(dirname "$LEDGER_FILE")" 2>/dev/null || deny "cannot create $(dirname "$LEDGER_FILE"), so no dispatch can be recorded (fails closed)."
