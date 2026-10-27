@@ -88,7 +88,10 @@ tdd_dispatch() {
     TD_MAIN=${_gl#gitdir: } && TD_MAIN=${TD_MAIN%/.git/worktrees/*}
     # fix7 (review m1): the two git reads are `watched` steps (_watchdog.sh: both callers source it and start the watchdog
     # first), so a slow git is killed and the hook denies in time; a foreground git would hold off the TERM until it returned
-    TD_OUT="${TMPDIR:-/tmp}/factory-td.$$" _h="" _st=x
+    # 0.4.0 release: a mktemp file, not a predictable $TMPDIR/factory-td.<pid> another process could plant first
+    TD_OUT=$(mktemp "${TMPDIR:-/tmp}/factory-td.XXXXXX" 2>/dev/null) ||
+        { TD_OUT=""; td_no brief-tmp "cannot create a temp file in ${TMPDIR:-/tmp} for the dispatch check's git reads (fails closed)"; return; }
+    _h="" _st=x
     ! watched "$TD_OUT" git -C "$RP" rev-parse HEAD || _h=$(cat "$TD_OUT" 2>/dev/null)
     ! watched "$TD_OUT" git -C "$RP" status --porcelain || _st=$(cat "$TD_OUT" 2>/dev/null)
     rm -f "$TD_OUT"

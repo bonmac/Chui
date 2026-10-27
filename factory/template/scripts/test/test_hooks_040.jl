@@ -74,7 +74,7 @@
         # critic round 3 n1: the watchdog's guard-timeout goes to the pending file (folded by the next lock taker)
         @test any(l -> occursin("\"guard-timeout\"", l) && occursin("dispatch_limit.sh", l), readlines(joinpath(r, ".lanes/ledger.pending.jsonl")))
         @test !isdir(joinpath(r, ".lanes/.dispatch.lock"))
-        @test !any(l -> occursin("\"ev\":\"dispatch\"", l), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test !any(l -> occursin("\"ev\":\"dispatch\"", l), [readlines(joinpath(r, ".lanes/ledger.jsonl")); readlines(joinpath(r, ".lanes/ledger.pending.jsonl"))])   # nor in pending
         delete!(slow, "FACTORY_TEST")                                      # not a test run: the slow path is ignored
         t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = slow))
         @test res[1] == 0 && t < 3 || (println("no FACTORY_TEST: ", res, " in $t s"); false)

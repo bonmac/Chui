@@ -73,4 +73,28 @@
             @test rc == 2 && el < 3.0 || (println("m1 $h: rc $rc after $(round(el; digits = 1)) s: ", String(take!(err))); false)
         end
     end
+    @testset "0.4.0 release: the dispatch check's git output goes to a mktemp file, and the hooks still decide right" begin
+        src = read(joinpath(TB_HOOKS, "_lanes.sh"), String)
+        @test occursin("mktemp", src) && !occursin("factory-td.\$\$", src)   # no predictable \$TMPDIR/factory-td.<pid>
+        b = "<!-- tdd-brief role=test-writer lane=lane1 checkout=$L head=$(tb_head(L)) -->\n## Task\ntmp\n"
+        p = tb_pay("Agent", Dict{String, Any}("subagent_type" => "test-writer", "prompt" => b, "description" => "d"))
+        function run_td(h, tmp)
+            cmd = Cmd(addenv(`sh $(joinpath(TB_HOOKS, h))`, tb_env(t)..., "TMPDIR" => tmp); dir = S)
+            err = IOBuffer()
+            rc = run(pipeline(ignorestatus(cmd); stdin = IOBuffer(p), stdout = devnull, stderr = err)).exitcode
+            return rc, String(take!(err))
+        end
+        for h in ("dispatch_limit.sh", "tdd_boundary.sh")
+            tmp = realpath(mktempdir())
+            rc, err = run_td(h, tmp)
+            @test rc == 0 || (println("clean lane, $h: rc $rc: ", err); false)        # a clean lane: allowed
+            @test isempty(readdir(tmp))                                              # the temp file is removed
+            write(joinpath(L, "test", "dirty.jl"), "x\n")
+            rc, err = run_td(h, tmp)
+            @test rc == 2 && occursin("uncommitted", err) || (println("dirty lane, $h: rc $rc: ", err); false)
+            rm(joinpath(L, "test", "dirty.jl"))
+            rc, err = run_td(h, joinpath(tmp, "missing"))                            # mktemp cannot create it: fails closed
+            @test rc == 2 || (println("no TMPDIR, $h: rc $rc: ", err); false)
+        end
+    end
 end
