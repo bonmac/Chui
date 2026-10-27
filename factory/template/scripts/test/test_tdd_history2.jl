@@ -333,7 +333,7 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         @test !any(s -> occursin("late", s), er(d, th_lane_recs(d, c)[1:2]))   # green unrecorded: no hint without a late record
     end
 
-    th_testset("E5 default ledger is the outermost .lanes/ledger.jsonl above the lane", :audit) do
+    th_testset("E5 default ledger is the owning repo's main ledger, not the outermost", :audit) do
         # A coordinator-style root C holds the nested package repo C/Pkg.jl, which has its own .lanes;
         # the lane is the worktree C/Pkg.jl/.worktrees/lane.
         C = realpath(mktempdir())
@@ -353,16 +353,17 @@ th_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" 
         outer, inner = joinpath(C, ".lanes", "ledger.jsonl"), joinpath(pkg, ".lanes", "ledger.jsonl")
         aud() = (io = IOBuffer(); code = th(:audit)(lane; base = "main", io); (code, String(take!(io))))
 
-        th_ledger!(outer, th_lane_recs(lane, c))
+        th_ledger!(outer, th_lane_recs(lane, c))   # records only in the outer (coordinator) ledger: not read
         th_ledger!(inner, String[])
-        code, out = aud()
-        @test code == 0
-        @test !occursin(r"^E5"m, out)
-
-        th_ledger!(outer, String[])
-        th_ledger!(inner, th_lane_recs(lane, c))
         code, out = aud()
         @test code == 1
         @test occursin(r"^E5"m, out)
+
+        th_ledger!(outer, String[])
+        th_ledger!(inner, th_lane_recs(lane, c))   # records in the owning repo's main ledger: read
+        code, out = aud()
+        @test code == 0
+        @test !occursin(r"^E5"m, out)
+        @test occursin("ledger $inner)", out)
     end
 end

@@ -37,6 +37,7 @@ tb_post(t, c, tu; agent = "test-writer", cwd = t.lane) = tb_run(
         extra = Dict("tool_response" => Dict("stdout" => "", "stderr" => ""))
     ); name = "tdd_commit_post.sh"
 )
+"Does any ledger (the session's or an owning repo's) mention `sha`?"
 tb_mentions(t, sha) = any(l -> occursin(sha, l), tb_ledger_lines(t))
 "Open lanes of session s1 as dispatch_limit.sh counts them."
 function tb_open_lanes(t)
@@ -87,10 +88,10 @@ end
         @test tb_age!(t, tl, T) && tb_age!(t, ti, T + 25)
         post = tb_post(t, ic, ti; agent = "implementer")
         @test tb_ok(t, tb_bash("ls"; agent = nothing, cwd = L))   # a later call sweeps the lead's entry
-        @test isempty(tb_recs(t, "tdd-commit-violation"))
+        @test isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
         @test !occursin("violation", post.err)
-        @test any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "implementer", tb_recs(t, "tdd-commit"))
-        @test !any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") != "implementer", tb_recs(t, "tdd-commit"))
+        @test any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "implementer", tb_recs(t, "tdd-commit"; at = t.pkg))
+        @test !any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") != "implementer", tb_recs(t, "tdd-commit"; at = t.pkg))
         @test !ispath(joinpath(t.S, ".lanes", "tdd-pending", tl))
     end
     @testset "B2 cancelled test-writer entry then a lead commit: no violation" begin
@@ -106,8 +107,9 @@ end
         @test tb_age!(t, tw, T) && tb_age!(t, tl, T + 118)
         tb_post(t, lc, tl; agent = nothing)
         @test tb_ok(t, tb_bash("ls"; agent = nothing, cwd = L))
-        @test isempty(tb_recs(t, "tdd-commit-violation"))
-        @test !any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"))
+        @test isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
+        @test !any(r -> get(r, "sha", "") == sha && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"; at = t.pkg))
+        @test any(r -> get(r, "sha", "") == sha, tb_recs(t, "tdd-commit"; at = t.pkg))   # the lead's commit is recorded there
         @test !ispath(joinpath(t.S, ".lanes", "tdd-pending", tw))
     end
     @testset "B2 forged commit in a stale test-writer window gets no tdd-commit; audit E5 fails it" begin
@@ -118,8 +120,9 @@ end
         @test tb_age!(t, tw, T)
         sha = tb_commit_at!(L, TB_TW, Dict("test/y_tests.jl" => "@testitem \"y\" begin\n    @test false\nend\n"), T + 60, "forged", "TDD: red")
         @test tb_ok(t, tb_bash("ls"; agent = nothing, cwd = L))   # the sweep
-        @test !any(r -> get(r, "sha", "") == sha, tb_recs(t, "tdd-commit"))
-        @test isempty(tb_recs(t, "tdd-commit-violation"))
+        @test !any(r -> get(r, "sha", "") == sha, tb_recs(t, "tdd-commit"; at = t.pkg))
+        @test isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
+        @test any(r -> get(r, "sha", "") == sha, tb_recs(t, "tdd-commit-late"; at = t.pkg))   # the sweep wrote this ledger
         out = read(pipeline(ignorestatus(`$JULIA $(joinpath(SCRIPTS, "tdd.jl")) audit --root $L --base main`); stderr = devnull), String)
         e5 = filter(l -> startswith(l, "E5 $(first(sha, 7))"), split(out, '\n'))
         @test !isempty(e5)
@@ -136,12 +139,12 @@ end
         late = tb_commit_at!(L, TB_TW, Dict("test/c.jl" => "c\n"), T + 700, "test: c", "TDD: red")
         @test tb_ok(t, tb_bash("ls"; agent = nothing, cwd = L))
         @test !tb_mentions(t, early) && !tb_mentions(t, late)
-        lr = tb_recs(t, "tdd-commit-late")
+        lr = tb_recs(t, "tdd-commit-late"; at = t.pkg)
         @test any(
             r -> get(r, "sha", "") == inwin && get(r, "agent_type", "") == "test-writer" &&
                 haskey(r, "agent_id") && tb_canon(get(r, "checkout", "")) == tb_canon(L), lr
         )
-        @test isempty(tb_recs(t, "tdd-commit")) && isempty(tb_recs(t, "tdd-commit-violation"))
+        @test isempty(tb_recs(t, "tdd-commit"; at = t.pkg)) && isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
         @test !ispath(joinpath(t.S, ".lanes", "tdd-pending", tw))
     end
     @testset "B2 an entry is stale after 11 minutes" begin
@@ -160,11 +163,11 @@ end
         @test tb_run(t, tb_bash(c; cwd = L, tu)).rc == 0
         old = tb_commit_at!(L, TB_TW, Dict("test/o.jl" => "o\n"), tb_ago(3600), "test: o", "TDD: red")
         tb_post(t, c, tu)
-        @test !any(r -> get(r, "sha", "") == old, tb_recs(t, "tdd-commit"))
+        @test !any(r -> get(r, "sha", "") == old, tb_recs(t, "tdd-commit"; at = t.pkg))
         tb_write!(L, Dict("test/n.jl" => "n\n"))
         f = tb_flow(t, "git -C $L add test/n.jl && " * tb_cm(L))   # control: a commit the call makes now
         @test f.pre.rc == 0 && f.ran
-        @test any(r -> get(r, "sha", "") == tb_head(L) && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"))
+        @test any(r -> get(r, "sha", "") == tb_head(L) && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"; at = t.pkg))
     end
 
     # ---- B3: first parent only ----
@@ -176,8 +179,8 @@ end
         f = tb_flow(t, "git -C $L commit -q -m merge-main"; agent = nothing)
         ms = tb_head(L)
         @test f.pre.rc == 0 && f.ran && ms != gs
-        @test isempty(tb_recs(t, "tdd-commit-violation"))
-        @test all(r -> get(r, "sha", "") == ms, tb_recs(t, "tdd-commit"))
+        @test isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
+        @test !isempty(tb_recs(t, "tdd-commit"; at = t.pkg)) && all(r -> get(r, "sha", "") == ms, tb_recs(t, "tdd-commit"; at = t.pkg))
         @test !tb_mentions(t, rs) && !tb_mentions(t, gs)
     end
 
@@ -254,8 +257,8 @@ end
         @test tb_no(t, twb(t, "git -C $L commit -q -m x -m \"tdd-mode: skip — r\" --author \"$TB_TW\""), "§0.5")
         f = tb_flow(t, "git -C $L commit -q -m \"test: red for the tdd-mode parser\" -m \"TDD: red\" --author \"$TB_TW\"")
         @test f.pre.rc == 0 && f.ran
-        @test any(r -> get(r, "sha", "") == tb_head(L) && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"))
-        @test isempty(tb_recs(t, "tdd-commit-violation"))
+        @test any(r -> get(r, "sha", "") == tb_head(L) && get(r, "agent_type", "") == "test-writer", tb_recs(t, "tdd-commit"; at = t.pkg))
+        @test isempty(tb_recs(t, "tdd-commit-violation"; at = t.pkg))
     end
     @testset "Nit 2 dispatch with lane= not the checkout's lane denied" begin
         t = tb_topo(); L = t.lane

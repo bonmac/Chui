@@ -21,7 +21,10 @@
 #   agent_id): the test-writer's payloads here carry NO agent_id. The lead is the caller with no
 #   agent_type at all; a payload with agent_id but no agent_type is the lead. Post payloads carry
 #   hook_event_name "PostToolUse" (+ tool_response) or "PostToolUseFailure" (+ error).
-# - The ledger is <session root>/.lanes/ledger.jsonl (_lib.sh's `ledger`; string fields). Events:
+# - Ledgers (_lib.sh's `ledger`; string fields). tdd-boundary-denied goes to the session ledger,
+#   <session root>/.lanes/ledger.jsonl. tdd-commit, tdd-commit-violation and tdd-commit-late go to the
+#   OWNING repo's main ledger (0.3.1 F2, `owning_ledger`): <main checkout of the commit's repo>/.lanes/
+#   ledger.jsonl, so S/Pkg.jl's for its lane1, S/Fx1's for a fixture. Events:
 #   tdd-boundary-denied {agent_type, tool, rule}; tdd-commit {agent_id ("-" when absent),
 #   agent_type, checkout, sha} with sha the FULL resulting sha and checkout the checkout's path with
 #   symlinks resolved (pwd -P), plus late = "true" when written by the sweep (a JSON true is also
@@ -114,10 +117,20 @@ function tb_flow(t, c; agent = "test-writer", cwd = t.lane)
 end
 
 # ---- the ledger ----
-tb_ledger_lines(t) = (f = joinpath(t.S, ".lanes", "ledger.jsonl"); isfile(f) ? filter(!isempty, readlines(f)) : String[])
+"The ledger of the repo whose main checkout is `d` (`<d>/.lanes/ledger.jsonl`), as lines."
+tb_lines_at(d) = (f = joinpath(d, ".lanes", "ledger.jsonl"); isfile(f) ? filter(!isempty, readlines(f)) : String[])
+"The main checkouts nested in S whose owning ledgers hold tdd-commit* records (0.3.1 F2)."
+tb_owners(t) = [joinpath(t.S, d) for d in readdir(t.S) if d in ("Pkg.jl", "Pkg2.jl") || startswith(d, "Fx")]
+tb_owning_lines(t) = reduce(vcat, (tb_lines_at(d) for d in tb_owners(t)); init = String[])
+"Every ledger line of the topology: the session ledger (S) and the owning ledgers of the nested repos."
+tb_ledger_lines(t) = vcat(tb_lines_at(t.S), tb_owning_lines(t))
 tb_fields(l) = Dict{String, String}(m.captures[1] => m.captures[2] for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l))
-tb_recs(t, ev) = [tb_fields(l) for l in tb_ledger_lines(t) if get(tb_fields(l), "ev", "") == ev]
-tb_late(t, sha) = any(l -> occursin("\"$sha\"", l) && occursin(r"\"late\"\s*:\s*\"?true\"?", l), tb_ledger_lines(t))
+"Records of event `ev`: tdd-commit* from the owning ledgers (or only `at`'s), anything else from the session ledger."
+function tb_recs(t, ev; at = nothing)
+    ls = at !== nothing ? tb_lines_at(at) : startswith(ev, "tdd-commit") ? tb_owning_lines(t) : tb_lines_at(t.S)
+    return [tb_fields(l) for l in ls if get(tb_fields(l), "ev", "") == ev]
+end
+tb_late(t, sha) = any(l -> occursin("\"$sha\"", l) && occursin(r"\"late\"\s*:\s*\"?true\"?", l), tb_owning_lines(t))
 tb_canon(p) = (q = rstrip(p, '/'); ispath(q) ? realpath(q) : q)
 
 # ---- topology (a) ----
