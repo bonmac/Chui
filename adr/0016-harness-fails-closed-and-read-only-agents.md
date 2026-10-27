@@ -49,13 +49,20 @@ D2 and D6–D12 are implementation choices that live in the spec.
      agents (`RO_AGENT_CMDS`, its own list), `git` read subcommands with `-C` only into a trusted
      checkout (the root, the main checkout, their lane worktrees; never `.lanes/`),
      `julia scripts/dod.jl`, `julia scripts/ci.jl {test,guards,quality,docs}`,
-     `julia scripts/gen.jl --check`, `scripts/lane audit`, `julia scripts/evidence.jl latest` and
+     `julia scripts/gen.jl --check`, `scripts/lane audit` without `--report` or `--repo`,
+     `julia scripts/tdd.jl audit` without `--root` *(amended 2026-10-27, 0.3.0 integration and
+     critic round 3)*, `julia scripts/evidence.jl latest` and
      `evidence.jl <kind> -- <cmd>` when `<cmd>` passes this same allowlist,
      `julia scripts/test/runtests.jl`, with `julia` taking only `--startup-file=no` and a
      `+channel`, and every script path resolved against the tracked cwd to a trusted checkout's
      own `scripts/`. `tdd.jl mutate` is not allowed. write_guard must allow only `.lanes/reports/**`
      and `.lanes/scratch/<agent_type>/**`.
    - A read-only agent's `file_scope` must be empty or a subset of those two globs.
+   - Every `.git` path component is matched case-insensitively, for every agent and the lead (the
+     disk here is case-insensitive; critic round 3, B1).
+   - *(Amended 2026-10-27, 0.3.0 integration.)* The 0.3.0 test-side roles and implementer stay
+     write agents under `tdd_boundary`; they may also run three exact pre-flight git reads and
+     Write, never Read, their own report in the session root's `.lanes/reports/`, once.
    - The critic's gate audit of a hook must run in a copy of `.claude/hooks` under its scratch with
      `julia scripts/test/runtests.jl hooks --hooks-dir <copy>`; a gate script is audited by
      specification, run by the lead in a scratch copy.
