@@ -114,3 +114,5 @@ julia factory/template/scripts/sync_factory.jl --from factory --to . --profile c
 | `integration-tester` | write | inherit | Runs integration/ end-to-end against the latest registered releases and proposes compat-matrix rows. |
 | `benchmarker` | write | inherit | Runs the cross-package benchmark suite in benchmarks/; reports losses as well as wins. |
 | `docs-writer` | write | inherit | Writes the coordinator's own documentation: README files of the coordination folders and docs/. |
+| `implementer` | write | inherit | Implements one planned task against the test-writer's red tests: minimal code to green, then refactor with tests unchanged. |
+| `test-writer` | write | inherit | Writes unit and example tests from the spec, plan and public API, in a context that never sees the implementation (RED); and characterization tests for untested code. |
