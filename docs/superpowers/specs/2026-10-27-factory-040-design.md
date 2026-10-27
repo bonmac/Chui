@@ -100,8 +100,11 @@ D6. **The review routine is a command.** `/lane-review <lane>` runs, in order: `
     A `not applicable` result from `ci.jl` is printed as `NOT RUN`, never as a green comparison. `/change-review` step 2 calls it. `/ci-triage [run-id]` lists the
     failed jobs with `gh run view`, groups them by first failing assertion, reproduces each locally
     with `julia scripts/ci.jl <job> --timeout 900`, and labels each `flake | guard | defect`.
-D7. **Numbers live once.** The cap is written only in the registry; the skill and CLAUDE.md carry
-    `<!-- claim: max_open=N -->` markers and `check_claims` requires `max_open` in both. The template
+D7. **Numbers live once.** The cap is written only in the registry. The factory-managed skill names
+    the key (`[lanes] max_open` in `.agents/agent-registry.toml`) and never a number, because every
+    repo syncs the same file and their caps differ (review of f040-commands, B1); the repo-owned
+    (seeded) CLAUDE.md states the number with a `<!-- claim: max_open=N -->` marker, which
+    `check_claims` requires. The template
     CLAUDE.md gains two short sections: "Precedence" (the factory's lane tool, reviewer, critic, cap
     and intake tiers win over the superpowers equivalents; the plugin skills are used only for
     brainstorming at T2+ and for executing a plan) and "Writing files under the guard" (Edit/Write,
