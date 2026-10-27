@@ -89,6 +89,11 @@ description: Rules for dispatching, monitoring, closing and reporting agent lane
   The reason separator is ` — `, ` - ` or ` -- `. On an integration branch the mode is per merged
   sub-lane (critic C6): each `--no-ff` merge's `M^1..M^2` follows its own mode commit, and the commits
   made directly on the branch follow the branch's own.
+- **The TDD ledger.** The post hook writes every `tdd-commit`, `tdd-commit-violation` and `tdd-commit-late`
+  record to the ledger of the MAIN checkout of the repo that owns the commit's checkout
+  (`<main>/.lanes/ledger.jsonl`, `owning_ledger` in `_lib.sh` and `_tdd_evidence.jl`), whether the role ran
+  as a subagent (session root: the coordinator) or a teammate (session root: the package); `tdd.jl audit`
+  reads that ledger when `--ledger` is not given. Lane dispatch records stay in the session ledger.
 - Before the merge: `/change-review` runs `tdd.jl audit --ledger` and `dod.jl`.
   **Merge, never rebase:** evidence is keyed by sha; after a rebase run `tdd.jl green` at the tip, and audit
   lists the missing reds for the lead to decide.

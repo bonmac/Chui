@@ -6,6 +6,7 @@
 #   julia scripts/tdd.jl api    [--root DIR]                  docstrings of exported/public names (Julia >= 1.11)
 #   julia scripts/tdd.jl brief  --role R [--root DIR] [--base B]   header + api + stub diffs; saves it
 #   julia scripts/tdd.jl audit  [--root DIR] [--base B] [--ledger PATH]   history H1-H9, evidence E1-E5
+#     (--ledger defaults to the owning ledger: <main checkout of the repo owning --root>/.lanes/ledger.jsonl)
 #   julia scripts/tdd.jl mutate [--root DIR] --item NAME (--src F:LINE | --expect F:LINE) --from S --to S
 #   julia scripts/tdd.jl gaps   [--root DIR]                  public names with no test (Julia >= 1.11)
 #   (mutate and gaps: scripts/_tdd_backfill.jl; mutate is run by the mutator agent, spec §5.2)

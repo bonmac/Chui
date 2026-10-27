@@ -70,16 +70,17 @@ function ledger_records(path)
         ) for l in eachline(path) if !isempty(strip(l))
     ]
 end
-"The outermost ancestor-or-self of `root` that holds `.lanes/ledger.jsonl` (spec §0.5), or nothing."
-function default_ledger(root)
-    found, d = nothing, abspath(root)
-    while true
-        p = joinpath(d, ".lanes", "ledger.jsonl")
-        isfile(p) && (found = p)
-        dirname(d) == d && return found
-        d = dirname(d)
-    end
-    return
+"""
+    owning_ledger(root) -> Union{String, Nothing}
+
+The TDD ledger of checkout `root` (spec §0.5; 0.3.1 F2): the ledger of the MAIN checkout of the repo that owns it,
+`<dirname of git's absolute common dir>/.lanes/ledger.jsonl`, whether or not the file exists; nothing when `root`
+is not in a git repo. The shell `owning_ledger` in .claude/hooks/_lib.sh is the same rule (tdd_commit_post writes there).
+"""
+function owning_ledger(root)
+    gcd = git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    (gcd === nothing || isempty(gcd)) && return nothing
+    return joinpath(dirname(gcd), ".lanes", "ledger.jsonl")
 end
 canon(p) = (q = rstrip(p, '/'); ispath(q) ? realpath(q) : q)
 
@@ -173,12 +174,12 @@ end
     audit(root; base = "main", ledger = nothing, io) -> exit code
 
 H1-H9 (per merged sub-lane, critic C6: `segment_rules`) and E1-E5 over `base..HEAD`; prints each failure
-(rule id first). 0 none, 1 some, 2 could not evaluate. `ledger` defaults to `default_ledger(root)`.
+(rule id first). 0 none, 1 some, 2 could not evaluate. `ledger` defaults to `owning_ledger(root)`.
 """
 function audit(root; base = "main", ledger = nothing, io = stdout)
     commits = lane_commits(root, base)
     commits === nothing && (println(io, "tdd.jl audit: no merge base with `$base` in $root (exit 2)."); return 2)
-    ledger = something(ledger, default_ledger(root), Some(nothing))
+    ledger = something(ledger, owning_ledger(root), Some(nothing))
     hs = segment_rules(lane_segments(root, base, commits); stub_ok = s -> stub_declares_only(root, s))
     v = [hs; evidence_rules(root, commits; ledger, base)]
     foreach(l -> println(io, l), v)
