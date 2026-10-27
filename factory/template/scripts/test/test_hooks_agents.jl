@@ -297,6 +297,25 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
                 "cp -R .claude/hooks a .lanes/scratch/reviewer/h6")
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
+        # round-4 review round 2 (N1, N2): a glob in an operand is expanded by the shell, not by the guard (`dws/*` reached the
+        # link dl; `d/*` was a literal to ro_nolink), so `*`, `?`, `[`, `{` and a leading `~` are refused in every operand; and the
+        # symlink scan of a cp -R source is unbounded in depth, with a tree deeper than 8 levels refused up front (the cost cap)
+        mkpath("$r/dws"); symlink(r, "$r/dws/dl"); mkpath("$r/deep/1/2/3/4/5/6/7/8/9"); symlink(r, "$r/deep/1/2/3/4/5/6/7/8/9/dl")
+        mkpath("$r/deep2/1/2/3/4/5/6/7/8/9"); write("$r/deep2/1/2/3/4/5/6/7/8/9/f", "f\n"); mkpath("$r/ok8/1/2/3/4/5/6/7"); write("$r/ok8/1/2/3/4/5/6/7/f", "f\n")
+        for c in (
+                "cp -R dws/* .lanes/scratch/reviewer/g", "cp a .lanes/scratch/reviewer/d/*", "mkdir -p .lanes/scratch/reviewer/g/*/X",
+                "cp a .lanes/scratch/reviewer/d?", "cp [d]l .lanes/scratch/reviewer/x", "cp a .lanes/scratch/reviewer/{x,y}", "cp ~/a .lanes/scratch/reviewer/x",
+                "mkdir -p ~/.lanes/scratch/reviewer/x", "cp -R d* .lanes/scratch/reviewer/g", "cp -R deep .lanes/scratch/reviewer/deep", "cp -R deep2 .lanes/scratch/reviewer/deep2",
+            )
+            @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
+        end
+        @test !blocked("bash_guard.sh", bash_as("reviewer", "cp -R ok8 .lanes/scratch/reviewer/ok8"), r)              # 8 levels: allowed
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/*"), r)
+        @test rc == 2 && occursin("glob", err) && occursin(".lanes/scratch/reviewer/d/*", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R deep2 .lanes/scratch/reviewer/deep2"), r)
+        @test rc == 2 && occursin("deeper than 8 levels", err)
+        rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R deep .lanes/scratch/reviewer/deep"), r)
+        @test rc == 2 && occursin("deeper than 8 levels", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R srcdir .lanes/scratch/reviewer/d"), r)
         @test rc == 2 && occursin("symlink", err) && occursin("srcdir/dl", err)
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp a .lanes/scratch/reviewer/d/dl/../PWNED"), r)

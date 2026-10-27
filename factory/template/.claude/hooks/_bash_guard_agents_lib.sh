@@ -89,7 +89,9 @@ ro_agent_scratch() {
     shift
     case $_n in cp) _ok=' -R -r -p ' ;; *) _ok=' -p ' ;; esac
     for _a in "$@"; do
-        case $_a in *'$'* | *'`'*) ro_deny "\`$_n $_a\` holds an expansion the guard cannot resolve (round 4 review M1: \$(...) in a target wrote outside the scratch)" ;; esac
+        # round 4 review M1, N1: an expansion or a glob in ANY operand is resolved by the shell, not by the guard (`dws/*` reached a
+        # link the find never saw; `d/*` was a literal to ro_nolink), so none is allowed
+        case $_a in *'$'* | *'`'* | *'*'* | *'?'* | *'['* | *'{'* | '~'*) ro_deny "\`$_n $_a\`: the word \`$_a\` holds an expansion or a glob (\$, \`, *, ?, [, {, a leading ~) the guard cannot resolve; write the path literally" ;; esac
         if [ -z "$_end" ]; then
             case $_a in
                 --) _end=1; continue ;;
@@ -121,7 +123,9 @@ ro_agent_scratch() {
     [ "$_n" = cp ] && [ -n "$_rec" ] || return 0
     for _a in $_ops; do # B1: cp -R copies a symlink AS a link under the scratch, to be written through next: no link in any source tree
         [ "$_a" != "$_t" ] || continue
-        _l=$(find "$(abspath "$_a" "$cwd")" -maxdepth 8 -type l 2>/dev/null | head -1)
+        _x=$(abspath "$_a" "$cwd") # N2: the scan is unbounded in depth; the cost cap is the depth cap, checked first
+        [ -z "$(find "$_x" -mindepth 9 -print -quit 2>/dev/null)" ] || ro_deny "\`cp -R $_a\`: the source tree is deeper than 8 levels; copy a smaller tree (the symlink scan is bounded by that depth)"
+        _l=$(find "$_x" -type l 2>/dev/null | head -1)
         [ -z "$_l" ] || ro_deny "\`cp -R $_a\`: the source tree holds a symlink ($_l), which cp -R would copy as a link under the scratch; copy without it"
     done
 }
