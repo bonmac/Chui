@@ -251,6 +251,13 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
 - **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the five tdd
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
   them by hand (below).
+- **`JuliaTestItems.toml` excludes `/scripts/test/fixtures/`** (lane tw-033, found syncing 0.3.0
+  into ChuiTypes). TestItemRunner discovered the tdd fixture package's `@testitem`s
+  (`scripts/test/fixtures/tdd/scratchpkg/test/*.jl`), which fail on purpose: ChuiTypes
+  `ci.jl test -- all` ran 16 extra items, 2 failed and 13 errored, exit 1. The coordinator profile
+  has no `test/`, so no earlier check saw it. Guard: `test_ci.jl` checks that the exclude list has
+  the pattern and that it covers every `.jl` under `scripts/test/fixtures/`. VERSION stays 0.3.0:
+  no package had taken 0.3.0 yet. A seeded hand edit (migration list below).
 - **Migration (spec §9.2).** Each repo takes 0.2.8 first. The sync brings, managed: the five tdd
   scripts, the four tdd hook files (`tdd_boundary.sh`, `_tdd_allow.sh`, `_tdd_commit_guard.sh`,
   `tdd_commit_post.sh`) and the changed `_lib.sh`, `_lanes.sh`, `dispatch_limit.sh`, `settings.json`, `test_writer.md` and the
@@ -267,6 +274,11 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     `differential_tester` changes (critic C1: `disallowed_tools`, description, scorecard);
     `risk.toml`: `tdd` in the T1–T3 `requires` and the five tdd scripts in the T3 globs; `test/runtests.jl`: the `item=`/`TDD_MATCHED` selection block from
     the template.
+  - **Every package: `JuliaTestItems.toml`** (seeded, so sync does not update it) adds
+    `"/scripts/test/fixtures/"` to `exclude`, with the comment line
+    `# /scripts/test/fixtures/ (0.3.0): the tdd fixture package's items fail on purpose.`
+    A package that synced 0.3.0 before this fix (lane tw-033) adds it by hand, as ChuiTypes and
+    ChuiFrames do in their 0.3.0 sync lanes. Not the coordinator: its profile excludes the file.
   - Then run `julia scripts/gen.jl`, and **restart the session** before the first TDD dispatch.
   - **Non-TDD code lanes need a lead skip commit** (critic C3). Once `tdd` is in a tier, every lane
     that changes `src/` or `ext/` without the test-writer and implementer roles (a format fix, a perf
