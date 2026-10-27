@@ -59,7 +59,10 @@ D2 and D6–D12 are implementation choices that live in the spec.
      and `.lanes/scratch/<agent_type>/**`.
    - A read-only agent's `file_scope` must be empty or a subset of those two globs.
    - Every `.git` path component is matched case-insensitively, for every agent and the lead (the
-     disk here is case-insensitive; critic round 3, B1).
+     disk here is case-insensitive; critic round 3, B1), except that the lead under the user's
+     `FACTORY_ALLOW_T3=1` may write below `.git` (pre-existing; read-only agents stay denied with
+     it set). A read-only agent's `scripts/lane audit` takes only `<lane>`, `--base`, `--owns` and
+     `--reported`.
    - *(Amended 2026-10-27, 0.3.0 integration.)* The 0.3.0 test-side roles and implementer stay
      write agents under `tdd_boundary`; they may also run three exact pre-flight git reads and
      Write, never Read, their own report in the session root's `.lanes/reports/`, once.
