@@ -136,8 +136,8 @@ function ledger_rows(src)
 end
 
 const REPORTERS = ("reviewer", "critic", "verifier")   # the template's read_only agents: the fallback below
-"The dispatch name a report file is of: its base name before `-<round>.md` (or `.md`)."
-report_name(path) = replace(basename(path), r"(-[0-9]+)?\.md$" => "")
+"The dispatch name a report file is of: `<name>.md` or `<name>--r<digits>.md` (final review M2: a plain `-<digits>` is part of the name)."
+report_name(path) = replace(basename(path), r"(--r[0-9]+)?\.md$" => "")
 """
     reporters(repo) -> Vector{String}
 
@@ -151,16 +151,12 @@ function reporters(repo)
     return m === nothing ? collect(REPORTERS) : String.(split(m.captures[1]))
 end
 """
-    report_dispatch(repo, path) -> problem or nothing
-
-Review round 4 (A2): a Verdict report passes `lane audit --report` only when it comes from a read-only
-reviewer: the ledger holds a `dispatch` event (dispatch_limit.sh) whose name is the report's base name and
-whose subagent_type is reviewer, critic or verifier. Every agent's report fragment had asked for a Verdict
-line, so an implementer's own report (`.lanes/reports/f040-commands.md`: MAY MERGE for a HEAD the reviewer
-graded FIX FIRST) had passed as a review. No ledger, or an unreadable one, is no such dispatch.
+`report_dispatch(repo, path)` -> problem or nothing. Review round 4 (A2): a Verdict report passes `lane audit
+--report` only when the ledger (and its pending file) holds a `dispatch` of the report's name whose subagent_type
+is read-only (`reporters`): an implementer's own report had passed as a review. The name (final review M2) is the
+file's base name when a dispatch has exactly that name, else `report_name`. No or an unreadable ledger: no dispatch.
 """
 function report_dispatch(repo, path)
-    n = report_name(path)
     lp = try
         ledger_path(repo)
     catch
@@ -171,7 +167,8 @@ function report_dispatch(repo, path)
     catch
         NamedTuple[]
     end
-    rs = reporters(repo)
+    rs, base = reporters(repo), replace(basename(path), r"\.md$" => "")
+    n = any(r -> r.ev == "dispatch" && r.name == base, rows) ? base : report_name(path)
     any(r -> r.ev == "dispatch" && r.name == n && r.subagent_type in rs, rows) && return nothing
     return "report $n is not from a read-only reviewer dispatch (no `dispatch` named `$n` with subagent_type $(join(rs, " | ")) in $(isempty(lp) ? "the lane ledger" : lp))"
 end

@@ -264,9 +264,9 @@
         # write) is searched too; MAIN is trusted only when the main repo's worktree record points back (a crafted .git file is not)
         main = tmp_repo(Dict("a" => "x\n")); sh(`git -C $main worktree add -q $main/.worktrees/l1 -b l1`); lane = joinpath(main, ".worktrees/l1")
         @test hook("teammate_idle.sh", idle("mainrep"), lane)[1] == 2
-        mkpath(joinpath(main, ".lanes/reports")); write(joinpath(main, ".lanes/reports/mainrep-2.md"), "Verdict: MAY MERGE\nHead: abc\n")
+        mkpath(joinpath(main, ".lanes/reports")); write(joinpath(main, ".lanes/reports/mainrep--r2.md"), "Verdict: MAY MERGE\nHead: abc\n")
         @test hook("teammate_idle.sh", idle("mainrep"; s = "s2"), lane)[1] == 0 || (println("the main checkout's report was not counted"); false)
-        write(joinpath(main, ".lanes/reports/mainrep-3.md"), "Verdict: PENDING\n")                     # a later partial round does not undo it
+        write(joinpath(main, ".lanes/reports/mainrep--r3.md"), "Verdict: PENDING\n")                     # a later partial round does not undo it
         @test hook("teammate_idle.sh", idle("mainrep"; s = "s3"), lane)[1] == 0
         @test hook("teammate_idle.sh", idle("mainrepx"; s = "s4"), lane)[1] == 2                      # another name's report does not count
         fake = realpath(mktempdir()); mkpath(joinpath(fake, ".worktrees/l1"))

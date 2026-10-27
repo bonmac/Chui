@@ -14,20 +14,21 @@ safe=$(printf '%s' "$name" | tr -c 'A-Za-z0-9_.-' '_')
 key="$(field '.session_id')/$(field '.team_name')/$safe"
 seen="$ROOT/.lanes/teammate-idle.seen"
 
-# 0.4.0 (D4, D5, critic): `<name>.md` or `<name>-<round>.md` (round: digits only, review round 1 m3:
-# `f040-hooks.md` is the f040-hooks lane's, not f040's), and it counts only when its first line is final:
+# 0.4.0 (D4, D5, critic): `<name>.md` or `<name>--r<round>.md` (round: digits only; final review M2: a double
+# dash and `r`, so `reviewer-2.md` is the report of a teammate named reviewer-2, not a round of `reviewer`, and
+# `tw-030.md` is tw-030's; `lane audit --report` uses the same rule), and it counts only when its first line is final:
 # the verdict line (a reviewer/critic/verifier) or `Status: DONE | BLOCKED` (a write agent; round 4 A2);
 # any other first line, `Verdict: PENDING` and `Status: PARTIAL` (the line while writing, A6) included, is
 # a PARTIAL report, blocked once like no report at all. The hook cannot know the agent's type, so it
 # accepts either. Searched (A7): the root, its lane worktrees and, when the root is a lane worktree, the
 # main checkout's .lanes/reports/ (MAIN, _lib.sh: the directory write_guard's in_main lets the lane write).
 partial=""
-for report in "$ROOT/.lanes/reports/$safe.md" "$ROOT/.lanes/reports/$safe"-[0-9]*.md \
-    "$ROOT"/.worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.worktrees/*/.lanes/reports/"$safe"-[0-9]*.md \
-    "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe"-[0-9]*.md \
-    "${MAIN:-/nonexistent}/.lanes/reports/$safe.md" "${MAIN:-/nonexistent}/.lanes/reports/$safe"-[0-9]*.md; do
+for report in "$ROOT/.lanes/reports/$safe.md" "$ROOT/.lanes/reports/$safe"--r[0-9]*.md \
+    "$ROOT"/.worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.worktrees/*/.lanes/reports/"$safe"--r[0-9]*.md \
+    "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe.md" "$ROOT"/.claude/worktrees/*/.lanes/reports/"$safe"--r[0-9]*.md \
+    "${MAIN:-/nonexistent}/.lanes/reports/$safe.md" "${MAIN:-/nonexistent}/.lanes/reports/$safe"--r[0-9]*.md; do
     [ -f "$report" ] || continue
-    _round=${report##*/}; _round=${_round%.md}; _round=${_round#"$safe"}; _round=${_round#-}
+    _round=${report##*/}; _round=${_round%.md}; _round=${_round#"$safe"}; _round=${_round#--r}
     case $_round in *[!0-9]*) continue ;; esac
     IFS= read -r _first <"$report" || :
     case $_first in

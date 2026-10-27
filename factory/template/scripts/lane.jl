@@ -45,7 +45,7 @@
 #         `Head: <sha>` must name the lane's current HEAD (a stale round fails), else FAIL; a passing
 #         audit records {ev: verdict, lane, verdict, head, report} in the ledger (`lane stats` shows it).
 #         (review round 4, A2) The report must come from a read-only reviewer: the ledger holds a
-#         `dispatch` whose name is the report's base name (before `-<round>.md`) and whose
+#         `dispatch` named as the report (`<name>.md` or `<name>--r<digits>.md`, exact base name first) and whose
 #         subagent_type is reviewer, critic or verifier (an implementer's own report had passed as a
 #         review); and the lane worktree must be clean (`git status --porcelain` empty), else FAIL.
 # list   name, branch, base, ahead/behind, clean/dirty. Read-only.
