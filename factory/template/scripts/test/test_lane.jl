@@ -218,39 +218,48 @@ end
         led = joinpath(d, ".lanes/ledger.jsonl")
         mkpath(dirname(led))
         at(i) = "2026-10-27T$(lpad(div(i, 3600), 2, '0')):$(lpad(div(i, 60) % 60, 2, '0')):$(lpad(i % 60, 2, '0'))Z"
-        ls = [
-            ledger_ev(at(1), "dispatch"; key = "open1", name = "open1", desc = "d1"),
-            ledger_ev(at(2), "spawned"; key = "open1", agent_id = "a-open1"),
-            ledger_ev(at(3), "dispatch"; key = "done1", name = "done1", desc = "d2"),
-            ledger_ev(at(4), "spawned"; key = "done1", agent_id = "a-done1"),
-            ledger_ev(at(5), "close"; key = "done1", why = "returned"),
-            ledger_ev(at(6), "dispatch"; key = "open2", name = "open2", desc = "d3"),  # no spawn record
-            ledger_ev(at(7), "dispatch"; session = "s2", key = "other", name = "other", desc = "d4"),  # another session's lane
-            ledger_ev(at(8), "stop"; agent_id = "a-open1"),                          # its own stop closes open1 (background agent)
-            ledger_ev(at(9), "dispatch"; key = "open1", name = "open1", desc = "d1"),  # re-dispatched: open again
-        ]
-        append!(ls, (ledger_ev(at(10 + i), "stop"; agent_id = "ac$i", agent_type = "-") for i in 1:3000))
-        push!(ls, "{\"ts\":\"" * at(3011) * "\",\"ev\":\"dispatch\",\"session\":\"s1\",\"key\":\"torn")   # a crash mid-write
+        # The critic's rule: every dispatch, spawned, unknown-result, close, verdict, dispatch-denied and
+        # guard-timeout event is kept; dropped are only `stop`s whose agent_id matches no `spawned` record,
+        # and idle-* events older than the last --keep lines. Each teammate is its own session, so two
+        # sessions each hold: an open dispatch older than the last 200 lines, a closed chain Z, and an open
+        # re-dispatch D sharing Z's description (dropping Z would let Z's close-by-ref close D by desc).
+        ls = String[]
+        ev!(e; kw...) = push!(ls, ledger_ev(at(length(ls) + 1), e; kw...))
+        for s in ("s1", "s2")
+            ev!("dispatch"; session = s, key = "old-$s", name = "old-$s", desc = "old")
+            ev!("spawned"; session = s, key = "old-$s", agent_id = "a-old-$s")
+            ev!("dispatch"; session = s, key = "z-$s", name = "z-$s", desc = "same")
+            ev!("spawned"; session = s, key = "z-$s", agent_id = "a-z-$s")
+            ev!("close"; session = s, ref = "z-$s", desc = "same", why = "stopped")   # TaskStop by name, carrying the description
+            ev!("dispatch"; session = s, key = "d-$s", name = "d-$s", desc = "same")
+            ev!("idle-unreported"; session = s, teammate = "old-$s")                # old: outside the last 200 lines
+        end
+        ev!("stop"; agent_id = "a-z-s1")                                            # a spawned agent's stop: kept
+        foreach(i -> ev!("stop"; agent_id = "ac$i", agent_type = "-"), 1:3000)      # teammate turns: no spawned record
+        ev!("idle-unreported"; teammate = "d-s1")                                    # recent: inside the last 200 lines
+        push!(ls, "{\"ts\":\"" * at(length(ls) + 1) * "\",\"ev\":\"dispatch\",\"session\":\"s1\",\"key\":\"torn")   # a crash mid-write
         write(led, join(ls, "\n") * "\n")
-        @test open_count(led, "s1") == 2 && open_count(led, "s2") == 1
+        counts() = (open_count(led, "s1"), open_count(led, "s2"))                 # the cap's own query, per session
+        @test counts() == (2, 2)                                                 # old-* and d-* open; z-* closed
         lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
         rc, out = lane("compact")
-        @test rc == 0 && occursin(r"compacted 3010 -> \d+ lines, 3 open lanes kept", out) || (print(out); false)
+        @test rc == 0 && occursin("compacted 3017 -> 14 lines, 4 open lanes kept", out) || (print(out); false)
         after = readlines(led)
-        @test open_count(led, "s1") == 2 && open_count(led, "s2") == 1          # the same jq query the cap runs
-        # the last 200 others + the 6 chain lines (open1: dispatch, spawned, its stop, re-dispatch; open2; other)
-        @test 200 <= length(after) <= 200 + 6
+        @test counts() == (2, 2)                                                 # identical before and after
+        @test length(after) == 14                                                # 12 chain events + the spawned agent's stop + the recent idle
         @test all(l -> success(pipeline(`jq -e .`; stdin = IOBuffer(l), stdout = devnull, stderr = devnull)), after)  # valid JSONL
-        @test !any(l -> occursin("done1", l), after)                            # the closed chain is gone
-        @test any(l -> occursin("\"key\":\"other\"", l), after)                 # another session's open lane is kept
+        kinds(e) = count(l -> occursin("\"ev\":\"$e\"", l), after)
+        @test kinds("dispatch") == 6 && kinds("spawned") == 4 && kinds("close") == 2   # closed chains stay too
+        @test kinds("stop") == 1 && any(l -> occursin("a-z-s1", l), after)       # only the matched stop
+        @test kinds("idle-unreported") == 1 && any(l -> occursin("\"teammate\":\"d-s1\"", l), after)
         @test !any(l -> occursin("torn", l), after)                             # the torn line is dropped, not kept as a fragment
         @test !isfile(led * ".tmp")
-        @test count(l -> occursin("\"key\":\"open1\"", l), after) == 3           # dispatch, spawned, re-dispatch
-        # --keep bounds the others; the chains are always kept
-        rc, out = lane("compact", "--keep", "10")
-        @test rc == 0 && occursin("3 open lanes kept", out)
-        after = readlines(led)
-        @test 10 <= length(after) <= 16 && open_count(led, "s1") == 2 && open_count(led, "s2") == 1
+        @test after == filter(l -> !occursin("torn", l) && (occursin("\"ev\":\"dispatch\"", l) || occursin("\"ev\":\"spawned\"", l) ||
+                occursin("\"ev\":\"close\"", l) || occursin("a-z-s1", l) || occursin("\"teammate\":\"d-s1\"", l)), ls)   # original lines, original order
+        # --keep 0: the recent idle goes too; the chains never do
+        rc, out = lane("compact", "--keep", "0")
+        @test rc == 0 && occursin("compacted 14 -> 13 lines, 4 open lanes kept", out)
+        @test counts() == (2, 2)
         # the dispatch lock (as dispatch_limit.sh takes it) is honoured: held => exit 1, nothing written
         lock = joinpath(d, ".lanes/.dispatch.lock")
         mkdir(lock)
@@ -276,43 +285,64 @@ end
     commit!(wt, Dict("src/A.jl" => "b\n", "changelog.d/rv.md" => "- A\n"), "x")
     led = joinpath(d, ".lanes/ledger.jsonl")
     rep = tempname()
-    for v in ("MAY MERGE", "MERGE WITH FIXES", "FIX FIRST")
-        write(rep, "Verdict: $v\n\nSummary: fine.\n")
+    head = readchomp(`git -C $wt rev-parse HEAD`)
+    # accepted: the exact verdict line first, and a `Head: <sha>` line (full, or a prefix of 7+ characters) naming the lane's HEAD
+    for (v, h) in (("MAY MERGE", head), ("MERGE WITH FIXES", first(head, 7)), ("FIX FIRST", first(head, 12)))
+        write(rep, "Verdict: $v\n\nScope: src/*\nHead: $h\nSummary: fine.\n")
         n = length(readlines(led))
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 0 && occursin("verdict: $v", out) && occursin("lane audit: OK", out) || (print(out); false)
         last_line = last(readlines(led))
         @test length(readlines(led)) == n + 1
-        @test occursin("\"ev\":\"verdict\"", last_line) && occursin("\"lane\":\"rv\"", last_line) &&
+        @test occursin("\"ev\":\"verdict\"", last_line) && occursin("\"lane\":\"rv\"", last_line) && occursin("\"head\":\"$head\"", last_line) &&
             occursin("\"verdict\":\"$v\"", last_line) && occursin("\"report\":\"$(replace(rep, "\\" => "\\\\"))\"", last_line)
         @test success(pipeline(`jq -e '.ev == "verdict"'`; stdin = IOBuffer(last_line), stdout = devnull))
     end
-    # review focus 4: the enum stays mechanical. Wrong case, a leading blank line, a stray word, trailing
-    # space, CRLF, a missing or empty file: exit 1, no verdict recorded, the audit's other output untouched
+    # review focus 4: the enum stays mechanical. Wrong case, the template line itself, bold, a leading blank
+    # line, a stray word, trailing space, CRLF, an empty file: exit 1, no verdict recorded
     n = length(readlines(led))
     msg = "report $rep has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
+    hl = "Head: $head\n"
     for bad in (
             "verdict: may merge\n", "\nVerdict: MAY MERGE\n", "Verdict: APPROVE\n", "Verdict: MAY MERGE \n",
-            "Verdict: MAY MERGE\r\n", "Verdict:MAY MERGE\n", "Verdict: MAY MERGE (with nits)\n", "# Review\nVerdict: MAY MERGE\n", "",
+            "Verdict: MAY MERGE\r\n", "Verdict:MAY MERGE\n", "Verdict: MAY MERGE (with nits)\n", "# Review\nVerdict: MAY MERGE\n",
+            "Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST\n", "**Verdict: MAY MERGE**\n", "",
         )
-        write(rep, bad)
+        write(rep, bad * hl)
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 1 && occursin("[FAIL] " * msg, out) || (print(repr(bad), " => ", out); false)
         @test length(readlines(led)) == n                                     # nothing recorded
     end
+    # the Head line: missing, another commit (a stale round), too short, not a sha, decorated, trailing words
+    stale = readchomp(`git -C $wt rev-parse "HEAD~1"`)
+    for bad in (
+            "", "Head: $stale\n", "Head: $(first(head, 6))\n", "Head: $(first(head, 7))g\n", "**Head: $head**\n",
+            "Head: $head (lane)\n", "head: $head\n", "Head:$head\n",
+        )
+        write(rep, "Verdict: MAY MERGE\n" * bad)
+        rc, out = lane("audit", "rv", "--report", rep)
+        @test rc == 1 && occursin("[FAIL] report $rep", out) && occursin("Head", out) || (print(repr(bad), " => ", out); false)
+        @test length(readlines(led)) == n
+    end
+    write(rep, "Verdict: MAY MERGE\nHead: $head\n")                                # a report of this round, then a new commit
+    commit!(wt, Dict("src/A.jl" => "c\n"), "another round")
+    rc, out = lane("audit", "rv", "--report", rep)
+    @test rc == 1 && occursin("stale", out) && occursin(first(head, 7), out) && length(readlines(led)) == n
+    head = readchomp(`git -C $wt rev-parse HEAD`)
+    hl = "Head: $head\n"
     rm(rep)
     rc, out = lane("audit", "rv", "--report", rep)
     @test rc == 1 && occursin("[FAIL] report $rep", out) && length(readlines(led)) == n
     # with --reported too: both checks run; a bad verdict fails even when the files match
-    write(rep, "Verdict: MAY MERGE\n")
+    write(rep, "Verdict: MAY MERGE\n" * hl)
     files = tempname()
     write(files, "src/A.jl\nchangelog.d/rv.md\n")
     rc, out = lane("audit", "rv", "--report", rep, "--reported", files)
     @test rc == 0 && !occursin("[info] no --reported", out)
-    write(rep, "Verdict: MAYBE\n")
+    write(rep, "Verdict: MAYBE\n" * hl)
     @test lane("audit", "rv", "--report", rep, "--reported", files)[1] == 1
     # an audit failure does not record the verdict either
-    write(rep, "Verdict: FIX FIRST\n")
+    write(rep, "Verdict: FIX FIRST\n" * hl)
     write(joinpath(wt, "notes.txt"), "outside owns\n")
     n = length(readlines(led))
     rc, out = lane("audit", "rv", "--report", rep)

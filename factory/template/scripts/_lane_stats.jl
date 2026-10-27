@@ -86,34 +86,29 @@ function ledger_rows(file)
 end
 
 """
-    compact_keep(rows, open_keys, keep) -> BitVector
+    compact_keep(rows, keep) -> BitVector
 
-Pure core of `lane compact`: keep every row of an open chain (its key; the agent ids it spawned;
-any `ref` to its key, name or ids), the last `keep` other rows, and, for every kept `close` by
-`ref`, the dispatch or spawn that ref names (so the hooks' "known ref" test gives the same answer).
+Pure core of `lane compact` (the 0.4.0 critic's rule): every event is kept, in every session, except a
+`stop` whose agent_id matches no `spawned` record in the file (teammate turns: the hooks count nothing
+from them) and an `idle-*` event outside the last `keep` rows. Every dispatch, spawn, close and verdict
+stays, so the hooks' closing rules give the same answer on the compacted file; in particular a
+`close` by a ref that names a closed lane never starts closing a live re-dispatch by description.
 """
-function compact_keep(rows, open_keys, keep)
-    keys = Set(open_keys)
-    names = Set(r.name for r in rows if r.ev == "dispatch" && r.key in keys)
-    aids = Set(r.agent_id for r in rows if r.ev in ("spawned", "unknown-result") && r.key in keys)
-    refs = setdiff(union(keys, names, aids), ("-",))
-    kept = BitVector(r.key in keys || r.agent_id in aids || r.ref in refs for r in rows)
-    others = findall(.!kept)
-    kept[others[max(1, end - keep + 1):end]] .= true
-    kr = Set(r.ref for (i, r) in enumerate(rows) if kept[i] && r.ev == "close" && r.ref != "-")
-    for (i, r) in enumerate(rows)
-        kept[i] && continue
-        kept[i] = r.ev == "dispatch" && (r.name in kr || r.key in kr) || r.ev in ("spawned", "unknown-result") && r.agent_id in kr
-    end
-    return kept
+function compact_keep(rows, keep)
+    aids = Set(r.agent_id for r in rows if r.ev == "spawned" && r.agent_id != "-")
+    cut = max(0, length(rows) - keep)   # rows after `cut` are the last `keep` ones
+    return BitVector(
+        !(r.ev == "stop" && !(r.agent_id in aids)) && !(startswith(r.ev, "idle-") && i <= cut) for (i, r) in enumerate(rows)
+    )
 end
 
 """
     cmd_compact(repo, opts)
 
-D2: rewrite the ledger as `compact_keep` says, under the hooks' lock (`.lanes/.dispatch.lock`, mkdir,
-waited for 5 s, never broken), through a temp file and a rename. The open set per session is
-recomputed on the result and must equal the one before, else nothing is replaced (exit 1).
+D2: rewrite the ledger as `compact_keep` says, holding the hooks' lock (`.lanes/.dispatch.lock`, mkdir,
+waited for 5 s, never broken) for the whole read, rewrite and rename (a temp file, then `mv`). The open
+set per session (the hooks' query) is recomputed on the result and must equal the one before, else
+nothing is replaced (exit 1).
 """
 function cmd_compact(repo, opts; io = stdout)
     keep = tryparse(Int, get(opts, "--keep", "200"))
@@ -152,7 +147,7 @@ function compact!(f, sh, keep; io)
     lines = readlines(f)
     rows = ledger_rows(f)
     keys = unique!(reduce(vcat, values(before); init = String[]))
-    kept = compact_keep(rows, keys, keep)
+    kept = compact_keep(rows, keep)
     tmp = f * ".tmp"
     open(tmp, "w") do o
         for (i, r) in enumerate(rows)

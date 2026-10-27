@@ -12,10 +12,12 @@
 #
 # release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
 #         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
-# compact (0.4.0, D2) rewrites the ledger keeping every line of an open dispatch chain, in every
-#         session, plus the last N (200) other lines; atomically, under the cap's lock. The open
-#         set is the hooks' own query (_lanes.sh), run before and after: if it would change, nothing
-#         is replaced. precompact.sh runs it past 2,000 lines. Code: scripts/_lane_stats.jl.
+# compact (0.4.0, D2) rewrites the ledger keeping every dispatch, spawn, close, verdict and denial
+#         event of every session; it drops only `stop`s with no `spawned` record (teammate turns)
+#         and idle events outside the last N (200) lines. Atomic (tmp file, rename), holding the
+#         cap's lock throughout. The open set per session (the hooks' own query, _lanes.sh) is run
+#         before and after: if it would change, nothing is replaced. precompact.sh runs it past
+#         2,000 lines. Code: scripts/_lane_stats.jl.
 # stats   (0.4.0, D11) one Markdown row per dispatch of the ledger: dispatched, closed (by the
 #         hooks' closing rules), duration, the verdict `audit --report` recorded, the dispatch
 #         denials of its session and the idle-unreported events of its name while it was open.
@@ -37,8 +39,9 @@
 #         are recorded, or, with --reported FILE (one path per line, as the lane reported its
 #         changed files), when the two lists differ. /change-review runs it before a lane lands.
 #         (0.4.0, D5) --report FILE: the review report's first line must be exactly
-#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three), else FAIL; a passing
-#         audit then records {ev: verdict, lane, verdict, report} in the ledger (`lane stats` shows it).
+#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three) and a line
+#         `Head: <sha>` must name the lane's current HEAD (a stale round fails), else FAIL; a passing
+#         audit records {ev: verdict, lane, verdict, head, report} in the ledger (`lane stats` shows it).
 # list   name, branch, base, ahead/behind, clean/dirty. Read-only.
 # remove  refuses a dirty lane, one whose branch is not merged into its base, and one holding
 #         ignored files (reports, Manifest.toml, scratch) unless --allow-ignored. Never forces.
@@ -237,10 +240,10 @@ module Lane
         )
         reported = haskey(opts, "--reported") ? read_reported(opts["--reported"]) : nothing
         bad = audit(changed, owns, reported)
-        report = get(opts, "--report", nothing)   # 0.4.0 (D5): the review report's first line is the verdict
-        verdict = report === nothing ? nothing : report_verdict(report)
-        report === nothing || verdict !== nothing ||
-            push!(bad, isfile(report) ? "report $report has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'" : "report $report is missing")
+        report = get(opts, "--report", nothing)   # 0.4.0 (D5): the review report's first line is the verdict; a Head line names this HEAD
+        head = something(git(wt, "rev-parse", "HEAD"), "")
+        verdict, problem = report === nothing ? (nothing, nothing) : report_check(report, head)
+        problem === nothing || push!(bad, problem)
         println(
             io, "lane audit $name: $(l.branch) vs $(l.base) (merge base $(first(mb, 10))), $(length(changed)) changed; owns: ",
             isempty(owns) ? "(none)" : join(owns, ' ')
@@ -250,24 +253,33 @@ module Lane
         reported === nothing && println(io, "  [info] no --reported list: the lane's own changed-file list was not compared")
         verdict === nothing || println(io, "  verdict: $verdict ($report)")
         # the verdict is recorded only for a passing audit, so `lane stats` never shows one for a lane that failed it
-        isempty(bad) && verdict !== nothing && !ledger_line(repo, "verdict"; lane = name, verdict, report) &&
+        isempty(bad) && verdict !== nothing && !ledger_line(repo, "verdict"; lane = name, verdict, head, report) &&
             push!(bad, "could not write the verdict to the lane ledger $(ledger_path(repo))")
         println(io, isempty(bad) ? "lane audit: OK" : "lane audit: FAILED ($(length(bad)))")
         return isempty(bad) ? 0 : 1
     end
 
     const VERDICT = r"^Verdict: (MAY MERGE|MERGE WITH FIXES|FIX FIRST)$"
+    const HEADLINE = r"^Head: ([0-9a-f]{7,40})$"
     """
-    The verdict on the first line of a review report (0.4.0, D5): `Verdict: MAY MERGE | MERGE WITH FIXES |
-    FIX FIRST`, exact case, nothing else on the line (a CR counts as something else). `nothing` otherwise,
-    and for a missing file. Anchored and mechanical on purpose: `verdict: may merge` is no verdict.
+        report_check(path, head) -> (verdict, problem)
+
+    0.4.0 (D5): a review report's first line is exactly `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST`
+    (one of the three, exact case, nothing else on the line: no bold, not the template line, a CR counts),
+    and a line `Head: <sha>` (full, or a prefix of 7+ hex characters) names the lane worktree's HEAD, so a
+    report of an earlier round cannot pass this one. One of the two results is `nothing`. Anchored and
+    mechanical on purpose: `verdict: may merge` is no verdict.
     """
-    function report_verdict(path)
-        isfile(path) || return nothing
-        line = open(io -> eof(io) ? "" : readline(io; keep = true), path)
-        endswith(line, '\n') && (line = line[1:prevind(line, lastindex(line))])
-        m = match(VERDICT, line)
-        return m === nothing ? nothing : String(m.captures[1])
+    function report_check(path, head)
+        isfile(path) || return nothing, "report $path is missing"
+        ls = [endswith(l, '\n') ? l[1:prevind(l, lastindex(l))] : l for l in readlines(path; keep = true)]
+        m = isempty(ls) ? nothing : match(VERDICT, ls[1])
+        m === nothing && return nothing, "report $path has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
+        hs = [String(h.captures[1]) for h in filter(!isnothing, map(l -> match(HEADLINE, l), ls))]
+        isempty(hs) && return nothing, "report $path has no line 'Head: <sha>' naming the lane's HEAD $(first(head, 7))"
+        any(h -> startswith(head, h), hs) ||
+            return nothing, "report $path names Head $(join(hs, ", ")) but the lane's HEAD is $(first(head, 7)): a stale round; the review must be of this HEAD"
+        return String(m.captures[1]), nothing
     end
 
     function cmd_list(repo; io = stdout)
