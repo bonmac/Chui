@@ -1,7 +1,8 @@
 # The tdd.jl evidence rules E1-E5, the TDD ledger and `audit` (factory 0.3.0; spec §0.5, §4.3, §5.2, §6).
 # Split from _tdd_history.jl (critic C4: that file was at the 400-line budget). Top-level definitions,
 # included by tdd.jl's `module Tdd` after _common.jl and _tdd_history.jl (it uses `git`, `merge_base`,
-# `LaneCommit`, `lane_commits`, `lane_segments`, `segment_rules`, `parse_mode`, `git_trailer`); dod.jl does
+# `LaneCommit`, `lane_commits`, `lane_segments`, `segment_rules`, `parse_mode`, `git_trailer`; F4's helpers
+# also `requested`, `item_spans`, `_show` of _tdd_classify.jl, and tdd.jl's `Evidence`, `append_tdd`); dod.jl does
 # not include it (dod has no E rules). No `module` of its own, no side effects. Needs Base and SHA.
 
 using SHA: sha1
@@ -29,6 +30,50 @@ red_pass(ev, sha) = ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha 
 green_pass(ev, sha) = ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha && get(ev.h, "exit", "") == "0" &&
     occursin(r"(?m)^green default suite: OK\b", ev.tdd)
 mutate_pass(ev) = ev !== nothing && clean(ev) && get(ev.h, "exit", "") == "0" && occursin(r"(?m)^KILLED\b", ev.tdd)
+
+# ---- 0.3.1 F4: a deletion-only test-fix adds or changes no @testitem and removes at least one
+
+"The sorted names of the @testitems in a test file at `sha^` that are gone from that file at `sha`."
+function removed_items(root, sha)
+    parent = git(root, "rev-parse", "--verify", "--quiet", "$sha^")
+    parent === nothing && return String[]
+    gone = String[]
+    for f in filter(_is_test_file, split(something(git(root, "diff", "--name-only", "--no-renames", parent, sha), ""), '\n'; keepempty = false))
+        kept = Set(s.name for s in item_spans(_show(root, sha, f), f))
+        append!(gone, [s.name for s in item_spans(_show(root, parent, f), f) if !(s.name in kept)])
+    end
+    return sort!(unique!(gone))
+end
+"Commit `sha` adds or changes no @testitem, changes no setup module an item uses, and removes some item."
+deletion_only(root, sha) = (r = requested(root, sha); isempty(r.red) && isempty(r.must_pass) && !isempty(removed_items(root, sha)))
+"The sorted names on the `REMOVED <name>` lines of an evidence file's `--- tdd ---` part."
+removed_names(ev) = sort!(unique!([String(m.captures[1]) for m in eachmatch(r"(?m)^\s*REMOVED\s+(.*?)\s*$", ev.tdd)]))
+"""
+    removal_pass(root, ev, sha) -> Bool
+
+Red evidence `ev` of a deletion-only test-fix (0.3.1 F4): clean, `head` = `sha`, its `--- tdd ---` part only
+`red <sha7>: OK ...` and `REMOVED <name>` lines, and those names exactly the items git says `sha` removed,
+with `sha` deletion-only by git (`deletion_only`). The caller checks the phase (and, in green, the author).
+"""
+function removal_pass(root, ev, sha)
+    (ev !== nothing && clean(ev) && get(ev.h, "head", "") == sha) || return false
+    ls = filter(!isempty, strip.(split(ev.tdd, '\n')))
+    (!isempty(ls) && startswith(ls[1], "red $(sha7(sha)): OK") && all(l -> startswith(l, "REMOVED "), ls[2:end])) || return false
+    names = removed_names(ev)
+    return !isempty(names) && deletion_only(root, sha) && names == removed_items(root, sha)
+end
+"""
+    red_removed(root, sha, gone; io) -> exit code
+
+`tdd.jl red` on a deletion-only test-fix: no item to run, so the evidence red-<sha7> (evidence.jl, the
+commit's `git diff --stat`) records what it removed: `red <sha7>: OK ...` and one `REMOVED <name>` per item.
+"""
+function red_removed(root, sha, gone; io)
+    code = Evidence.run_evidence(root, "red", String["git", "diff", "--stat", "--no-renames", "$sha^", sha]; io)
+    verdict = "red $(sha7(sha)): $(code == 0 ? "OK" : "NOT OK") (deletion-only test-fix, run exit $code)\n"
+    append_tdd(joinpath(Evidence.evidence_dir(root), "red-$(sha7(sha)).txt"), verdict * join("REMOVED $n\n" for n in gone); io)
+    return code == 0 ? 0 : 1
+end
 
 "The evidence kind's slug for item `name` (spec §5.2): at most 33 characters."
 evidence_slug(name) = first(replace(lowercase(name), r"[^a-z0-9]+" => "-"), 24) * "-" * bytes2hex(sha1(name))[1:8]
@@ -119,7 +164,8 @@ function evidence_rules(root, commits::AbstractVector; ledger, base = nothing)
     files = isdir(dir) ? readdir(dir) : String[]
     for c in commits
         c.phase in ("red", "test-fix") && !red_pass(ev("red", c.sha), c.sha) &&
-            fail("E1", c, "no passing red-$(sha7(c.sha)) (head $(c.sha), clean, ASSERTION/BEHAVIOUR items only)")
+            !(c.phase == "test-fix" && removal_pass(root, ev("red", c.sha), c.sha)) &&   # 0.3.1 F4
+            fail("E1", c, "no passing red-$(sha7(c.sha)) (head $(c.sha), clean, ASSERTION/BEHAVIOUR items only, or a deletion-only test-fix's REMOVED items)")
         c.phase in ("green", "refactor", "test-refactor") && !green_pass(ev("green", c.sha), c.sha) &&
             fail("E2", c, "no passing green-$(sha7(c.sha)) (head $(c.sha), clean, exit 0)")
         if c.phase == "backfill"
