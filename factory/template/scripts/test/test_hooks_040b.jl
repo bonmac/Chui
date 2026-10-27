@@ -26,6 +26,26 @@
         @test any(contains("\"ev\":\"stop\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
     end
 
+    @testset "review round 1 B1: every lock taker folds pending first, so a late close never closes a re-dispatch" begin
+        # the reviewer's m1-repro.sh: a's close lands in pending while the lock is held; a is re-dispatched; with cap 1, b is denied
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes")); led = joinpath(r, ".lanes/ledger.jsonl"); pf = joinpath(r, ".lanes/ledger.pending.jsonl")
+        post(n) = "{\"session_id\":\"s1\",\"hook_event_name\":\"PostToolUse\",\"tool_name\":\"Agent\",\"tool_use_id\":\"tu_$n\",\"tool_input\":{\"name\":\"$n\",\"description\":\"d $n\"},\"tool_response\":{\"status\":\"completed\"}}"
+        @test hook("dispatch_limit.sh", pre("a"), r; env = cap(1))[1] == 0
+        mkdir(joinpath(r, ".lanes/.dispatch.lock")); hook("lane_ledger.sh", post("a"), r); rm(joinpath(r, ".lanes/.dispatch.lock"))
+        @test isfile(pf) && count(contains("\"close\""), readlines(pf)) == 1
+        @test hook("dispatch_limit.sh", pre("a"), r; env = cap(1))[1] == 0                          # a closed, re-dispatched
+        @test !isfile(pf) && findfirst(contains("\"close\""), readlines(led)) < findlast(contains("\"dispatch\""), readlines(led))
+        rc, _, err = hook("dispatch_limit.sh", pre("b"), r; env = cap(1))
+        @test rc == 2 || (println("b passed alongside the re-dispatched a: $err"); false)
+        # ledger() folds pending before its own append when it gets the lock; a crash's leftover `pending.<t>.<pid>` first
+        r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes")); led = joinpath(r, ".lanes/ledger.jsonl"); pf = joinpath(r, ".lanes/ledger.pending.jsonl")
+        write(pf * ".0000000001.7", ev("x1")); write(pf, ev("x2"))
+        hook("lane_ledger.sh", "{\"session_id\":\"s1\",\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"b1\"}", r)
+        ls = readlines(led)
+        @test length(ls) == 3 && occursin("x1", ls[1]) && occursin("x2", ls[2]) && occursin("\"start\"", ls[3]) || (println(ls); false)
+        @test !any(startswith("ledger.pending"), readdir(joinpath(r, ".lanes")))
+    end
+
     @testset "M2: teammate_idle reads `<name>.md` and `<name>--r<digits>.md` only" begin
         r = realpath(mktempdir()); mkpath(joinpath(r, ".lanes/reports"))
         idle(name) = "{\"session_id\":\"s1\",\"team_name\":\"t\",\"teammate_name\":\"$name\"}"

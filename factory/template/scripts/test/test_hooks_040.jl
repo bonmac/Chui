@@ -227,7 +227,7 @@
         @test t < 0.5
         rm(lk)
         hook("lane_ledger.sh", start, r)
-        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 2
+        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 3 && !isfile(joinpath(r, ".lanes/ledger.pending.jsonl"))   # folded first (round 1 B1)
         # a denial on a ledger over 2,000 lines says so and names `scripts/lane compact`
         big(n) = "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"a\"}\n"^n
         pre = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"n1\",\"description\":\"d\"}}"

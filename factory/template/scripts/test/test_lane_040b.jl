@@ -67,4 +67,44 @@ end
     # the pending file is read too: a dispatch the hooks wrote there while the lock was held names a reviewer
     open(io -> println(io, ledger_ev("2026-10-27T10:00:00Z", "dispatch"; key = "late", name = "late", desc = "d", subagent_type = "critic")), joinpath(d, ".lanes/ledger.pending.jsonl"), "w")
     @test lane("audit", "tw", "--report", rep("late--r1.md"))[1] == 0
+    # review round 1 M1: an unnamed dispatch is recorded with name `-`: a report `-.md` (or `---r2.md`) never passes
+    open(io -> println(io, ledger_ev("2026-10-27T10:00:00Z", "dispatch"; key = "tu:t1", name = "-", desc = "d", subagent_type = "reviewer")), led, "a")
+    for bad in ("-.md", "---r2.md")
+        rc, out = lane("audit", "tw", "--report", rep(bad))
+        @test rc == 1 && occursin("names no dispatch", out) || (println(bad, ": ", out); false)
+    end
+end
+
+@testset "review round 1: rename-then-fold (B2), lock takers fold first (B1), duplicates harmless, run_out EPIPE (m1)" begin
+    withenv("FACTORY_LANE_TTL_HOURS" => "0") do
+        d = realpath(mktempdir()); mkpath(joinpath(d, ".lanes")); f = joinpath(d, ".lanes/ledger.jsonl"); pf = joinpath(d, ".lanes/ledger.pending.jsonl")
+        lsh = joinpath(HOOKS, "_lanes.sh"); stop = joinpath(d, "run")
+        # B2: a writer appends numbered lines to the pending file during 60 compacts: every line is kept
+        write(f, ledger_ev("2026-10-27T10:00:00Z", "dispatch"; key = "a", name = "a") * "\n"); touch(stop)
+        w = run(`sh -c "i=0; while [ -e $stop ]; do i=\$((i+1)); printf '{\"ev\":\"x\",\"session\":\"s1\",\"n\":%d}\n' \$i >>$pf; sleep 0.001; done; echo \$i >$d/last"`; wait = false)
+        for _ in 1:60
+            Lane.compact!(f, lsh, 200; io = devnull)
+        end
+        rm(stop); wait(w)
+        seen = Set{Int}()
+        for p in filter(isfile, [f; joinpath.(dirname(pf), readdir(dirname(pf)))]), l in readlines(p)
+            m = match(r"\"n\":(\d+)", l); m === nothing || push!(seen, parse(Int, m[1]))
+        end
+        last = parse(Int, readchomp(joinpath(d, "last")))
+        @test last > 0 && isempty(setdiff(1:last, seen)) || (println("written=$last kept=$(length(seen))"); false)
+        # B1: with_lock folds pending (and a crash's leftover, oldest first) into the ledger before its work
+        write(f, ledger_ev("t", "dispatch"; key = "a", name = "a") * "\n")
+        write(pf * ".0000000001.9", ledger_ev("t", "close"; key = "a") * "\n"); write(pf, ledger_ev("t", "dispatch"; key = "b", name = "b") * "\n")
+        ls = Lane.with_lock(() -> readlines(f), joinpath(d, ".lanes/.dispatch.lock"); ledger = f)
+        @test ls isa Vector && length(ls) == 3 && occursin("close", ls[2]) && occursin("\"b\"", ls[3]) || (println(ls); false)
+        @test !any(startswith("ledger.pending"), readdir(dirname(pf))) && open_count(f, "s1") == 1
+        # a crash between a fold's append and its remove leaves the leftover folded twice: duplicates change no count
+        write(pf * ".0000000002.9", ledger_ev("t", "close"; key = "a") * "\n" * ledger_ev("t", "dispatch"; key = "b", name = "b") * "\n")
+        Lane.with_lock(() -> nothing, joinpath(d, ".lanes/.dispatch.lock"); ledger = f)
+        @test length(readlines(f)) == 5 && open_count(f, "s1") == 1 && Lane.open_lanes(f, lsh) == Dict("s1" => ["b"])
+    end
+    # m1: run_out with empty input reads devnull; a command that exits before reading its input is (false, "") or its result, never a throw
+    @test Lane.run_out(`cat`) == (true, "")
+    r = Lane.run_out(`true`; input = zeros(UInt8, 1 << 24))
+    @test r isa Tuple{Bool, String}
 end

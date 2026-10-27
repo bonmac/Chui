@@ -170,7 +170,7 @@ module Lane
         catch
             return false
         end
-        written = with_lock(joinpath(dirname(f), ".dispatch.lock")) do
+        written = with_lock(joinpath(dirname(f), ".dispatch.lock"); ledger = f) do   # pending folded first (review round 1 B1)
             try
                 torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
                 open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
