@@ -13,14 +13,16 @@
 # release (0.2.8) tells the dispatch cap (.claude/hooks/dispatch_limit.sh) that an agent lane is
 #         closed when TaskStop cannot: the agent is gone, or its dispatch never ran.
 # compact (0.4.0, D2) rewrites the ledger keeping every dispatch, spawn, close, verdict and denial
-#         event of every session; it drops only `stop`s with no `spawned` record (teammate turns)
-#         and idle events outside the last N (200) lines. Atomic (tmp file, rename), holding the
-#         cap's lock throughout. The open set per session (the hooks' own query, _lanes.sh) is run
-#         before and after: if it would change, nothing is replaced. precompact.sh runs it past
-#         2,000 lines. Code: scripts/_lane_stats.jl.
+#         event of every session; it drops only `stop`s whose agent_id no `spawned` or
+#         `unknown-result` record names (teammate turns: the hooks close nothing on them), non-JSON
+#         lines and idle events outside the last N (200) lines. Atomic (tmp file, rename), holding
+#         the cap's lock throughout. The open set per session (the hooks' own query, _lanes.sh) is
+#         run before and after: if it would change, nothing is replaced. precompact.sh runs it past
+#         2,000 lines. Code: scripts/_lane_stats.jl. Every append this script makes (`lane-new`,
+#         `verdict`, `release`) takes the same lock (review round 1, M2), so none is lost in a rename.
 # stats   (0.4.0, D11) one Markdown row per dispatch of the ledger: dispatched, closed (by the
-#         hooks' closing rules), duration, the verdict `audit --report` recorded, the dispatch
-#         denials of its session and the idle-unreported events of its name while it was open.
+#         hooks' closing rules), duration, the verdict `audit --report` recorded for that round, the
+#         dispatch denials of its session and the idle-unreported events of its name while it was open.
 # handoff (0.4.0, D11) the HANDOFF "Open lanes" table: one row per worktree (outside .worktrees/:
 #         `unmanaged`) and per open dispatch without a worktree. Both read-only.
 #
@@ -101,11 +103,12 @@ module Lane
         git(repo, "config", "branch.$branch.lane-base", base)
         owns = unique!([split_globs(get(opts, "--owns", "")); "changelog.d/$name.md"])
         git(repo, "config", "branch.$branch.lane-owns", join(owns, ' '))
-        ledger_line(repo, "lane-new"; lane = name, branch, base, owns)
+        recorded = ledger_line(repo, "lane-new"; lane = name, branch, base, owns)
         println(io, "lane: created $wt on $branch (base $base); $(n + 1)/$cap lanes open; owns: ", join(owns, ' '))
         local_setup(repo, wt; io)
         haskey(opts, "--owns") || println(io, "lane: no --owns given: `scripts/lane audit $name` will fail until the owned globs are recorded")
         foreach(w -> println(io, "lane: warning: ", w), env_warnings())
+        recorded || (println(stderr, "lane: the lane exists but its `lane-new` record was NOT written (the ledger lock is held, or the ledger is not writable)"); return 1)
         return 0
     end
 
@@ -148,23 +151,31 @@ module Lane
     end
 
     """
-    Append one JSON line to the repo's lane ledger; returns `true` if it was written. Never throws.
-    After a truncated last line (a crash mid-write) it starts a new line first, as the hooks'
-    `ledger` does (0.2.8): otherwise this record joins the fragment and is skipped as malformed.
+    Append one JSON line to the repo's lane ledger under the hooks' lock (`with_lock`, _lane_stats.jl);
+    returns `true` if it was written (`false` when the lock was held for 5 s: review round 1, M2, an
+    append between `compact`'s read and its rename was lost). Never throws. After a truncated last line
+    (a crash mid-write) it starts a new line first, as the hooks' `ledger` does (0.2.8): otherwise this
+    record joins the fragment and is skipped as malformed.
     """
     function ledger_line(repo, ev; kw...)
         esc(x) = "\"" * replace(string(x), "\\" => "\\\\", "\"" => "\\\"") * "\""
         val(v) = v isa AbstractVector ? "[" * join(esc.(v), ",") * "]" : esc(v)
         fields = ["\"ts\":" * esc(Dates_now()), "\"ev\":" * esc(ev), ("\"$k\":" * val(v) for (k, v) in kw)...]
-        f = ledger_path(repo)
-        return try
-            mkpath(dirname(f))
-            torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
-            open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
-            true
+        f = try
+            ledger_path(repo)
         catch
-            false
+            return false
         end
+        written = with_lock(joinpath(dirname(f), ".dispatch.lock")) do
+            try
+                torn = isfile(f) && filesize(f) > 0 && open(io -> (seekend(io); skip(io, -1); read(io, UInt8) != UInt8('\n')), f)
+                open(io -> print(io, torn ? "\n" : "", "{", join(fields, ","), "}\n"), f, "a")
+                true
+            catch
+                false
+            end
+        end
+        return written === true
     end
     Dates_now() = Dates.format(Dates.now(Dates.UTC), "yyyy-mm-ddTHH:MM:SS") * "Z"
 
@@ -325,14 +336,10 @@ module Lane
     """
     function cmd_release(repo, key; io = stdout)
         k = replace(key, r"[^A-Za-z0-9_./:@-]" => "_")
-        try
-            ledger_path(repo)
-        catch # a registry that does not parse, or a `[lanes] ledger` that is not a string (re-review n4)
-            println(stderr, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); $k is NOT released")
-            return 1
-        end
+        f = ledger_file(repo, "$k is NOT released")
+        f === nothing && return 1
         if !ledger_line(repo, "close"; session = "*", ref = k, why = "released")
-            println(stderr, "lane: could not write the lane ledger $(ledger_path(repo)); $k is NOT released")
+            println(stderr, "lane: could not write the lane ledger $f (its lock is held, or it is not writable); $k is NOT released")
             return 1
         end
         println(io, "lane: released $k (the dispatch cap no longer counts a lane with that name, key or agent id)")

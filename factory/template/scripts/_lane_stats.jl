@@ -13,6 +13,50 @@ function lanes_sh(repo)
     return nothing
 end
 
+"""
+    ledger_file(repo, consequence) -> path or nothing
+
+`ledger_path`, or `nothing` after one line on stderr when the registry does not parse or its
+`[lanes] ledger` is not a string (re-review n4; round 1 m1: `stats` and `handoff` too, no stack trace).
+"""
+function ledger_file(repo, consequence)
+    return try
+        ledger_path(repo)
+    catch
+        println(stderr, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); $consequence")
+        nothing
+    end
+end
+
+"""
+    with_lock(f, lock) -> f() or nothing
+
+Run `f` holding the hooks' ledger lock (`.lanes/.dispatch.lock`, mkdir, as dispatch_limit.sh takes it),
+waited for up to 5 s and never broken: `nothing` when it was not acquired. Every reader and writer of
+the ledger in lane.jl goes through it, so `compact`'s read-rewrite-rename never races an append (M2).
+"""
+function with_lock(f, lock)
+    try
+        mkpath(dirname(lock))
+    catch
+        return nothing
+    end
+    for _ in 1:50
+        held = try
+            mkdir(lock); true
+        catch
+            false
+        end
+        held || (sleep(0.1); continue)
+        try
+            return f()
+        finally
+            rm(lock; force = true)
+        end
+    end
+    return nothing
+end
+
 "Run `cmd`; returns (ok, stdout). Stderr is dropped."
 function run_out(cmd)
     out = IOBuffer()
@@ -89,13 +133,15 @@ end
     compact_keep(rows, keep) -> BitVector
 
 Pure core of `lane compact` (the 0.4.0 critic's rule): every event is kept, in every session, except a
-`stop` whose agent_id matches no `spawned` record in the file (teammate turns: the hooks count nothing
-from them) and an `idle-*` event outside the last `keep` rows. Every dispatch, spawn, close and verdict
-stays, so the hooks' closing rules give the same answer on the compacted file; in particular a
-`close` by a ref that names a closed lane never starts closing a live re-dispatch by description.
+`stop` whose agent_id matches no `spawned` or `unknown-result` record in the file (teammate turns: the
+hooks close nothing on them; lane_ledger.sh records an agent_id on `unknown-result` too and
+OPEN_LANES_JQ closes on that agent's stop, review round 1 M1) and an `idle-*` event outside the last
+`keep` rows. Every dispatch, spawn, close and verdict stays, so the hooks' closing rules give the same
+answer on the compacted file; in particular a `close` by a ref that names a closed lane never starts
+closing a live re-dispatch by description.
 """
 function compact_keep(rows, keep)
-    aids = Set(r.agent_id for r in rows if r.ev == "spawned" && r.agent_id != "-")
+    aids = Set(r.agent_id for r in rows if r.ev in ("spawned", "unknown-result") && r.agent_id != "-")
     cut = max(0, length(rows) - keep)   # rows after `cut` are the last `keep` ones
     return BitVector(
         !(r.ev == "stop" && !(r.agent_id in aids)) && !(startswith(r.ev, "idle-") && i <= cut) for (i, r) in enumerate(rows)
@@ -105,9 +151,9 @@ end
 """
     cmd_compact(repo, opts)
 
-D2: rewrite the ledger as `compact_keep` says, holding the hooks' lock (`.lanes/.dispatch.lock`, mkdir,
-waited for 5 s, never broken) for the whole read, rewrite and rename (a temp file, then `mv`). The open
-set per session (the hooks' query) is recomputed on the result and must equal the one before, else
+D2: rewrite the ledger as `compact_keep` says, holding the hooks' lock (`with_lock`: `.lanes/.dispatch.lock`,
+mkdir, waited for 5 s, never broken) for the whole read, rewrite and rename (a temp file, then `mv`). The
+open set per session (the hooks' query) is recomputed on the result and must equal the one before, else
 nothing is replaced (exit 1).
 """
 function cmd_compact(repo, opts; io = stdout)
@@ -115,33 +161,16 @@ function cmd_compact(repo, opts; io = stdout)
     (keep === nothing || keep < 0) && return (println(stderr, "lane: --keep must be a non-negative integer"); 2)
     sh = lanes_sh(repo)
     sh === nothing && return (println(stderr, "lane: no .claude/hooks/_lanes.sh in $repo or beside lane.jl (it holds the open-lane query); nothing compacted"); 1)
-    f = try
-        ledger_path(repo)
-    catch
-        println(stderr, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); nothing compacted")
-        return 1
-    end
+    f = ledger_file(repo, "nothing compacted")
+    f === nothing && return 1
     lock = joinpath(dirname(f), ".dispatch.lock")
-    mkpath(dirname(f))
-    held = false
-    for _ in 1:50
-        held = try
-            mkdir(lock); true
-        catch
-            sleep(0.1); false
-        end
-        held && break
-    end
-    held || return (println(stderr, "lane: the ledger lock $lock is held (waited 5 s); nothing compacted. If no hook is running, remove that directory."); 1)
-    try
-        return compact!(f, sh, keep; io)
-    finally
-        rm(lock; force = true)
-    end
+    rc = with_lock(() -> compact!(f, sh, keep; io), lock)
+    rc === nothing && return (println(stderr, "lane: the ledger lock $lock is held (waited 5 s); nothing compacted. If no hook is running, remove that directory."); 1)
+    return rc
 end
 
 function compact!(f, sh, keep; io)
-    isfile(f) || return (println(io, "compacted 0 -> 0 lines, 0 open lanes kept"); 0)
+    isfile(f) || return (println(io, "compacted 0 -> 0 lines, 0 open lanes kept, 0 non-JSON dropped"); 0)
     before = open_lanes(f, sh)
     before === nothing && return (println(stderr, "lane: the open-lane query (_lanes.sh via jq) failed on $f; nothing compacted"); 1)
     lines = readlines(f)
@@ -161,7 +190,8 @@ function compact!(f, sh, keep; io)
         return 1
     end
     mv(tmp, f; force = true)
-    println(io, "compacted $(length(lines)) -> $(count(kept)) lines, $(length(keys)) open lanes kept")
+    # n1: a torn or malformed line is neither a row nor kept
+    println(io, "compacted $(length(lines)) -> $(count(kept)) lines, $(length(keys)) open lanes kept, $(length(lines) - length(rows)) non-JSON dropped")
     return 0
 end
 
@@ -189,8 +219,9 @@ One entry per `dispatch` row, closed as `_lanes.sh` closes it (the first later r
 a session-"*" close: a `close` with its key, or a ref equal to its name, key or a spawned agent id, or a
 ref naming no lane of the session with its description; a `stop` of a spawned agent id), with the
 `dispatch-denied` rows of its session and the `idle-unreported` rows of its name while it was open,
-and the last `verdict` recorded for its name or key (`lane audit --report`). TTL expiry is not applied:
-stats are history, the cap is the hooks' business.
+and the last `verdict` recorded for its name or key (`lane audit --report`) in its round: after its own
+row and before the next `dispatch` of the same name or key, so a re-dispatch shows no earlier round's
+verdict (review round 1, m3). TTL expiry is not applied: stats are history, the cap is the hooks' business.
 """
 function dispatches(rows)
     out = NamedTuple[]
@@ -216,7 +247,10 @@ function dispatches(rows)
         last_i = closed === nothing ? length(rows) : closed.line_index
         window = rows[(i + 1):last_i]
         name = d.name == "-" ? d.key : d.name
-        v = findlast(r -> r.ev == "verdict" && r.lane in (d.name, d.key), rows)
+        same(r) = r.ev == "dispatch" && (r.name == name || r.key == d.key)
+        nxt = something(findnext(same, rows, i + 1), length(rows) + 1)   # the next round of this lane bounds the verdict search
+        v = findlast(r -> r.ev == "verdict" && r.lane in (d.name, d.key), rows[(i + 1):(nxt - 1)])
+        v === nothing || (v += i)
         push!(
             out, (;
                 name, key = d.key, ts = d.ts, closed = closed === nothing ? "-" : closed.ts,
@@ -231,17 +265,24 @@ function dispatches(rows)
 end
 
 "The ledger's rows with their index in the vector (so a closing row can bound a window)."
-indexed_rows(repo) = [merge(r, (; line_index = i)) for (i, r) in enumerate(ledger_rows(ledger_path(repo)))]
+indexed_rows(file) = [merge(r, (; line_index = i)) for (i, r) in enumerate(ledger_rows(file))]
 
-"`scripts/lane stats [--since ISO]`: one Markdown row per dispatch, oldest first, from `--since` (string order on the ISO timestamp)."
+"""
+`scripts/lane stats [--since ISO]`: one Markdown row per dispatch, oldest first, from `--since` (string
+order on the ISO timestamp). `session denied` counts the dispatching session's denials, not this lane's
+(round 1, m2): the footnote under the table says so.
+"""
 function cmd_stats(repo, opts; io = stdout)
     since = get(opts, "--since", "")
-    println(io, "| name | dispatched | closed | duration | verdict | denied | idle-unreported |")
+    f = ledger_file(repo, "no stats")
+    f === nothing && return 1
+    println(io, "| name | dispatched | closed | duration | verdict | session denied | idle-unreported |")
     println(io, "|---|---|---|---|---|---|---|")
-    for x in dispatches(indexed_rows(repo))
+    for x in dispatches(indexed_rows(f))
         x.ts >= since || continue
         println(io, "| $(x.name) | $(x.ts) | $(x.closed) | $(x.duration) | $(x.verdict) | $(x.denied) | $(x.idle) |")
     end
+    println(io, "\nsession denied: the dispatching session's `dispatch-denied` events while the lane was open (a session-wide count, not denials of this lane).")
     return 0
 end
 
@@ -270,14 +311,16 @@ end
 dispatch of the ledger with no worktree of its name.
 """
 function cmd_handoff(repo; io = stdout)
-    ds = dispatches(indexed_rows(repo))
+    f = ledger_file(repo, "no handoff table")
+    f === nothing && return 1
+    ds = dispatches(indexed_rows(f))
     rname = basename(repo)
-    function status(name)
+    function status(name)   # the latest round's state and its own verdict (m3: never an earlier round's)
         mine = filter(x -> x.name == name || x.key == name, ds)
         oi = findlast(x -> x.closed == "-", mine)
         s = oi !== nothing ? "open since $(mine[oi].ts)" : isempty(mine) ? "no dispatch" : "closed $(last(mine).closed)"
-        vs = filter(x -> x.verdict != "-", mine)
-        return isempty(vs) ? s : "$s; verdict: $(last(vs).verdict)"
+        isempty(mine) || last(mine).verdict == "-" || (s *= "; verdict: $(last(mine).verdict)")
+        return s
     end
     println(io, "| Lane | Repo | Worktree / branch | Head | Dirty | Status |")
     println(io, "|---|---|---|---|---|---|")
