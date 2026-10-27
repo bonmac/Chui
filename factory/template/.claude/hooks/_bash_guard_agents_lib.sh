@@ -10,6 +10,14 @@
 #    its main checkout when ROOT is a lane (MAIN, _lib.sh), and a lane worktree of either (.worktrees/<n>,
 #    .claude/worktrees/<n>): their scripts are the lead's or a writer lane's (T3 paths).
 # 2. The options a text tool may take (B1, N1-N3): a fixed short-option set per tool and no long option at all.
+# 3. (round 4, A1, A5) cp and mkdir take a fixed option set too, and never a target that is or lies below a symlink;
+#    the commands a read-only agent may run are its OWN list, not the reference roots' RO_CMDS (_read_only_roots.sh).
+
+# RO_AGENT_CMDS: the plain commands a read-only agent may run (tools that only print; test_hooks_agents.jl pins this
+# line, so adding a tool here is a deliberate change). sort is checked for -o; awk, sed, xargs, tee and the shells are
+# out (their programs or arguments write or run commands). Separate from RO_CMDS (A5): a tool added for the reference
+# roots is not thereby granted to an agent.
+RO_AGENT_CMDS=' cat head tail less grep rg find ls wc stat file cd pushd popd pwd echo printf true false test date diff cmp sort cut tr uniq basename dirname realpath which jq '
 
 # ro_base ABS: true if ABS is in a trusted checkout; RO_REL is then the path below that checkout ('' at its root).
 ro_base() {
@@ -71,4 +79,46 @@ ro_opts() {
         esac
     done
     [ "$_max" -lt 0 ] || [ "$_n" -le "$_max" ] || ro_deny "\`$_t\` takes at most $_max operand(s) for a read-only agent (a lone - is one: a second file is written)"
+}
+# ro_agent_scratch NAME ARGS...: cp takes only -R -r -p and mkdir only -p (one getopt cluster per word, `--` ends the
+# options, no long option: round 4 A1, macOS `cp -s`/`-l` made a link under the scratch and a plain cp then wrote
+# THROUGH it to the linked file outside); every target (cp: its last operand; mkdir: every operand) is below
+# .lanes/scratch/<agent_type>/ and neither it nor any parent below the root is an existing symlink (ro_nolink).
+ro_agent_scratch() {
+    _n=$1 _t="" _end=""
+    shift
+    case $_n in cp) _ok=' -R -r -p ' ;; *) _ok=' -p ' ;; esac
+    for _a in "$@"; do
+        if [ -z "$_end" ]; then
+            case $_a in
+                --) _end=1; continue ;;
+                -) ;;
+                -*) _r=${_a#-}
+                    while [ -n "$_r" ]; do
+                        _ch=${_r%"${_r#?}"}
+                        _r=${_r#?}
+                        case $_ok in *" -$_ch "*) ;; *) ro_deny "\`$_n -$_ch\`: a read-only agent's $_n takes only$_ok(cp -s/-l make links, -a/-f/-n/-X and mkdir -m/-v change what is written; name the target last)" ;; esac
+                    done
+                    continue ;;
+            esac
+        fi
+        [ "$_n" = mkdir ] && _t="$_t $_a" || _t=$_a
+    done
+    [ -n "$_t" ] || ro_deny "\`$_n\` without a target"
+    for _a in $_t; do
+        _x=$(abspath "$_a" "$cwd")
+        case $_x in "$ROOT/.lanes/scratch/$AGENT" | "$ROOT/.lanes/scratch/$AGENT"/?* | "$ROOT_P/.lanes/scratch/$AGENT" | "$ROOT_P/.lanes/scratch/$AGENT"/?*) ;;
+            *) ro_deny "\`$_n\` target $_x is not below .lanes/scratch/$AGENT/" ;; esac
+        ro_nolink "$_x"
+    done
+}
+# ro_nolink ABS: no component of ABS below the root (ABS itself, then each parent down to .lanes) is an existing symlink,
+# so a cp or mkdir never writes through one; the root and what is above it are not checked (/tmp is a link on macOS).
+ro_nolink() {
+    _p=$1
+    while [ -n "$_p" ]; do
+        case $_p in "$ROOT" | "$ROOT_P" | /) return 0 ;; esac
+        [ ! -L "$_p" ] || ro_deny "\`$_n\` target $1: $_p is a symlink, and a read-only agent's cp and mkdir never write through one"
+        _p=${_p%/*}
+    done
 }
