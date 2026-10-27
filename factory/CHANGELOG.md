@@ -243,8 +243,10 @@ commit guard), the implementer is narrowed, and there is a new seeded edit. Buil
     `--profile coordinator` and runs the scratch's own `scripts/test/runtests.jl` there, selected
     with the new `FACTORY_TEST_ONLY=<file>,...`; it expects no fail and no error. By default it runs
     `test_dod.jl` only (about 30 s); `FACTORY_GUARD_FULL=1` adds `test_tdd.jl`, `test_tdd_backfill.jl`,
-    `test_tdd_review.jl` and `test_tdd_c3.jl` (about 4.5 min of package runs, so opt-in: run it
-    before a factory release). `runtests.jl` now imports `TOML` and `SHA` itself, so a selection
+    `test_tdd_review.jl` and `test_tdd_c3.jl` (about 4.5 min of package runs, so opt-in). Every
+    factory change that touches `scripts/test/` or the tdd scripts runs it before merge, from
+    `factory/template`: `FACTORY_GUARD_FULL=1 FACTORY_TEST_ONLY=test_profile_coordinator.jl julia
+    --startup-file=no scripts/test/runtests.jl` (`factory/README.md`). `runtests.jl` now imports `TOML` and `SHA` itself, so a selection
     runs on its own. No migration step.
 - **The coordinator profile seed** (`factory/profiles/coordinator/risk.toml`) protects the five tdd
   scripts as T3 (no `tdd` in its tiers). It only seeds a new coordinator; the existing one adds
