@@ -1,10 +1,11 @@
 # Factory tests: every script and hook in scripts/ and .claude/hooks/ has tests here.
 #   julia scripts/test/runtests.jl [NAME...] [--hooks-dir DIR]   (also run by `julia scripts/ci.jl guards`)
-# NAME selects test files (`hooks` = test_hooks*.jl, `gen`, `lane`, `tdd`, ...; none = all). --hooks-dir
+# NAME selects test files (`hooks` = test_hooks*.jl, `gen`, `lane`, `tdd`, ...; none = all), in file order;
+# some files use helpers an earlier one defines (`sync_factory` needs `hooks`), so name those too. --hooks-dir
 # runs the hook tests against a COPY of the hooks (0.4.0, D3: the critic's gate audit mutates
 # .lanes/scratch/critic/hooks and looks for a test that goes red), not .claude/hooks.
 # Stdlib only. Hooks are run as real `sh` processes with JSON on stdin. Needs git and jq.
-using Test
+using Test, TOML   # TOML here, so a selection that skips test_gen.jl still has it
 
 const SCRIPTS = normpath(joinpath(@__DIR__, ".."))
 const ROOT = normpath(joinpath(SCRIPTS, ".."))
