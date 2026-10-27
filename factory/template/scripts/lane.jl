@@ -3,7 +3,7 @@
 #
 #   scripts/lane new <name> [--repo DIR] [--base BRANCH] [--prefix feat|fix|chore|docs|test] [--owns GLOBS]
 #   scripts/lane list [--repo DIR]
-#   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE]
+#   scripts/lane audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE]
 #   scripts/lane remove <name> [--repo DIR] [--allow-ignored]
 #   scripts/lane release <agent name or lane key> [--repo DIR]
 #   scripts/lane compact [--repo DIR] [--keep N]
@@ -29,7 +29,10 @@
 #         uncommitted and untracked files) touch a path outside its owned globs, when no globs
 #         are recorded, or, with --reported FILE (one path per line, as the lane reported its
 #         changed files), when the two lists differ. /change-review runs it before a lane lands.
-# list    name, branch, base, ahead/behind, clean/dirty. Read-only.
+#         (0.4.0, D5) --report FILE: the review report's first line must be exactly
+#         `Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST` (one of the three), else FAIL; a passing
+#         audit then records {ev: verdict, lane, verdict, report} in the ledger (`lane stats` shows it).
+# list   name, branch, base, ahead/behind, clean/dirty. Read-only.
 # remove  refuses a dirty lane, one whose branch is not merged into its base, and one holding
 #         ignored files (reports, Manifest.toml, scratch) unless --allow-ignored. Never forces.
 #         Keeps the branch (delete it yourself once you are sure).
@@ -227,6 +230,10 @@ module Lane
         )
         reported = haskey(opts, "--reported") ? read_reported(opts["--reported"]) : nothing
         bad = audit(changed, owns, reported)
+        report = get(opts, "--report", nothing)   # 0.4.0 (D5): the review report's first line is the verdict
+        verdict = report === nothing ? nothing : report_verdict(report)
+        report === nothing || verdict !== nothing ||
+            push!(bad, isfile(report) ? "report $report has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'" : "report $report is missing")
         println(
             io, "lane audit $name: $(l.branch) vs $(l.base) (merge base $(first(mb, 10))), $(length(changed)) changed; owns: ",
             isempty(owns) ? "(none)" : join(owns, ' ')
@@ -234,8 +241,26 @@ module Lane
         foreach(f -> println(io, "    ", f), changed)
         foreach(b -> println(io, "  [FAIL] ", b), bad)
         reported === nothing && println(io, "  [info] no --reported list: the lane's own changed-file list was not compared")
+        verdict === nothing || println(io, "  verdict: $verdict ($report)")
+        # the verdict is recorded only for a passing audit, so `lane stats` never shows one for a lane that failed it
+        isempty(bad) && verdict !== nothing && !ledger_line(repo, "verdict"; lane = name, verdict, report) &&
+            push!(bad, "could not write the verdict to the lane ledger $(ledger_path(repo))")
         println(io, isempty(bad) ? "lane audit: OK" : "lane audit: FAILED ($(length(bad)))")
         return isempty(bad) ? 0 : 1
+    end
+
+    const VERDICT = r"^Verdict: (MAY MERGE|MERGE WITH FIXES|FIX FIRST)$"
+    """
+    The verdict on the first line of a review report (0.4.0, D5): `Verdict: MAY MERGE | MERGE WITH FIXES |
+    FIX FIRST`, exact case, nothing else on the line (a CR counts as something else). `nothing` otherwise,
+    and for a missing file. Anchored and mechanical on purpose: `verdict: may merge` is no verdict.
+    """
+    function report_verdict(path)
+        isfile(path) || return nothing
+        line = open(io -> eof(io) ? "" : readline(io; keep = true), path)
+        endswith(line, '\n') && (line = line[1:prevind(line, lastindex(line))])
+        m = match(VERDICT, line)
+        return m === nothing ? nothing : String(m.captures[1])
     end
 
     function cmd_list(repo; io = stdout)
@@ -296,9 +321,9 @@ module Lane
     end
 
     function main(args)
-        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N]"
+        usage = "usage: scripts/lane new <name> [--repo DIR] [--base B] [--prefix P] [--owns GLOBS] | list [--repo DIR] | audit <name> [--repo DIR] [--base B] [--owns GLOBS] [--reported FILE] [--report FILE] | remove <name> [--repo DIR] [--allow-ignored] | release <agent name or lane key> [--repo DIR] | compact [--repo DIR] [--keep N]"
         opts, pos = try
-            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--keep"))
+            parse_args(args, ("--allow-ignored",), ("--repo", "--base", "--prefix", "--owns", "--reported", "--report", "--keep"))
         catch e
             println(stderr, "lane: ", e isa ErrorException ? e.msg : e)
             return 2

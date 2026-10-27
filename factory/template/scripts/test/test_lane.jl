@@ -266,3 +266,56 @@ end
         @test lane("compact", "--keep", "x")[1] == 2
     end
 end
+
+@testset "lane audit --report (0.4.0)" begin
+    # D5: the first line of a reviewer's or critic's report is the verdict, exact case, nothing else on the line
+    d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", "src/A.jl" => "a\n"))
+    lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
+    @test lane("new", "rv", "--owns", "src/*")[1] == 0
+    wt = joinpath(d, ".worktrees/rv")
+    commit!(wt, Dict("src/A.jl" => "b\n", "changelog.d/rv.md" => "- A\n"), "x")
+    led = joinpath(d, ".lanes/ledger.jsonl")
+    rep = tempname()
+    for v in ("MAY MERGE", "MERGE WITH FIXES", "FIX FIRST")
+        write(rep, "Verdict: $v\n\nSummary: fine.\n")
+        n = length(readlines(led))
+        rc, out = lane("audit", "rv", "--report", rep)
+        @test rc == 0 && occursin("verdict: $v", out) && occursin("lane audit: OK", out) || (print(out); false)
+        last_line = last(readlines(led))
+        @test length(readlines(led)) == n + 1
+        @test occursin("\"ev\":\"verdict\"", last_line) && occursin("\"lane\":\"rv\"", last_line) &&
+            occursin("\"verdict\":\"$v\"", last_line) && occursin("\"report\":\"$(replace(rep, "\\" => "\\\\"))\"", last_line)
+        @test success(pipeline(`jq -e '.ev == "verdict"'`; stdin = IOBuffer(last_line), stdout = devnull))
+    end
+    # review focus 4: the enum stays mechanical. Wrong case, a leading blank line, a stray word, trailing
+    # space, CRLF, a missing or empty file: exit 1, no verdict recorded, the audit's other output untouched
+    n = length(readlines(led))
+    msg = "report $rep has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
+    for bad in (
+            "verdict: may merge\n", "\nVerdict: MAY MERGE\n", "Verdict: APPROVE\n", "Verdict: MAY MERGE \n",
+            "Verdict: MAY MERGE\r\n", "Verdict:MAY MERGE\n", "Verdict: MAY MERGE (with nits)\n", "# Review\nVerdict: MAY MERGE\n", "",
+        )
+        write(rep, bad)
+        rc, out = lane("audit", "rv", "--report", rep)
+        @test rc == 1 && occursin("[FAIL] " * msg, out) || (print(repr(bad), " => ", out); false)
+        @test length(readlines(led)) == n                                     # nothing recorded
+    end
+    rm(rep)
+    rc, out = lane("audit", "rv", "--report", rep)
+    @test rc == 1 && occursin("[FAIL] report $rep", out) && length(readlines(led)) == n
+    # with --reported too: both checks run; a bad verdict fails even when the files match
+    write(rep, "Verdict: MAY MERGE\n")
+    files = tempname()
+    write(files, "src/A.jl\nchangelog.d/rv.md\n")
+    rc, out = lane("audit", "rv", "--report", rep, "--reported", files)
+    @test rc == 0 && !occursin("[info] no --reported", out)
+    write(rep, "Verdict: MAYBE\n")
+    @test lane("audit", "rv", "--report", rep, "--reported", files)[1] == 1
+    # an audit failure does not record the verdict either
+    write(rep, "Verdict: FIX FIRST\n")
+    write(joinpath(wt, "notes.txt"), "outside owns\n")
+    n = length(readlines(led))
+    rc, out = lane("audit", "rv", "--report", rep)
+    @test rc == 1 && occursin("outside owns: notes.txt", out) && length(readlines(led)) == n
+    @test lane("audit", "rv")[1] == 1 && lane("audit", "nope", "--report", rep)[1] == 2   # --report is optional; no lane: 2
+end
