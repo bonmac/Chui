@@ -56,7 +56,13 @@ implementer made them pass (0e16375).
   Runic-clean, and the coordinator has no format CI job. They were not reformatted, so
   `julia scripts/ci.jl format` run in the coordinator still fails on them. This is recorded in
   CHECK_COVERAGE. Making the coordinator Runic-clean, or giving it a format exclude list, is a
-  separate decision.
+  separate decision. Review notes:
+  - In a coordinator, `runic_scope` covers `factory/template/scripts/` only. The vendored
+    template's `test/*.jl` seeds are checked by the template's own run, not the coordinator's.
+  - The guard reads only pass, fail and error from the scratch run. Where `@runic` has no Runic,
+    the Runic item is a loud `@test_skip` (broken) and the guard still passes.
+  - The guard's RED run at c662804 (541 pass, 10 fail, all in `test_ci_format.jl`) was
+    reproduced by the reviewer and was not saved as an evidence file.
 - **Migration.** Sync 0.3.2; every changed file is managed (`scripts/ci.jl`, the two test files,
   `test_gen_tdd.jl`, `.agents/checks.toml`, `docs/CHECK_COVERAGE.md`). Then run
   `julia scripts/gen.jl`. Nothing seeded changes. The format job behaves the same in packages:
