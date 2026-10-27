@@ -69,11 +69,21 @@ ledger() {
         args="$args --arg $1 ${_v:--}"
         shift 2
     done
+    # 0.4.0: `scripts/lane compact` rewrites the file under .lanes/.dispatch.lock (read, filter, rename), so an
+    # append takes that lock too, or it could land between the read and the rename and be lost. Waits about
+    # 1 s, then appends anyway (advisory); a lock it did not take (dispatch_limit's: FACTORY_LEDGER_LOCKED=1,
+    # or a stale one) is left alone.
+    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0
+    if [ "${FACTORY_LEDGER_LOCKED:-}" != 1 ]; then
+        until mkdir "$_lk" 2>/dev/null; do _i=$((_i + 1)); [ "$_i" -lt 10 ] || break; sleep 0.1; done
+        [ "$_i" -ge 10 ] || _mine=1
+    fi
     # 0.2.8: after a truncated last line (a crash mid-write) start a new line, or this record is lost
     [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
     # shellcheck disable=SC2086
     jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" \
         --arg session "$(session)" $args '$ARGS.named' >>"$LEDGER_FILE" 2>/dev/null || true
+    [ -z "$_mine" ] || rmdir "$_lk" 2>/dev/null
 }
 # Lane counting (lane_key, OPEN_LANES_JQ, LANE_TTL_SECS) lives in _lanes.sh (0.2.8).
 

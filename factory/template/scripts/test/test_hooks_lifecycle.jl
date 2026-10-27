@@ -12,14 +12,29 @@
         @test occursin("idle-unreported", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         @test hook("teammate_idle.sh", idle("beta"), root)[1] == 2
         mkpath(joinpath(root, ".lanes/reports"))
-        write(joinpath(root, ".lanes/reports/gamma.md"), "report\n")
+        write(joinpath(root, ".lanes/reports/gamma.md"), "Verdict: MAY MERGE\nreport\n")
         @test hook("teammate_idle.sh", idle("gamma"), root)[1] == 0          # report on disk
         @test hook("teammate_idle.sh", "{}", root)[1] == 0
+        # 0.4.0 (critic): a report counts only with a verdict first line (D5), by name `<name>.md` or
+        # `<name>-*.md`; anything else is partial and the idle is blocked once, as with no report
+        write(joinpath(root, ".lanes/reports/partial.md"), "Findings so far\n- one\n")
+        rc, _, err = hook("teammate_idle.sh", idle("partial"), root)
+        @test rc == 2 && occursin("partial", err) && occursin("Verdict:", err) || (println("partial: $rc $err"); false)
+        @test hook("teammate_idle.sh", idle("partial"), root)[1] == 0         # second idle: no loop
+        write(joinpath(root, ".lanes/reports/wrongcase.md"), "verdict: may merge\n")
+        @test hook("teammate_idle.sh", idle("wrongcase"), root)[1] == 2
+        write(joinpath(root, ".lanes/reports/other-verdict.md"), "Verdict: APPROVE\n")
+        @test hook("teammate_idle.sh", idle("other"), root)[1] == 2
+        for (n, v) in (("fixes", "MERGE WITH FIXES"), ("fixfirst", "FIX FIRST"))
+            write(joinpath(root, ".lanes/reports/$n-f040.md"), "Verdict: $v\n\n- x\n")   # <name>-*.md
+            @test hook("teammate_idle.sh", idle(n), root)[1] == 0 || (println("$n-f040.md not counted"); false)
+        end
+        @test occursin("\"idle-reported\"", read(joinpath(root, ".lanes/ledger.jsonl"), String))
         # 0.2.6 (factory-026 item 5): a lane's session (root = its worktree) writes the report there; it counts
         for wt in (".worktrees/delta", ".claude/worktrees/epsilon")
             n = basename(wt)
             @test hook("teammate_idle.sh", idle(n), root)[1] == 2
-            mkpath(joinpath(root, wt, ".lanes/reports")); write(joinpath(root, wt, ".lanes/reports/$n.md"), "report\n")
+            mkpath(joinpath(root, wt, ".lanes/reports")); write(joinpath(root, wt, ".lanes/reports/$n.md"), "Verdict: MAY MERGE\nreport\n")
             @test hook("teammate_idle.sh", idle(n * "x"), root)[1] == 2      # another teammate's report does not count
             rc, _, _ = hook("teammate_idle.sh", replace(idle(n), "s1" => "s9"), root)
             @test rc == 0 || (println("teammate_idle ignored $wt/.lanes/reports/$n.md"); false)
@@ -275,6 +290,38 @@
         @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 2   # another key: its own cycle
         @test hook("teammate_idle.sh", replace(idle, "quiet" => "other"), r)[1] == 0
         @test count(contains("\"idle-unreported\""), lines(r)) == 2
+    end
+
+    @testset "ledger appends take the dispatch lock; a denial names a big ledger (0.4.0 critic)" begin
+        # `scripts/lane compact` rewrites the ledger under .lanes/.dispatch.lock: an append that ignored the
+        # lock could land between its read and its rename and be lost. ledger() waits for the lock briefly
+        # (about 1 s), then appends anyway; a lock it did not take is left alone.
+        start = "{\"session_id\":\"s2\",\"hook_event_name\":\"SubagentStart\",\"agent_id\":\"b1\"}"
+        r = realpath(mktempdir())
+        lk = joinpath(r, ".lanes/.dispatch.lock")
+        mkpath(lk)
+        t = @elapsed (rc = hook("lane_ledger.sh", start, r)[1])
+        @test rc == 0 && 0.5 < t < 5 || (println("held lock: rc=$rc in $t s"); false)
+        @test any(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl")))
+        @test isdir(lk)
+        t = @elapsed hook("lane_ledger.sh", start, r; env = Dict("FACTORY_LEDGER_LOCKED" => "1"))   # the caller holds it
+        @test t < 0.5
+        rm(lk)
+        hook("lane_ledger.sh", start, r)
+        @test !isdir(lk) && count(contains("\"start\""), readlines(joinpath(r, ".lanes/ledger.jsonl"))) == 3
+        # a denial on a ledger over 2,000 lines says so and names `scripts/lane compact`
+        big(n) = "{\"ts\":\"2026-10-26T03:40:00Z\",\"ev\":\"stop\",\"session\":\"s1\",\"agent_id\":\"a\"}\n"^n
+        pre = "{\"session_id\":\"s1\",\"tool_input\":{\"name\":\"n1\",\"description\":\"d\"}}"
+        r = realpath(mktempdir())
+        mkpath(joinpath(r, ".lanes"))
+        write(joinpath(r, ".lanes/ledger.jsonl"), big(2001))
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
+        @test rc == 2 && occursin("2001 lines", err) && occursin("run scripts/lane compact", err) || (println(err); false)
+        r = realpath(mktempdir())
+        mkpath(joinpath(r, ".lanes"))
+        write(joinpath(r, ".lanes/ledger.jsonl"), big(5))
+        rc, _, err = hook("dispatch_limit.sh", pre, r; env = Dict("FACTORY_MAX_OPEN_LANES" => "0"))
+        @test rc == 2 && !occursin("lane compact", err)
     end
 
     @testset "precompact writes a snapshot; session_start re-injects it" begin

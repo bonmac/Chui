@@ -18,3 +18,12 @@
     in such a body is a body, not a command, and what follows is still checked), and its read-only
     root denial says to cd back to the repo root; `teammate_idle.sh` logs `idle-unreported` once
     per teammate key, not on every later idle.
+  - Critic corrections (applied in the lane): `bash_guard.sh` also denies when the splitter returns
+    nothing for a non-blank, non-comment command; the dispatch watchdog starts before the lock wait
+    (so the whole hook answers within `FACTORY_WATCHDOG_SECS`) and the count runs as one background
+    `sh -c '…exec jq…'` step that the watchdog's TERM interrupts; every `ledger()` append takes
+    `.lanes/.dispatch.lock` for up to about 1 s (then appends anyway; `FACTORY_LEDGER_LOCKED=1` skips
+    it for the holder), so `scripts/lane compact` cannot lose an append; a cap denial on a ledger over
+    2,000 lines names the line count and `scripts/lane compact`; `teammate_idle.sh` counts a report
+    (`<name>.md` or `<name>-*.md`) only when its first line is `Verdict: MAY MERGE | MERGE WITH FIXES
+    | FIX FIRST`, else it is partial and the idle is blocked once; no `permissions.deny` list is added.

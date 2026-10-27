@@ -273,6 +273,15 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         rc, _, err = hook("bash_guard.sh", bash("ls"), root; env = Dict("PATH" => noawk))
         @test rc == 2 && occursin("splitter", err) || (println("no awk: rc=$rc $err"); false)
         @test !blocked("bash_guard.sh", bash("ls"), root; env = Dict("PATH" => noawk * ":" * ENV["PATH"]))
+        # (critic) an awk that exits 0 with NO output: the empty segment list must not pass a denied command
+        quiet = mktempdir()
+        write(joinpath(quiet, "awk"), "#!/bin/sh\nexit 0\n")
+        chmod(joinpath(quiet, "awk"), 0o755)
+        rc, _, err = hook("bash_guard.sh", bash("git reset --hard"), root; env = Dict("PATH" => quiet * ":" * ENV["PATH"]))
+        @test rc == 2 && occursin("splitter", err) || (println("quiet awk: rc=$rc $err"); false)
+        for c in ("# a comment only", "   ", "\n\n# two\n# comments")           # nothing to split is not a failure
+            @test !blocked("bash_guard.sh", bash(c), root) || (println("blank command blocked: $(repr(c))"); false)
+        end
         # the watchdog: a count that would take 5 s with FACTORY_WATCHDOG_SECS=1 is denied within 3 s,
         # logged as guard-timeout, and the lock is released. The slow path exists only under FACTORY_TEST=1.
         r = realpath(mktempdir())
@@ -296,6 +305,13 @@ const TEST_HOOKS = hooks_with_roots(String[])   # no roots, not required; a test
         t = @elapsed hook("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd2"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "8"))
         @test t < 3                                                        # no sleeper holds the hook's stdout open
         @test !blocked("dispatch_limit.sh", replace(agent_payload, "wd1" => "wd3"), r; env = Dict("FACTORY_WATCHDOG_SECS" => "0"))
+        # (critic) the watchdog runs from the hook's start: a held lock (its own wait is 5 s) is denied at 1 s,
+        # and that lock, which is not ours, is left in place
+        r = realpath(mktempdir())
+        mkpath(joinpath(r, ".lanes/.dispatch.lock"))
+        t = @elapsed (res = hook("dispatch_limit.sh", agent_payload, r; env = Dict("FACTORY_WATCHDOG_SECS" => "1")))
+        @test res[1] == 2 && occursin("exceeded 1 s", res[3]) && t < 3 || (println("watchdog in lock wait: ", res, " in $t s"); false)
+        @test isdir(joinpath(r, ".lanes/.dispatch.lock"))
         h = joinpath(mktempdir(), "hooks"); cp(TEST_HOOKS, h); rm(joinpath(h, "_watchdog.sh"))
         rc, _, err = hook("dispatch_limit.sh", agent_payload, realpath(mktempdir()); hooks = h)
         @test rc == 2 && occursin("_watchdog.sh is missing", err)
