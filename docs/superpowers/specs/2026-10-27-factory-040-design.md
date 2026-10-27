@@ -138,6 +138,13 @@ partial file counted as reported (M2); a stale verdict file passed (M3); static 
 blind spot. Still UNVERIFIED: `agent_type` for tmux-pane teammates; `onFailure: "block"` on a
 PreToolUse timeout; whether the host waits on a stderr pipe held by an orphaned child.
 
+**Review rounds on f040-hooks (2026-10-27):** a lenient heredoc terminator (leading or trailing
+blank, CR, or `WORD)` at top level) let a nested heredoc hide the lines the shell actually runs
+(B1, a regression from 0.2.8); and `WORD)` inside `$(...)` ends the body in bash but not in zsh,
+which the Bash tool runs here (B2). Rule: a body ends only on an exact terminator line (tab-strip
+for `<<-`); a `WORD)` or `WORD )` line inside a `$(...)` body is refused as ambiguous, with the
+closing `)` to be put on its own line. The guard models no shell's leniency it cannot prove in both.
+
 ## 3. Out of scope
 
 A parallel review swarm with a synthesizer; a persistent CI watcher; a self-healing gate loop;
