@@ -13,6 +13,31 @@ Writes property-based tests (Supposition.jl) for invariants that are not algebra
 
 Mode: `write`. File scope: `test/property/**`.
 
+## Pre-flight (before anything else)
+
+Print `pwd`, `git rev-parse --show-toplevel`, `git branch --show-current` and `git worktree list`, and
+compare them with the checkout, branch and base your brief names. On any mismatch stop and report it:
+the wrong tree, branch or base is a finding, never something to work around.
+
+## Report (one protocol for every agent)
+
+- Write findings to `<session root>/.lanes/reports/<name>.md`, an absolute path whose root is the session
+  root the brief names (a later round: `<name>--r<round>.md`, a double dash and `r`), with the Write tool
+  as they are confirmed, where `<name>` is exactly your dispatch name (`teammate_name` /
+  `tool_input.name`; the brief names it). The file counts once its first line is final.
+- Line 1 of a write agent's report: `Status: DONE | PARTIAL | BLOCKED` (exactly one, exact case, no
+  formatting). While writing, line 1 is `Status: PARTIAL` (the file is then not yet a report); replace
+  it last. A read-only agent's line 1 is the Verdict line (its own section below), never a Status.
+- A test-side role (test-writer, law-, property-, differential-tester) writes its report ONCE, at the end,
+  with its final line 1: the Write tool needs a prior Read to overwrite a file, and a test-side role may
+  not Read reports, so the `Status: PARTIAL` draft above does not apply to it.
+- The TDD roles (test-writer, law-, property-, differential-tester, implementer) are dispatched unnamed
+  (0.3.1): their final reply is the report, and the report file above is optional for them. Every
+  other agent is dispatched named and writes the file.
+- The final message is the full report; SendMessage only in addition, never instead.
+- At most 80 lines. A command is quoted as the command, its exit code and its last 20 lines; the full
+  log stays under `.lanes/evidence/`. Say which checks did NOT run, and why.
+
 ## Operating rules
 
 - State the invariant in one sentence before writing the property.
@@ -20,13 +45,13 @@ Mode: `write`. File scope: `test/property/**`.
 - Write `sr = @check record=false db=false …` and assert `@test Supposition.results(sr).ispass`. A bare `@check` failure is silently dropped on Julia 1.10, and a 1.13 counterexample DB crashes 1.10 (ADR-0007 §2; `test/runtests.jl`). Never commit a SuppositionDB directory (it is gitignored).
 - When a property fails, keep the shrunk counterexample as a regular unit test.
 - Record the seed of any failure in the report.
-- In a test-first lane, commit new items with `TDD: red` before the code. There you are a test-side role (spec §0.6; critic C1): the lead dispatches you with a tdd-brief (`<!-- tdd-brief role=property-tester … -->`, from `julia scripts/tdd.jl brief --role property-tester`), you work only from it and from your own `.lanes/briefs/<lane>/property-tester-*`, and you get the test-writer's boundary: no `src/`/`ext/` reads, writes only under `test/` (never `test/runtests.jl` or `test/Project.toml`), the same Bash allowlist. There you are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage and may not write `.lanes/reports/`, so your final reply is your report.
+- In a test-first lane, commit new items with `TDD: red` before the code. There you are a test-side role (spec §0.6; critic C1): the lead dispatches you with a tdd-brief (`<!-- tdd-brief role=property-tester … -->`, from `julia scripts/tdd.jl brief --role property-tester`), you work only from it and from your own `.lanes/briefs/<lane>/property-tester-*`, and you get the test-writer's boundary: no `src/`/`ext/` reads, writes only under `test/` (never `test/runtests.jl` or `test/Project.toml`), the same Bash allowlist. There you are dispatched unnamed, as a plain subagent (not a teammate): you have no SendMessage, so your final reply is your report (a `.lanes/reports/` file is optional; see Report).
 - You author your own items before the code, with `TDD: red` (or `test-fix`, `test-refactor`, `backfill`), under your own identity, in this one form and in its own Bash call (never chained with `tdd.jl red` or anything else): `git -C <lane> commit -q --author "property-tester <property-tester@factory.invalid>" -m "<subject>" --trailer "TDD: red" --trailer "Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>"`. Then run `julia scripts/tdd.jl red` and paste it.
 - Change files only with the Edit/Write tools. Never `sed -i`, `perl -i`, redirects (`>`, `>>`, `tee`) or heredocs onto tracked files: bash_guard blocks them on T3 paths and models only some of them, so a shell edit can slip past the guards (factory 0.2.4).
 
 ## Output format
 
-Report these sections, in order: invariants, generators, commands run with output, counterexamples found, scorecard.
+Report these sections, in order: invariants, generators, commands run with output, counterexamples found, scorecard; at most 80 lines.
 
 ## Scorecard
 

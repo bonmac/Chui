@@ -12,6 +12,12 @@
 #   unquoted `...` splits too. A `#` that starts a word ends the line (its apostrophes are not quotes).
 # - Backslash-newline joins lines. A heredoc (<<WORD or <<-WORD, unquoted, not <<< and not inside
 #   $((...)) or ((...))) drops its body; a body never terminated is checked as commands after all.
+#   The terminator is EXACT: a line equal to WORD (leading tabs stripped for <<-), never more. 0.4.0
+#   review B1: a lenient match (trailing blanks, CR, leading blanks, `EOF)`) ended a body where a shell
+#   does not, and a later body line could open a second heredoc hiding the lines the shell runs. Two
+#   forms differ between bash and zsh and are denied through a marker segment: a "$(" closed or opened on
+#   the `<<` line (k != hk: bash 5 reads a body from the next lines, bash 3.2/zsh run them), and WORD
+#   followed by `)` inside a "$(...)" body (bk, recorded with hd: bash ends the body there, zsh reads on).
 # - Then 2>&1-style duplications go, &>, >& and >| become >, and ; & | ( ) split.
 segments() {
     awk -v SQ="'" 'BEGIN { sp = " \t;&|()<>" }
@@ -27,7 +33,7 @@ segments() {
             i += 2; dash = substr(s, i, 1) == "-"; if (dash) i++
             while (i <= n && index(" \t", substr(s, i, 1))) i++
             for (w = ""; i <= n && !index(sp, substr(s, i, 1)); i++) if (!index("\"\\" SQ, substr(s, i, 1))) w = w substr(s, i, 1)
-            if (w != "") hd = w; b = b " "; i-- }
+            if (w != "") { hd = w; hk = k } b = b " "; i-- }
           else if (c == "$" && d == SQ) { q = "A"; i++ } # $'...' and $"..." are quotes (0.2.4: the $ is dropped)
           else if (c == "$" && d == "\"") { }
           else if (c == "\"" || c == SQ) q = c
@@ -41,8 +47,9 @@ segments() {
         else if (q == "\"" && (c == "`" || (c == "$" && d == "("))) {
           q = ""; k++; if (c == "`") { t[k] = "`"; b = b ";" } else { t[k] = 1; b = b "$("; i++; if (substr(s, i + 1, 1) == "(") ar = 1 } }
         else b = b (index(sp, c) ? "_" : c) }
-      if (q != "") b = b "_"; else { if (k) b = b ";"; else out(); if (hd != "") { body = hd; hd = "" } } }
-    body != "" { l = $0; if (dash) sub(/^\t+/, "", l); if (l == body) { body = ""; nb = 0 } else hb[++nb] = $0; next }
+      if (q != "") b = b "_"; else { if (k) b = b ";"; else out(); if (hd != "") { if (k == hk) { body = hd; bk = (k && t[k] != "`") } else print "__factory_ambiguous_heredoc"; hd = "" } } }
+    body != "" { l = $0; if (dash) sub(/^\t+/, "", l); r = substr(l, length(body) + 1); sub(/^[ \t]+/, "", r)
+      if (l == body) { body = ""; nb = 0 } else { if (bk && substr(l, 1, length(body)) == body && substr(r, 1, 1) == ")") print "__factory_ambiguous_heredoc"; hb[++nb] = $0 } next }
     { scan($0) }
     END { if (body != "") { body = ""; for (j = 1; j <= nb; j++) scan(hb[j]) } if (b != "") out() }'
 }
@@ -130,9 +137,11 @@ git_sub() {
     printf '%s' "${1:-}"
 }
 # newdir TARGET: the directory `cd TARGET` moves to, or empty if it cannot be known statically.
+# 0.4.0: a bare `cd` (or flags only) goes to $HOME; before, the tracked cwd stayed in the repo.
 newdir() {
     case $1 in
-        '' | -) return 0 ;;
+        '') printf '%s\n' "$HOME"; return 0 ;;
+        -) return 0 ;;
         '$HOME' | '${HOME}' | '$HOME/'* | '${HOME}/'*) ;;
         *'$'* | *'`'*) return 0 ;;
     esac

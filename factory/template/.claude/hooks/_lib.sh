@@ -56,6 +56,7 @@ root_hint() {
 
 if [ -f "$HOOKS_DIR/limits.env" ]; then . "$HOOKS_DIR/limits.env"; fi
 LEDGER_FILE="$ROOT/${LEDGER:-.lanes/ledger.jsonl}"
+PENDING_FILE="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" # appends made while the lock was held (ledger(), below)
 
 # owning_ledger CHECKOUT (0.3.1 F2; Julia's Tdd.owning_ledger is the same rule): prints the TDD ledger of the main
 # checkout owning CHECKOUT, <dirname of git's absolute common dir>/.lanes/ledger.jsonl; exit 1, nothing, outside a repo.
@@ -75,59 +76,46 @@ ledger() {
         args="$args --arg $1 ${_v:--}"
         shift 2
     done
+    # 0.4.0 (final review M1): never appends to the ledger itself (`lane compact` rewrites it under .lanes/.dispatch.lock).
+    # Critic round 3 M1: every event goes to the pending file beside the CURRENT LEDGER_FILE and a lock holder then folds it (fold_pending), so the ledger's
+    # order is arrival order (a holder's direct append overtook a line that had timed out into pending meanwhile). The lock
+    # is waited for about 1 s; without it the event waits in pending. FACTORY_LEDGER_LOCKED=1: the caller holds the lock
+    # (dispatch_limit); =pending: append only (the watchdog, which may fire during the lock wait: n1). Not its lock: it stays.
+    # The lock and pending file are those beside the CURRENT LEDGER_FILE (0.3.1 merge): a tdd-commit record for
+    # another checkout's owning ledger locks and folds that ledger, never the session's.
+    _lk="$(dirname "$LEDGER_FILE")/.dispatch.lock" _mine="" _i=0 _to="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" _fold=""
+    case ${FACTORY_LEDGER_LOCKED:-} in
+        1) _fold=1 ;;
+        pending) ;;
+        *) until mkdir "$_lk" 2>/dev/null; do _i=$((_i + 1)); [ "$_i" -lt 10 ] || break; sleep 0.1; done
+            [ "$_i" -ge 10 ] || _mine=1 _fold=1 ;;
+    esac
     # 0.2.8: after a truncated last line (a crash mid-write) start a new line, or this record is lost
-    [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
-    # shellcheck disable=SC2086
-    jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" \
-        --arg session "$(session)" $args '$ARGS.named' >>"$LEDGER_FILE" 2>/dev/null || true
+    [ ! -s "$_to" ] || [ -z "$(tail -c 1 "$_to" 2>/dev/null)" ] || printf '\n' >>"$_to" 2>/dev/null
+    # shellcheck disable=SC2086 # the line is built first, then appended in one printf (a short open-to-write window)
+    _line=$(jq -cn --arg ts "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg ev "$ev" --arg session "$(session)" $args '$ARGS.named' 2>/dev/null) &&
+        printf '%s\n' "$_line" >>"$_to" 2>/dev/null
+    [ -z "$_fold" ] || fold_pending
+    [ -z "$_mine" ] || rmdir "$_lk" 2>/dev/null
+}
+# fold_pending: the caller holds the lock (review round 1 B1, B2). Pending lines are newer than the ledger's tail, so
+# a lock taker appends them first, each file (a crash's leftover `.<epoch>.<pid>` first) renamed, appended, removed:
+# a writer's `>>` after the rename makes a new pending file. dispatch_limit, ledger() and lane.jl's with_lock call it.
+fold_pending() {
+    _pp="$(dirname "$LEDGER_FILE")/ledger.pending.jsonl" # beside the current LEDGER_FILE, as in ledger()
+    [ ! -f "$_pp" ] || mv "$_pp" "$_pp.$(date +%s).$$" 2>/dev/null
+    for _pf in "$_pp".*; do
+        [ -f "$_pf" ] || continue
+        [ ! -s "$LEDGER_FILE" ] || [ -z "$(tail -c 1 "$LEDGER_FILE" 2>/dev/null)" ] || printf '\n' >>"$LEDGER_FILE" 2>/dev/null
+        _sz=$(wc -c <"$_pf" | tr -d ' '); head -c "$_sz" "$_pf" >>"$LEDGER_FILE" 2>/dev/null || continue # then re-read: a write that opened it before the mv
+        tail -c +"$((_sz + 1))" "$_pf" >>"$LEDGER_FILE" 2>/dev/null && rm -f "$_pf"
+    done
 }
 # Lane counting (lane_key, OPEN_LANES_JQ, LANE_TTL_SECS) lives in _lanes.sh (0.2.8).
-
-# normpath ABS: collapse //, /./ and /../ textually (symlinks are not resolved).
-normpath() {
-    _out=""
-    _oldifs=$IFS
-    case $- in *f*) _noglob=1 ;; *) _noglob="" ;; esac # restore the caller's noglob state
-    IFS=/
-    set -f
-    for _seg in $1; do
-        case $_seg in
-            '' | .) ;;
-            ..) _out=${_out%/*} ;;
-            *) _out="$_out/$_seg" ;;
-        esac
-    done
-    [ -n "$_noglob" ] || set +f
-    IFS=$_oldifs
-    printf '%s\n' "${_out:-/}"
-}
-
-# abspath PATH [BASE]: expand ~, make relative paths absolute against BASE, normalise.
-# shellcheck disable=SC2088 # matching a literal "~/" prefix is the point
-abspath() {
-    case $1 in
-        "~") _p=$HOME ;;
-        "~/"*) _p="$HOME/${1#"~/"}" ;;
-        "~+") _p=${2:-$ROOT} ;; # the current directory
-        "~+/"*) _p="${2:-$ROOT}/${1#"~+/"}" ;;
-        '$HOME' | '${HOME}') _p=$HOME ;;
-        '$HOME/'*) _p="$HOME/${1#'$HOME/'}" ;;
-        '${HOME}/'*) _p="$HOME/${1#'${HOME}/'}" ;;
-        /*) _p=$1 ;;
-        *) _p="${2:-$ROOT}/$1" ;;
-    esac
-    normpath "$_p"
-}
-
-# phys ABS (0.3.0, the tdd hooks): ABS with symlinks resolved (a missing tail kept) as RP; one fork.
-# shellcheck disable=SC2034 # RP is read by _lanes.sh and _tdd_allow.sh
-phys() {
-    _p=$1 _t="" _n=0
-    while [ -L "$_p" ] && [ "$_n" -lt 20 ]; do _n=$((_n + 1)) _l=$(readlink "$_p"); case $_l in /*) _p=$_l ;; *) _p="${_p%/*}/$_l" ;; esac; done
-    while [ -n "$_p" ] && [ ! -d "$_p" ]; do _t="/${_p##*/}$_t" _p=${_p%/*}; done
-    _r=$(CDPATH='' cd -P -- "${_p:-/}" 2>/dev/null && pwd -P) && RP=${_r%/}$_t || RP=""
-}
-# is_co, co_of and in_root (the checkout of a path) live in _tdd_allow.sh: only tdd_boundary.sh uses them.
+# normpath, abspath and phys live in _paths.sh (split for the 150-line cap); a missing one blocks.
+[ -f "$HOOKS_DIR/_paths.sh" ] || deny "$HOOKS_DIR/_paths.sh is missing; the hook fails closed. Restore it (julia scripts/sync_factory.jl)."
+# shellcheck source=_paths.sh
+. "$HOOKS_DIR/_paths.sh"
 
 # test_role ROLE / tdd_role ROLE (factory 0.3.0, critic C1): the one list of test-side roles (they author the test
 # phases and share the test-writer's boundary); a TDD role is a test-side role or the implementer.

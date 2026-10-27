@@ -105,14 +105,26 @@ function added_items(root, sha)
     return out
 end
 
-"The flat string fields of each JSONL line of the ledger (no JSON stdlib)."
+"""
+The ledger file `path` and its pending files, in reading order (critic round 3 M2): the ledger, a crash's leftover
+`ledger.pending.jsonl.<epoch>.<pid>` files (lexical name order), then the live `ledger.pending.jsonl` as its tail: the
+hooks append there while the lock is held (_lib.sh's `ledger`, lane.jl's `pending_file`). The pending paths sit beside
+`path` (normally `owning_ledger(root)`'s result). Only the files that exist.
+"""
+function ledger_files(path)
+    dir, pf = dirname(path), joinpath(dirname(path), "ledger.pending.jsonl")
+    left = isdir(dir) ? joinpath.(dir, sort!(filter(n -> startswith(n, "ledger.pending.jsonl."), readdir(dir)))) : String[]
+    return filter(isfile, [path; left; pf])
+end
+"The flat string fields of each JSONL line of the ledger and its pending files (no JSON stdlib); nothing when none exists."
 function ledger_records(path)
-    isfile(path) || return nothing
+    files = ledger_files(path)
+    isempty(files) && return nothing
     return [
         Dict{String, String}(
             m.captures[1] => replace(m.captures[2], r"\\(.)" => s"\1")
                 for m in eachmatch(r"\"([A-Za-z_]+)\"\s*:\s*\"((?:[^\"\\]|\\.)*)\"", l)
-        ) for l in eachline(path) if !isempty(strip(l))
+        ) for f in files for l in eachline(f) if !isempty(strip(l))
     ]
 end
 """

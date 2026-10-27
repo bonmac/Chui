@@ -85,6 +85,7 @@ record() {
         done
     done <"$_c"
     rm -f "$_c"
+    LEDGER_FILE=$SESSION_LEDGER # 0.3.1 review NOTE-3: later records (the next entry, other events) use the session ledger
 }
 
 # shellcheck disable=SC2044 # entry names are tool_use_ids ([A-Za-z0-9_-], checked by tdd_boundary.sh)

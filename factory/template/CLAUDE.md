@@ -64,14 +64,26 @@ Claude Code specifics:
 
 - Agents are generated into `.claude/agents/`; never edit them, edit the registry and run
   `julia scripts/gen.jl`.
-- Commands: `/intake`, `/lanes`, `/change-review`, `/contract-check`, `/release-check`,
-  `/test-changed`. Lifecycle rules: the `lane-lifecycle` skill.
+- Commands: `/intake`, `/lanes`, `/change-review`, `/lane-review`, `/ci-triage`,
+  `/contract-check`, `/release-check`, `/test-changed`. Lifecycle rules: the `lane-lifecycle` skill.
 - Hooks (`.claude/settings.json`): `bash_guard`, `write_guard`, `dispatch_limit`,
   `teammate_idle`, `lane_ledger`, `precompact`, `tdd_boundary` (test-writer/implementer paths,
   Bash and commits). If a hook blocks you, read its message;
   do not work around it. Each one's blind spots are in `docs/CHECK_COVERAGE.md`.
 - After a compaction, read `.lanes/precompact.md` and `HANDOFF.md` before acting.
 <!-- claude-only:end -->
+
+## Precedence
+
+The factory's `scripts/lane`, its `reviewer` and `critic`, the `[lanes] max_open` cap and the
+intake tiers win over the superpowers equivalents (`using-git-worktrees`,
+`subagent-driven-development`, `brainstorming`). Plugin skills are used only for brainstorming at T2+ and for executing a plan.
+
+## Writing files under the guard
+
+Change files with Edit/Write, never heredocs or `sed -i`. No bare `cd`: use `(cd dir && cmd)`.
+A probe the guard refuses is reported `NOT RUN`, never routed around. A variable or literal
+spelled like a gated word is refused inside a Bash command: put such text in a file instead.
 
 ## Commands (one entry point; CI calls the same jobs)
 
