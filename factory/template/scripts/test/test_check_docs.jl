@@ -131,6 +131,23 @@
         @test CheckDocs.gitignored(joinpath(t, "sub"), "test/SuppositionDB") && !CheckDocs.gitignored(joinpath(t, "sub"), "test/other")
     end
 
+    @testset "/lane-review and /ci-triage name only scripts that exist (0.4.0, D6)" begin
+        # the commands are managed template files, present in every profile: checked against this checkout
+        for cmd in (".claude/commands/lane-review.md", ".claude/commands/ci-triage.md")
+            p = joinpath(ROOT, cmd)
+            @test isfile(p) || (println("missing: $cmd"); false)
+            isfile(p) || continue
+            text = read(p, String)
+            bad = CheckDocs.stale(ROOT, cmd, text)
+            @test isempty(bad) || (println("$cmd: ", bad); false)
+            named = unique(String[m.match for m in eachmatch(r"\bscripts/[A-Za-z0-9_./-]*[A-Za-z0-9]", text)])
+            @test length(named) >= 2                                          # it is a command over the scripts
+            for s in named
+                @test isfile(joinpath(ROOT, s)) || (println("$cmd names missing $s"); false)
+            end
+        end
+    end
+
     if IN_FACTORY
         # the template itself has no stale references (docs/agent/* are copied in by the lead).
         # Only here: in a vendored repo the repo-wide run is `ci.jl guards`'s own check_docs step,
