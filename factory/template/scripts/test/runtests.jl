@@ -66,7 +66,7 @@ function runtests_args(argv)
         if a == "--hooks-dir" && i < length(argv)
             hooks = abspath(argv[i += 1])
         elseif startswith(a, "--hooks-dir=")
-            hooks = abspath(a[length("--hooks-dir=") + 1:end])
+            hooks = abspath(a[(length("--hooks-dir=") + 1):end])
         elseif startswith(a, "-")
             error("usage: runtests.jl [NAME...] [--hooks-dir DIR]; unknown option `$a`")
         else

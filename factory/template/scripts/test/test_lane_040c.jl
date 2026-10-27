@@ -30,3 +30,26 @@
         @test rc == 0 && any(contains("guard-timeout"), readlines(led)) && !isfile(pend) || (print(out); false)
     end
 end
+
+# moved from test_lane.jl (its 400-line budget once Runic-formatted)
+@testset "lane.jl ledger appends take the hooks' lock; an unreadable [lanes] ledger is one line (review round 1, M2, m1)" begin
+    # M2: 1f850c3 appended `release`, `lane-new` and verdict lines without .lanes/.dispatch.lock, so one written between compact's read
+    # and its rename was lost (a lost release reopens a lane). Lock held: non-zero exit, nothing written, the lock never broken.
+    d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", "src/A.jl" => "a\n"))
+    led = joinpath(d, ".lanes/ledger.jsonl"); mkpath(dirname(led))
+    write(led, join([ledger_ev("t", "dispatch"; key = "foo", name = "foo"), ledger_ev("t", "spawned"; key = "foo", agent_id = "x"), ledger_ev("t", "stop"; agent_id = "y")], "\n") * "\n")
+    lock = joinpath(d, ".lanes/.dispatch.lock"); mkdir(lock); t = @elapsed rc = capture(() -> Lane.main(["release", "foo", "--repo", d]))[1]
+    @test rc == 1 && length(readlines(led)) == 3 && isdir(lock) && 4 < t < 60
+    rc, out = capture(() -> Lane.main(["new", "lk", "--owns", "src/*", "--repo", d]))   # lane new: the worktree exists, the exit says the record failed
+    @test rc == 1 && length(readlines(led)) == 3 && isdir(joinpath(d, ".worktrees/lk")) && isdir(lock) || (print(out); false)
+    rm(lock); @test capture(() -> Lane.main(["release", "foo", "--repo", d]))[1] == 0 && length(readlines(led)) == 4 && !isdir(lock)   # released: written, lock gone
+    @test Lane.ledger_line(d, "x"; k = "v") && length(readlines(led)) == 5 && !isdir(lock)
+    # m1: `compact` and `release` said "cannot read [lanes] ledger"; `stats` and `handoff` printed a stack trace
+    e = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", ".agents/agent-registry.toml" => "[lanes]\nledger = 3\n"))
+    run2(args) = (p = tempname(); r = open(io -> capture(() -> redirect_stderr(() -> Lane.main(args), io)), p, "w"); (r..., read(p, String)))
+    for sub in ("stats", "handoff", "compact")
+        rc, out, err = run2([sub, "--repo", e])
+        @test rc == 1 && isempty(out) && count('\n', err) == 1 && startswith(err, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); ") ||
+            (println(sub, " => ", rc, " ", repr(out), " ", repr(err)); false)
+    end
+end

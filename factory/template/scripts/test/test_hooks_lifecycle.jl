@@ -294,7 +294,11 @@
         write(joinpath(stub, "julia"), "#!/bin/sh\n: >\"$startf\"\nsleep 1.5\nprintf '%s\\n' \"\$@\" >\"$argf\"\n")
         chmod(joinpath(stub, "julia"), 0o755)
         env = Dict("PATH" => stub * ":" * ENV["PATH"])
-        waitfile(f) = (for _ in 1:100; isfile(f) && return true; sleep(0.05); end; false)
+        waitfile(f) = (
+            for _ in 1:100
+                isfile(f) && return true; sleep(0.05)
+            end; false
+        )
         repo = tmp_repo(Dict("scripts/lane.jl" => "# stub\n"))
         mkpath(joinpath(repo, ".lanes"))
         pc = "{\"session_id\":\"s3\",\"trigger\":\"manual\"}"
@@ -356,8 +360,10 @@
         # `command` (a string, as for Bash) or `ws` (a WebSocket, no command), so a command Monitor is
         # checked like Bash and a ws Monitor is denied by the no-command rule (fails closed).
         matchers = readlines(pipeline(`jq -r '.hooks.PreToolUse[].matcher' $settings`))
-        @test matchers == ["Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task",
-            "Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task"] || (println("PreToolUse matchers: $matchers"); false)
+        @test matchers == [
+            "Bash|Monitor", "Edit|Write|NotebookEdit", "Agent|Task",
+            "Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task",
+        ] || (println("PreToolUse matchers: $matchers"); false)
         mon(ti) = "{\"session_id\":\"s1\",\"tool_name\":\"Monitor\",\"cwd\":\"$(json(proj))\",\"tool_input\":$ti}"
         @test run1(mon("{\"command\":\"tail -f app.log\",\"description\":\"d\",\"timeout_ms\":1000}")) == 0
         @test run1(mon("{\"command\":\"git reset --hard\",\"description\":\"d\",\"timeout_ms\":1000}")) == 2

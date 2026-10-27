@@ -63,8 +63,10 @@
 
     @testset "m3: a read-only agent runs `lane audit` but not `--report`" begin
         r = realpath(mktempdir())
-        for c in ("scripts/lane audit x --report .lanes/reports/r.md", "scripts/lane audit x --report=.lanes/reports/r.md",
-                "julia scripts/lane.jl audit x --report .lanes/reports/r.md", "./scripts/lane audit x --base main --report r.md")
+        for c in (
+                "scripts/lane audit x --report .lanes/reports/r.md", "scripts/lane audit x --report=.lanes/reports/r.md",
+                "julia scripts/lane.jl audit x --report .lanes/reports/r.md", "./scripts/lane audit x --base main --report r.md",
+            )
             rc, _, err = hook("bash_guard.sh", bash_as("reviewer", c), r)
             @test rc == 2 && occursin("--report", err) || (println("allowed: $c"); false)
         end

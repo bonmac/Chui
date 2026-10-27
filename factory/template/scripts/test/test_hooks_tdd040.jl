@@ -8,9 +8,11 @@
         for c in ("julia scripts/tdd.jl audit --base main --ledger .lanes/ledger.jsonl", "julia --startup-file=no scripts/tdd.jl audit")
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
-        for c in ("julia scripts/tdd.jl red", "julia scripts/tdd.jl green --base main", "julia scripts/tdd.jl brief --role implementer",
+        for c in (
+                "julia scripts/tdd.jl red", "julia scripts/tdd.jl green --base main", "julia scripts/tdd.jl brief --role implementer",
                 "julia scripts/tdd.jl mutate --item i --src a:1 --from a --to b", "julia scripts/tdd.jl gaps", "julia scripts/tdd.jl api",
-                "julia scripts/tdd.jl audit --root /x", "julia scripts/tdd.jl")
+                "julia scripts/tdd.jl audit --root /x", "julia scripts/tdd.jl",
+            )
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
     end
@@ -22,8 +24,10 @@
         for a in ("test-writer", "law-tester"), c in ("pwd", "git rev-parse --show-toplevel", "git -C $L branch --show-current", "git worktree list")
             @test tb_ok(t, twb(c; agent = a))
         end
-        for c in ("git rev-parse HEAD:src/P.jl", "git rev-parse --show-toplevel HEAD", "git branch -f x", "git branch", "git worktree add x",
-                "git worktree list --porcelain", "git branch --show-current x")
+        for c in (
+                "git rev-parse HEAD:src/P.jl", "git rev-parse --show-toplevel HEAD", "git branch -f x", "git branch", "git worktree add x",
+                "git worktree list --porcelain", "git branch --show-current x",
+            )
             @test tb_no(t, twb(c))
         end
     end
@@ -32,8 +36,10 @@
             @test tb_ok(t, tb_write("$S/.lanes/reports/tw-lane1-1.md"; agent = a))
         end
         @test tb_ok(t, tb_write("$S/.lanes/reports/tw-lane1-1--r2.md"; tool = "Edit"))
-        for p in ("$S/.lanes/reports/sub/x.md", "$S/.lanes/reports/x.txt", "$S/.lanes/reports/", "$L/.lanes/reports/x.md",
-                "$S/.lanes/scratch/x.md", "$S/.lanes/reports/../ledger.jsonl")
+        for p in (
+                "$S/.lanes/reports/sub/x.md", "$S/.lanes/reports/x.txt", "$S/.lanes/reports/", "$L/.lanes/reports/x.md",
+                "$S/.lanes/scratch/x.md", "$S/.lanes/reports/../ledger.jsonl",
+            )
             @test tb_no(t, tb_write(p))
         end
         mkpath("$S/.lanes"); symlink("$(t.pkg)/src", "$S/.lanes/reports")   # a reports link into src/ is not the reports

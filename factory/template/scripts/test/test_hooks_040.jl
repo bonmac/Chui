@@ -152,8 +152,10 @@
         # tool's shell here) reads on to the bare EOF line and runs what follows, so an awk that ended the body
         # dropped lines zsh executes. Such a line inside a "$(...)" body is denied; the closing `)` on its own
         # line after the EOF line is read the same by bash and zsh, and stays allowed.
-        for c in ("echo \"\$(cat <<EOF\nEOF)\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ", "echo \"\$(cat <<EOF\nEOF )\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ",
-                "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"", "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard")
+        for c in (
+                "echo \"\$(cat <<EOF\nEOF)\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ", "echo \"\$(cat <<EOF\nEOF )\"\ncat <<ZZZ\nEOF\n)\"\nrm -rf ~\nZZZ",
+                "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"", "echo \"\$(cat <<'EOF'\npkill -f x\nEOF)\"; git reset --hard",
+            )
             rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root)
             @test rc == 2 && occursin("closing ) on its own line", err) || (println("EOF) inside \$(...) not denied: $(repr(c)) -> $rc $err"); false)
         end
@@ -171,8 +173,10 @@
         # the exact EOF), bash 3.2 and zsh run those lines as commands ("unterminated here-document"). Neither
         # model is safe for the other (a `cat <<ZZZ` among those lines swallows what follows in one of them), so
         # the construct is denied outright, whatever follows it.
-        for c in ("echo \"\$(cat <<EOF)\"\nrm -rf ~\nEOF", "echo \"\$(cat <<EOF)\"\nEOF)\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ",
-                "echo \"\$(cat <<EOF)\"\nls\nEOF", "cat <<EOF \"\$(echo\nhi\nEOF)\"\nrm -rf ~\nEOF")
+        for c in (
+                "echo \"\$(cat <<EOF)\"\nrm -rf ~\nEOF", "echo \"\$(cat <<EOF)\"\nEOF)\ncat <<ZZZ\nEOF\nrm -rf ~\nZZZ",
+                "echo \"\$(cat <<EOF)\"\nls\nEOF", "cat <<EOF \"\$(echo\nhi\nEOF)\"\nrm -rf ~\nEOF",
+            )
             rc, _, err = hook("bash_guard.sh", bash(c; cwd = root), root)
             @test rc == 2 && occursin("closing ) on its own line", err) || (println("same-line \$( close not denied: $(repr(c)) -> $rc $err"); false)
         end
@@ -304,7 +308,11 @@
         @test hook("precompact.sh", pc, repo; env = path)[1] == 0                                     # 11 lines, default budget: no call
         sleep(0.5); @test !isfile(argf)
         @test hook("precompact.sh", pc, repo; env = merge(path, Dict("FACTORY_LEDGER_LINES" => "10")))[1] == 0
-        waitfile(f) = (for _ in 1:100; isfile(f) && return true; sleep(0.05); end; false)
+        waitfile(f) = (
+            for _ in 1:100
+                isfile(f) && return true; sleep(0.05)
+            end; false
+        )
         @test waitfile(argf) && "compact" in readlines(argf) || (println("julia not called for 11 lines with FACTORY_LEDGER_LINES=10"); false)
     end
 end

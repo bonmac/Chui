@@ -250,8 +250,12 @@ end
         @test kinds("stop") == 2 && any(l -> occursin("a-z-s1", l), after) && any(l -> occursin("\"stop\",\"session\":\"B\"", l), after)   # only the matched stops
         @test kinds("idle-unreported") == 1 && any(l -> occursin("\"teammate\":\"d-s1\"", l), after)
         @test !any(l -> occursin("torn", l), after) && !isfile(led * ".tmp")   # the torn line is dropped, not kept as a fragment
-        @test after == filter(l -> !occursin("torn", l) && (occursin("\"ev\":\"dispatch\"", l) || occursin("\"ev\":\"spawned\"", l) || occursin("agB", l) ||
-                occursin("\"ev\":\"close\"", l) || occursin("a-z-s1", l) || occursin("\"teammate\":\"d-s1\"", l)), ls)   # original lines, original order
+        @test after == filter(
+            l -> !occursin("torn", l) && (
+                occursin("\"ev\":\"dispatch\"", l) || occursin("\"ev\":\"spawned\"", l) || occursin("agB", l) ||
+                    occursin("\"ev\":\"close\"", l) || occursin("a-z-s1", l) || occursin("\"teammate\":\"d-s1\"", l)
+            ), ls
+        )   # original lines, original order
         rc, out = lane("compact", "--keep", "0")                                 # --keep 0: the recent idle goes too; the chains never do
         @test rc == 0 && occursin("compacted 17 -> 16 lines, 4 open lanes kept, 0 non-JSON dropped", out) && counts() == (2, 2, 0)
         lock = joinpath(d, ".lanes/.dispatch.lock"); mkdir(lock); was = read(led, String)   # the lock dispatch_limit.sh takes: held => exit 1, nothing written
@@ -262,27 +266,7 @@ end
     end
 end
 
-@testset "lane.jl ledger appends take the hooks' lock; an unreadable [lanes] ledger is one line (review round 1, M2, m1)" begin
-    # M2: 1f850c3 appended `release`, `lane-new` and verdict lines without .lanes/.dispatch.lock, so one written between compact's read
-    # and its rename was lost (a lost release reopens a lane). Lock held: non-zero exit, nothing written, the lock never broken.
-    d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", "src/A.jl" => "a\n"))
-    led = joinpath(d, ".lanes/ledger.jsonl"); mkpath(dirname(led))
-    write(led, join([ledger_ev("t", "dispatch"; key = "foo", name = "foo"), ledger_ev("t", "spawned"; key = "foo", agent_id = "x"), ledger_ev("t", "stop"; agent_id = "y")], "\n") * "\n")
-    lock = joinpath(d, ".lanes/.dispatch.lock"); mkdir(lock); t = @elapsed rc = capture(() -> Lane.main(["release", "foo", "--repo", d]))[1]
-    @test rc == 1 && length(readlines(led)) == 3 && isdir(lock) && 4 < t < 60
-    rc, out = capture(() -> Lane.main(["new", "lk", "--owns", "src/*", "--repo", d]))   # lane new: the worktree exists, the exit says the record failed
-    @test rc == 1 && length(readlines(led)) == 3 && isdir(joinpath(d, ".worktrees/lk")) && isdir(lock) || (print(out); false)
-    rm(lock); @test capture(() -> Lane.main(["release", "foo", "--repo", d]))[1] == 0 && length(readlines(led)) == 4 && !isdir(lock)   # released: written, lock gone
-    @test Lane.ledger_line(d, "x"; k = "v") && length(readlines(led)) == 5 && !isdir(lock)
-    # m1: `compact` and `release` said "cannot read [lanes] ledger"; `stats` and `handoff` printed a stack trace
-    e = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n", ".agents/agent-registry.toml" => "[lanes]\nledger = 3\n"))
-    run2(args) = (p = tempname(); r = open(io -> capture(() -> redirect_stderr(() -> Lane.main(args), io)), p, "w"); (r..., read(p, String)))
-    for sub in ("stats", "handoff", "compact")
-        rc, out, err = run2([sub, "--repo", e])
-        @test rc == 1 && isempty(out) && count('\n', err) == 1 && startswith(err, "lane: cannot read [lanes] ledger from .agents/agent-registry.toml (fix the file); ") ||
-            (println(sub, " => ", rc, " ", repr(out), " ", repr(err)); false)
-    end
-end
+# "lane.jl ledger appends take the hooks' lock" moved to test_lane_040c.jl (this file's 400-line budget, after Runic)
 
 @testset "lane audit --report (0.4.0)" begin
     # D5: the first line of a reviewer's or critic's report is the verdict, exact case, nothing else on the line
@@ -307,9 +291,11 @@ end
     # trailing space, CRLF, an empty file: exit 1, no verdict recorded
     n = length(readlines(led)); hl = "Head: $head\n"
     msg = "report $rep has no first line 'Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST'"
-    for bad in ("verdict: may merge\n", "\nVerdict: MAY MERGE\n", "Verdict: APPROVE\n", "Verdict: MAY MERGE \n", "Verdict: MAY MERGE\r\n",
+    for bad in (
+            "verdict: may merge\n", "\nVerdict: MAY MERGE\n", "Verdict: APPROVE\n", "Verdict: MAY MERGE \n", "Verdict: MAY MERGE\r\n",
             "Verdict:MAY MERGE\n", "Verdict: MAY MERGE (with nits)\n", "# Review\nVerdict: MAY MERGE\n", "Verdict: MAY MERGE | MERGE WITH FIXES | FIX FIRST\n",
-            "**Verdict: MAY MERGE**\n", "")
+            "**Verdict: MAY MERGE**\n", "",
+        )
         write(rep, bad * hl)
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 1 && occursin("[FAIL] " * msg, out) || (print(repr(bad), " => ", out); false)
@@ -317,8 +303,10 @@ end
     end
     # the Head line: missing, another commit (a stale round), too short, not a sha, decorated, trailing words
     stale = readchomp(`git -C $wt rev-parse "HEAD~1"`)
-    for bad in ("", "Head: $stale\n", "Head: $(first(head, 6))\n", "Head: $(first(head, 7))g\n", "**Head: $head**\n", "Head: $head (lane)\n",
-            "head: $head\n", "Head:$head\n", "\nHead: $head\n", "Scope: x\nHead: $head\n")   # round 4: line 2 exactly, not line 3
+    for bad in (
+            "", "Head: $stale\n", "Head: $(first(head, 6))\n", "Head: $(first(head, 7))g\n", "**Head: $head**\n", "Head: $head (lane)\n",
+            "head: $head\n", "Head:$head\n", "\nHead: $head\n", "Scope: x\nHead: $head\n",
+        )   # round 4: line 2 exactly, not line 3
         write(rep, "Verdict: MAY MERGE\n" * bad)
         rc, out = lane("audit", "rv", "--report", rep)
         @test rc == 1 && occursin("[FAIL] report $rep", out) && occursin("Head", out) || (print(repr(bad), " => ", out); false)
@@ -347,23 +335,27 @@ end
     d = tmp_repo(Dict(".gitignore" => "/.worktrees/\n/.lanes/\n/.claude/\n", "src/A.jl" => "a\n"))
     led = joinpath(d, ".lanes/ledger.jsonl"); mkpath(dirname(led)); ts(h, m) = "2026-10-01T$(lpad(h, 2, '0')):$(lpad(m, 2, '0')):00Z"
     verdict(t, l, v) = "{\"ts\":\"$t\",\"ev\":\"verdict\",\"lane\":\"$l\",\"verdict\":\"$v\",\"report\":\"r.md\"}"   # lane audit --report
-    write(led, join([
-        ledger_ev(ts(10, 0), "dispatch"; key = "la", name = "la", desc = "lane a"), ledger_ev(ts(10, 1), "spawned"; key = "la", agent_id = "a-la"),
-        ledger_ev(ts(10, 30), "dispatch-denied"; open = "1", max = "1"),
-        ledger_ev(ts(10, 40), "idle-unreported"; teammate = "la"), ledger_ev(ts(10, 50), "idle-unreported"; teammate = "la"),
-        ledger_ev(ts(10, 55), "idle-unreported"; teammate = "lb"),                 # before lb is dispatched: not lb's
-        ledger_ev(ts(12, 0), "stop"; agent_id = "a-la"),                            # its agent's stop closes it
-        ledger_ev(ts(12, 10), "idle-unreported"; teammate = "la"),                  # after the close: not counted
-        ledger_ev(ts(12, 20), "dispatch-denied"; open = "1", max = "1"), verdict(ts(12, 30), "la", "MAY MERGE"),
-        ledger_ev(ts(13, 0), "dispatch"; key = "lb", name = "lb", desc = "lane b"),
-        ledger_ev(ts(13, 5), "dispatch"; session = "s2", key = "lc", name = "lc", desc = "lane c"),
-        ledger_ev(ts(14, 0), "dispatch"; key = "ld", name = "ld", desc = "lane d"),
-        ledger_ev(ts(14, 45), "close"; session = "*", ref = "ld", why = "released"),   # scripts/lane release
-        "not json",
-        ledger_ev(ts(15, 0), "dispatch"; key = "le", name = "le", desc = "lane e"),    # m3: a round, its close, its verdict, a re-dispatch
-        ledger_ev(ts(15, 20), "close"; key = "le", why = "returned"), verdict(ts(15, 30), "le", "FIX FIRST"),
-        ledger_ev(ts(16, 0), "dispatch"; key = "le", name = "le", desc = "lane e"),
-    ], "\n") * "\n")
+    write(
+        led, join(
+            [
+                ledger_ev(ts(10, 0), "dispatch"; key = "la", name = "la", desc = "lane a"), ledger_ev(ts(10, 1), "spawned"; key = "la", agent_id = "a-la"),
+                ledger_ev(ts(10, 30), "dispatch-denied"; open = "1", max = "1"),
+                ledger_ev(ts(10, 40), "idle-unreported"; teammate = "la"), ledger_ev(ts(10, 50), "idle-unreported"; teammate = "la"),
+                ledger_ev(ts(10, 55), "idle-unreported"; teammate = "lb"),                 # before lb is dispatched: not lb's
+                ledger_ev(ts(12, 0), "stop"; agent_id = "a-la"),                            # its agent's stop closes it
+                ledger_ev(ts(12, 10), "idle-unreported"; teammate = "la"),                  # after the close: not counted
+                ledger_ev(ts(12, 20), "dispatch-denied"; open = "1", max = "1"), verdict(ts(12, 30), "la", "MAY MERGE"),
+                ledger_ev(ts(13, 0), "dispatch"; key = "lb", name = "lb", desc = "lane b"),
+                ledger_ev(ts(13, 5), "dispatch"; session = "s2", key = "lc", name = "lc", desc = "lane c"),
+                ledger_ev(ts(14, 0), "dispatch"; key = "ld", name = "ld", desc = "lane d"),
+                ledger_ev(ts(14, 45), "close"; session = "*", ref = "ld", why = "released"),   # scripts/lane release
+                "not json",
+                ledger_ev(ts(15, 0), "dispatch"; key = "le", name = "le", desc = "lane e"),    # m3: a round, its close, its verdict, a re-dispatch
+                ledger_ev(ts(15, 20), "close"; key = "le", why = "returned"), verdict(ts(15, 30), "le", "FIX FIRST"),
+                ledger_ev(ts(16, 0), "dispatch"; key = "le", name = "le", desc = "lane e"),
+            ], "\n"
+        ) * "\n"
+    )
     lane(args...) = capture(() -> Lane.main([args..., "--repo", d]))
     rc, out = lane("stats")
     @test rc == 0 || (print(out); false)

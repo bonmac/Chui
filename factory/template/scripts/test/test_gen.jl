@@ -170,7 +170,11 @@ end
         blk = txt[i:(j === nothing ? end : first(j) - 1)]                       # the critic's entry, renamed x
         write(regp, replace(txt, blk => replace(blk, "slug = \"critic\"" => "slug = \"x\"", "name = \"critic\"" => "name = \"x\"", r"file_scope = \[[^\]]*\]" => "file_scope = [\"src/**\"]")))
         mv(joinpath(d, ".agents/bodies/critic.md"), joinpath(d, ".agents/bodies/x.md"))
-        e = try; Gen.outputs(d); nothing; catch e; e; end
+        e = try
+            Gen.outputs(d); nothing
+        catch e
+            e
+        end
         @test e isa Gen.GenError && occursin("read_only agent 'x' may own only .lanes/reports/**", e.msg)
         write(regp, replace(read(regp, String), "[\"src/**\"]" => "[\".lanes/reports/**\", \".lanes/scratch/x/**\"]"; count = 1))
         ro_x = sort([n == "critic" ? "x" : n for n in ro])
@@ -228,15 +232,27 @@ end
         regp = joinpath(d, ".agents/agent-registry.toml")
         txt = read(regp, String)
         write(regp, replace(txt, "; at most 80 lines\"" => "\""; count = 1))
-        e = try; Gen.outputs(d); nothing; catch e; e; end
+        e = try
+            Gen.outputs(d); nothing
+        catch e
+            e
+        end
         @test e isa Gen.GenError && occursin("at most 80 lines", e.msg)
         write(regp, txt)
         @test first(quiet_check(d))
         rm(joinpath(d, ".agents/bodies/_report.md"))
-        e = try; Gen.outputs(d); nothing; catch e; e; end
+        e = try
+            Gen.outputs(d); nothing
+        catch e
+            e
+        end
         @test e isa Gen.GenError && occursin("_report.md", e.msg)
         d = gen_sandbox(); rm(joinpath(d, ".agents/bodies/_verdict.md"))                 # a read_only agent needs _verdict too
-        e = try; Gen.outputs(d); nothing; catch e; e; end
+        e = try
+            Gen.outputs(d); nothing
+        catch e
+            e
+        end
         @test e isa Gen.GenError && occursin("_verdict.md", e.msg) && occursin("read_only", e.msg)
     end
 

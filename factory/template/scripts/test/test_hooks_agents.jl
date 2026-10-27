@@ -121,7 +121,9 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
 
     @testset "review round 1: the scratch is never a cwd, a -C target or a script source; julia options; uniq" begin
         sc = "$r/.lanes/scratch/reviewer"
-        for d in ("$sc/scripts", "$sc/p", "$sc/bare", "$r/.lanes/reports", "$r/factory/template/scripts"); mkpath(d); end
+        for d in ("$sc/scripts", "$sc/p", "$sc/bare", "$r/.lanes/reports", "$r/factory/template/scripts")
+            mkpath(d)
+        end
         write("$sc/scripts/dod.jl", "println(\"scratch\")\n")                 # a dod.jl the agent wrote itself
         # B1: a second operand or an option that writes a file or runs a program
         for c in (
@@ -182,8 +184,10 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
             )
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
-        for c in ("git -C . status", "git -C src log", "git -C factory/template status", "git -C .claude/worktrees/x log", "git -C $r log",
-                "git -C .worktrees/f040 -C .. status", "git -C .worktrees/f040 diff --stat")
+        for c in (
+                "git -C . status", "git -C src log", "git -C factory/template status", "git -C .claude/worktrees/x log", "git -C $r log",
+                "git -C .worktrees/f040 -C .. status", "git -C .worktrees/f040 diff --stat",
+            )
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
         # a session rooted in a lane worktree: the main checkout and its lanes are trusted too, their .lanes/ is not
@@ -293,8 +297,10 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
         mkpath("$r/.claude/hooks"); write("$r/.claude/hooks/x.sh", "x\n")
-        for c in ("cp -R .claude/hooks .lanes/scratch/reviewer/h", "cp -R .claude/hooks/ .lanes/scratch/reviewer/h5/", "cp a .lanes/scratch/reviewer/d/q",
-                "cp -R .claude/hooks a .lanes/scratch/reviewer/h6")
+        for c in (
+                "cp -R .claude/hooks .lanes/scratch/reviewer/h", "cp -R .claude/hooks/ .lanes/scratch/reviewer/h5/", "cp a .lanes/scratch/reviewer/d/q",
+                "cp -R .claude/hooks a .lanes/scratch/reviewer/h6",
+            )
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
         # round-4 review round 2 (N1, N2): a glob in an operand is expanded by the shell, not by the guard (`dws/*` reached the
@@ -325,14 +331,18 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
             )
             @test blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("not blocked for reviewer: $c"); false)
         end
-        for c in ("cp a \".lanes/scratch/reviewer/x y\"", "cp no_link/in/f .lanes/scratch/reviewer/nl", "mkdir -p .lanes/scratch/reviewer/x_y/z",
-                "cp \"no link/in/f\" .lanes/scratch/reviewer/n_l", "cp a \".lanes/scratch/reviewer/x_y/new one\"", "mkdir -p .lanes/scratch/reviewer/x_y/b_c")
+        for c in (
+                "cp a \".lanes/scratch/reviewer/x y\"", "cp no_link/in/f .lanes/scratch/reviewer/nl", "mkdir -p .lanes/scratch/reviewer/x_y/z",
+                "cp \"no link/in/f\" .lanes/scratch/reviewer/n_l", "cp a \".lanes/scratch/reviewer/x_y/new one\"", "mkdir -p .lanes/scratch/reviewer/x_y/b_c",
+            )
             @test !blocked("bash_guard.sh", bash_as("reviewer", c), r) || (println("blocked for reviewer: $c"); false)
         end
         rc, _, err = hook("bash_guard.sh", bash_as("reviewer", "cp -R \"sp ace\" .lanes/scratch/reviewer/sp"), r)
         @test rc == 2 && occursin("quoted space", err) && occursin("sp_ace", err)
-        for p in ("$r/.lanes/scratch/reviewer/d/dl/q", "$r/.lanes/scratch/reviewer/lnkdir/x", "$r/.lanes/scratch/reviewer/lnk", "$r/.lanes/scratch/reviewer/d/./q",
-                "$r/.lanes/scratch/reviewer/d/dl/../q", "$r/.lanes/scratch/reviewer/\$X/q", "$r/.lanes/reports/lnkrep/q")
+        for p in (
+                "$r/.lanes/scratch/reviewer/d/dl/q", "$r/.lanes/scratch/reviewer/lnkdir/x", "$r/.lanes/scratch/reviewer/lnk", "$r/.lanes/scratch/reviewer/d/./q",
+                "$r/.lanes/scratch/reviewer/d/dl/../q", "$r/.lanes/scratch/reviewer/\$X/q", "$r/.lanes/reports/lnkrep/q",
+            )
             islink("$r/.lanes/reports/lnkrep") || symlink(r, "$r/.lanes/reports/lnkrep")
             @test blocked("write_guard.sh", write_as("reviewer", p), r) || (println("write not blocked: $p"); false)
         end
@@ -384,17 +394,5 @@ write_as(agent, path) = "{\"session_id\":\"s1\",\"agent_type\":\"$(json(agent))\
         @test !blocked("bash_guard.sh", bash("ls"), r; hooks = h)                            # the lead: no agent_type, no list needed
         @test blocked("bash_guard.sh", bash_as("implementer", "ls"), r; hooks = h)           # any agent: the guard cannot tell
     end
-
-    @testset "runtests.jl: NAME... selects test files; --hooks-dir DIR overrides HOOKS (0.4.0)" begin
-        @test runtests_args(String[]) == (String[], "")
-        @test runtests_args(["hooks", "gen"]) == (["hooks", "gen"], "")
-        @test runtests_args(["hooks", "--hooks-dir", "x/hooks"]) == (["hooks"], abspath("x/hooks"))
-        @test runtests_args(["--hooks-dir=x/hooks"]) == (String[], abspath("x/hooks"))
-        @test_throws ErrorException runtests_args(["--hooks-dir"])
-        @test_throws ErrorException runtests_args(["--root", "x"])
-        @test selected_files(["hooks"]) == ["test_hooks.jl", "test_hooks_lifecycle.jl", "test_hooks_tdd.jl", "test_hooks_tdd040.jl"]
-        @test selected_files(["gen", "lane"]) == ["test_gen.jl", "test_lane.jl", "test_lane_040.jl", "test_lane_040b.jl"]
-        @test selected_files(String[]) == TEST_FILES
-        @test_throws ErrorException selected_files(["nosuch"])
-    end
+    # the runtests.jl NAME/--hooks-dir testset moved to test_hooks_040c.jl (the 400-line budget, after Runic)
 end
