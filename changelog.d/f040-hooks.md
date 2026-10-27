@@ -4,7 +4,7 @@
     `bash_guard.sh`, `write_guard.sh` and `dispatch_limit.sh` (a crash, exit 1, SIGTERM 143), not
     only when the script is missing. `bash_guard.sh` denies when its command splitter fails (awk
     missing or crashed): the empty segment list used to pass everything. `dispatch_limit.sh` runs
-    its count under an in-hook watchdog (new library `.claude/hooks/_watchdog.sh`,
+    its count under an in-hook watchdog (new library `factory/template/.claude/hooks/_watchdog.sh`,
     `FACTORY_WATCHDOG_SECS`, default 8 s, inside the host's 10 s budget, which fails open) and
     logs `guard-timeout`. The Bash matcher also covers `Monitor` (its input is `command`, or `ws`
     with no command, which is denied); `MultiEdit` leaves the Edit matcher. `checks.toml` states
@@ -27,7 +27,7 @@
     2,000 lines names the line count and `scripts/lane compact`; `teammate_idle.sh` counts a report
     (`<name>.md` or `<name>-*.md`) only when its first line is `Verdict: MAY MERGE | MERGE WITH FIXES
     | FIX FIRST`, else it is partial and the idle is blocked once; no `permissions.deny` list is added.
-  - The 0.4.0 hook testsets live in the new `scripts/test/test_hooks_040.jl`, included from
+  - The 0.4.0 hook testsets live in the new `factory/template/scripts/test/test_hooks_040.jl`, included from
     `test_hooks.jl`: that file and `test_hooks_lifecycle.jl` had passed the 400-line `scripts/*.jl`
     budget of `ratchets.toml` (the full gate's `test_ratchet.jl` caught it).
   - Review round 1 fixes: heredoc terminators are exact again (a line equal to WORD, leading tabs
