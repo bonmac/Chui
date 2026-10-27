@@ -44,8 +44,8 @@ function removed_items(root, sha)
     end
     return sort!(unique!(gone))
 end
-"Commit `sha` adds or changes no @testitem, changes no setup module an item uses, and removes some item."
-deletion_only(root, sha) = (r = requested(root, sha); isempty(r.red) && isempty(r.must_pass) && !isempty(removed_items(root, sha)))
+"Commit `sha` adds or changes no @testitem and removes some item (a changed setup module is allowed: `tdd.jl green` runs its users)."
+deletion_only(root, sha) = isempty(requested(root, sha).red) && !isempty(removed_items(root, sha))
 "The sorted names on the `REMOVED <name>` lines of an evidence file's `--- tdd ---` part."
 removed_names(ev) = sort!(unique!([String(m.captures[1]) for m in eachmatch(r"(?m)^\s*REMOVED\s+(.*?)\s*$", ev.tdd)]))
 """
