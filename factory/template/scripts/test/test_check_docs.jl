@@ -132,13 +132,18 @@
     end
 
     @testset "/lane-review and /ci-triage name only scripts that exist (0.4.0, D6)" begin
-        # the commands are managed template files, present in every profile: checked against this checkout
+        # the commands are managed template files, present in every profile: checked against this checkout,
+        # with its own [check_docs] settings as check_docs.jl reads them (the coordinator names package paths
+        # such as `test/` as external; caught by the 0.3.2 coordinator-profile guard)
+        cfg = CheckDocs.factory_config(ROOT)
+        external = Set(CheckDocs.config_list(cfg, "check_docs", "external"))
+        ignore_fenced = get(get(cfg, "check_docs", Dict()), "ignore_fenced", false) === true
         for cmd in (".claude/commands/lane-review.md", ".claude/commands/ci-triage.md")
             p = joinpath(ROOT, cmd)
             @test isfile(p) || (println("missing: $cmd"); false)
             isfile(p) || continue
             text = read(p, String)
-            bad = CheckDocs.stale(ROOT, cmd, text)
+            bad = CheckDocs.stale(ROOT, cmd, text; external, ignore_fenced)
             @test isempty(bad) || (println("$cmd: ", bad); false)
             named = unique(String[m.match for m in eachmatch(r"\bscripts/[A-Za-z0-9_./-]*[A-Za-z0-9]", text)])
             @test length(named) >= 2                                          # it is a command over the scripts
@@ -154,7 +159,9 @@
         # line by line here; `ruby -ryaml` confirms the whole block when it is on the machine.
         dir = joinpath(ROOT, ".claude/commands")
         cmds = filter(f -> endswith(f, ".md"), readdir(dir))
-        @test length(cmds) >= 8
+        fv = joinpath(ROOT, ".factory-version")    # the coordinator profile has no package-only commands (D12)
+        coord = isfile(fv) && get(TOML.parsefile(fv), "profile", "") == "coordinator"
+        @test length(cmds) >= (coord ? 5 : 8)
         ruby = Sys.which("ruby")
         for f in cmds
             text = read(joinpath(dir, f), String)
