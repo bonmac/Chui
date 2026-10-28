@@ -19,6 +19,8 @@
         to = tmp_repo()
         rc, out = sync(; to)
         @test rc == 0 && occursin("dry run", out) && !isfile(joinpath(to, ".factory-version"))
+        # 0.4.0 (D6): the package profile takes the review commands
+        @test occursin(".claude/commands/lane-review.md", out) && occursin(".claude/commands/ci-triage.md", out)
         rc, out = sync("--apply"; to)
         @test rc == 0 || (print(out); false)
         rec = TOML.parsefile(joinpath(to, ".factory-version"))
@@ -113,8 +115,15 @@
 
         # the coordinator profile skips package-only files, takes its overlay, and keeps ADRs in adr/
         c = tmp_repo()
+        rc, out = sync("--profile", "coordinator"; to = c)                        # dry run: the plan
+        # 0.4.0 (D12): the three package-only commands are not offered; the review commands are
+        @test rc == 0 && occursin(".claude/commands/lane-review.md", out) && occursin(".claude/commands/ci-triage.md", out)
+        for f in ("contract-check.md", "release-check.md", "test-changed.md")
+            @test !occursin(".claude/commands/$f", out) || (println("coordinator profile offers $f"); false)
+        end
         rc, out = sync("--apply", "--profile", "coordinator"; to = c)
         @test rc == 0 && !isfile(joinpath(c, ".github/workflows/CI.yml")) && isfile(joinpath(c, ".github/workflows/Guards.yml"))
+        @test !isfile(joinpath(c, ".claude/commands/test-changed.md")) && isfile(joinpath(c, ".claude/commands/lane-review.md"))
         @test !isdir(joinpath(c, "test"))
         crec = TOML.parsefile(joinpath(c, ".factory-version"))
         @test crec["adr_dir"] == "adr" && DoD.adr_dir(c) == "adr"

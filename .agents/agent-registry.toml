@@ -14,9 +14,12 @@
 #   default_mode   read_only | write
 #   tools          optional allowlist (omit = inherit all tools)
 #   disallowed_tools  optional denylist
-#   file_scope     globs the agent may write (empty for read_only agents)
+#   file_scope     globs the agent may write (a read_only agent: none, or only .lanes/reports/** and
+#                  .lanes/scratch/<name>/**, which the guards allow it by agent_type; 0.4.0 D3)
 #   scorecard      what the lead grades the report on
-#   output_format  the sections the report must contain, in order
+#   output_format  the sections the report must contain, in order; ends with `; at most 80 lines` (0.4.0 D4)
+# Bodies named `_<fragment>.md` (`_preflight`, `_report`) are rendered into EVERY agent by gen.jl, and `_verdict`
+# (the Verdict/Head lines) into every read_only agent only (0.4.0 review round 4 A2); they are not agents.
 #
 # COORDINATOR registry (profile `coordinator`; seeded from factory 0.1.0, repo-owned since).
 # The roles are the ones the lead dispatches from <root>. Package-only roles (law-tester,
@@ -28,7 +31,9 @@
 # session's own .claude/agents/. Their file_scope is relative to the package checkout. Roles whose rules
 # differ in the coordinator use `coord_*` slugs: their bodies are repo-owned files, not edits
 # to managed ones, so a later sync_factory never conflicts on them. critic and reviewer reuse
-# the managed bodies unchanged. Paths in file_scope are relative to <root>.
+# the managed bodies unchanged. Paths in file_scope are relative to <root>. Factory 0.4.0 (ADR-0016)
+# adds `verifier` (a read-only gate runner, managed body) after reviewer, gives critic, reviewer and
+# verifier Write limited to the report and scratch paths, and caps every report at 80 lines.
 
 version = 1
 
@@ -50,7 +55,7 @@ color = "cyan"
 default_mode = "write"
 file_scope = ["research/**"]
 scorecard = ["every claim has a source or UNVERIFIED", "versions and dates stated", "answers the question asked", "ran no command inside a reference repo"]
-output_format = "question, findings with sources, UNVERIFIED list, files written, commands run with output, scorecard"
+output_format = "question, findings with sources, UNVERIFIED list, files written, commands run with output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_architect"
@@ -62,7 +67,7 @@ color = "purple"
 default_mode = "write"
 file_scope = ["adr/**", "docs/superpowers/specs/**"]
 scorecard = ["alternatives rejected with reasons", "claims cite evidence or say UNVERIFIED", "decision stated as must/must not", "revisit triggers concrete", "adr/README.md index updated"]
-output_format = "summary, decision, alternatives, open questions (★ for the user), files written, scorecard"
+output_format = "summary, decision, alternatives, open questions (★ for the user), files written, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "critic"
@@ -72,11 +77,11 @@ description = "Use on every ecosystem ADR, contract change and factory change, a
 model = "opus"
 color = "red"
 default_mode = "read_only"
-tools = ["Read", "Grep", "Glob", "Bash", "WebSearch", "WebFetch", "SendMessage"]
-disallowed_tools = ["Edit", "Write", "NotebookEdit"]
-file_scope = []
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "WebSearch", "WebFetch", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/critic/**"]
 scorecard = ["attacks the strongest version of the design", "separates errors from disagreements", "each attack has a concrete failure case", "never invents a citation"]
-output_format = "attacks ranked by impact, concrete failure cases, what would change my mind, scorecard"
+output_format = "verdict (MAY MERGE | MERGE WITH FIXES | FIX FIRST), head, attacks ranked by impact, concrete failure cases, what would change my mind, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "reviewer"
@@ -86,11 +91,25 @@ description = "Use before any lane lands on a repo's main, and on any merge or r
 model = "opus"
 color = "blue"
 default_mode = "read_only"
-tools = ["Read", "Grep", "Glob", "Bash", "SendMessage"]
-disallowed_tools = ["Edit", "Write", "NotebookEdit"]
-file_scope = []
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/reviewer/**"]
 scorecard = ["each finding has file:line and evidence", "severity ranked", "definition of done checked", "final report sent, not only a preview"]
-output_format = "verdict (approve | changes requested), findings with severity and evidence, DoD checklist, scorecard"
+output_format = "verdict (MAY MERGE | MERGE WITH FIXES | FIX FIRST), head, findings with severity and evidence, DoD checklist, scorecard; at most 80 lines"
+
+[[agents]]
+slug = "verifier"
+name = "verifier"
+role = "Runs the gates (scripts/ci.jl jobs, dod.jl, the factory suite) on a named checkout (any repo under <root>) through scripts/evidence.jl and reports the counts from the evidence files; never edits."
+description = "Use to run a repo's tests or gates and report the result without changing anything: a Julia-aware replacement for a generic tester (0.4.0 D8)."
+model = "inherit"
+color = "yellow"
+default_mode = "read_only"
+tools = ["Read", "Grep", "Glob", "Bash", "Write", "SendMessage"]
+disallowed_tools = ["Edit", "NotebookEdit"]
+file_scope = [".lanes/reports/**", ".lanes/scratch/verifier/**"]
+scorecard = ["every count cites an evidence file", "a killed or skipped run is reported NOT RUN, never green", "base and lane compared when a base is given", "failures explained with file:line, not fixed"]
+output_format = "verdict, commands run (command, exit code, last 20 lines), evidence files, counts from evidence, checks NOT run, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_contract_steward"
@@ -102,7 +121,7 @@ color = "purple"
 default_mode = "write"
 file_scope = ["contracts/**", "requests/**"]
 scorecard = ["IDs match the ADR-0010 header format and are never reused", "PROVISIONAL items carry no IDs", "every contract change cites its ADR", "request status transitions recorded with dates"]
-output_format = "contracts changed (IDs), requests triaged with new status, ADRs cited or needed, commands run with output, scorecard"
+output_format = "contracts changed (IDs), requests triaged with new status, ADRs cited or needed, commands run with output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_release_manager"
@@ -114,7 +133,7 @@ color = "pink"
 default_mode = "write"
 file_scope = ["releases.md"]
 scorecard = ["upstream released before downstream", "release-check output pasted from the package repo", "releases.md row appended, never edited", "no tag, registration or push without confirmation"]
-output_format = "package and proposed version, release-check output, releases.md row, downstream lanes to upgrade, actions needing confirmation, scorecard"
+output_format = "package and proposed version, release-check output, releases.md row, downstream lanes to upgrade, actions needing confirmation, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_factory_maintainer"
@@ -126,7 +145,7 @@ color = "green"
 default_mode = "write"
 file_scope = ["factory/**"]
 scorecard = ["factory tests pass on julia and julia +lts with output pasted", "VERSION and factory/CHANGELOG.md bumped", "sync dry run shown before --apply", "no package repo edited (a package syncs in its own lane)"]
-output_format = "change summary, factory version, commands run with output, sync dry-run output, repos that need a sync lane, scorecard"
+output_format = "change summary, factory version, commands run with output, sync dry-run output, repos that need a sync lane, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_integration_tester"
@@ -138,7 +157,7 @@ color = "orange"
 default_mode = "write"
 file_scope = ["integration/**"]
 scorecard = ["only registered versions added, never develop", "resolved Manifest kept as evidence", "proposed compat-matrix rows with pass/fail and date", "failures linked to an open request or flagged as blocking"]
-output_format = "versions resolved, scripts run with output, proposed compat-matrix rows, failures and their requests, scorecard"
+output_format = "versions resolved, scripts run with output, proposed compat-matrix rows, failures and their requests, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_benchmarker"
@@ -150,7 +169,7 @@ color = "orange"
 default_mode = "write"
 file_scope = ["benchmarks/**"]
 scorecard = ["hardware and versions recorded", "cold vs warm separated", "median with spread", "losses published"]
-output_format = "setup, results table, comparison to the previous run, commands run with output, scorecard"
+output_format = "setup, results table, comparison to the previous run, commands run with output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "coord_docs_writer"
@@ -162,7 +181,7 @@ color = "cyan"
 default_mode = "write"
 file_scope = ["README.md", "docs/**", "requests/README.md", "integration/README.md", "benchmarks/README.md"]
 scorecard = ["links instead of restating", "every path named exists or is marked as planned", "check_docs.jl output pasted"]
-output_format = "files changed, stale references fixed, check_docs.jl output, scorecard"
+output_format = "files changed, stale references fixed, check_docs.jl output, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "implementer"
@@ -176,7 +195,7 @@ tools = ["Read", "Grep", "Glob", "Bash", "Edit", "Write", "WebFetch", "WebSearch
 disallowed_tools = ["Agent", "Task", "SendMessage"]
 file_scope = ["src/**", "ext/**", "changelog.d/**"]
 scorecard = ["tdd.jl audit OK", "tests pass with output pasted", "stays in file scope", "CHANGELOG entry"]
-output_format = "summary, files changed, commands run with output, checks not run and why, scorecard"
+output_format = "summary, files changed, commands run with output, checks not run and why, scorecard; at most 80 lines"
 
 [[agents]]
 slug = "test_writer"
@@ -190,4 +209,4 @@ tools = ["Read", "Grep", "Glob", "Bash", "Edit", "Write"]
 disallowed_tools = ["Agent", "Task", "SendMessage", "WebFetch", "WebSearch", "NotebookEdit"]
 file_scope = ["test/**"]
 scorecard = ["worked only from its tdd-brief: no src beyond the stub diffs", "each test derived from the spec or public docs, cited", "RED evidence: every new item fails for the right reason (tdd.jl red)", "one behaviour per test item, no implementation details asserted", "commits authored test-writer"]
-output_format = "behaviours and their sources, test items written, tdd.jl red output, disputes and bugs found, checks not run and why, scorecard"
+output_format = "behaviours and their sources, test items written, tdd.jl red output, disputes and bugs found, checks not run and why, scorecard; at most 80 lines"

@@ -62,13 +62,25 @@ an ADR in `adr/` and go to the user at the next checkpoint.
 - One lane = one repo, one file scope, one deliverable, its own worktree *of that repo*:
   `scripts/lane new <name>` here, or that repo's own `scripts/lane` (`<repo>/.worktrees/<name>`).
 - Lanes in different repos run in parallel; lanes in one repo need disjoint file scopes.
-- Open lanes per session are capped by `[lanes] max_open` in `.agents/agent-registry.toml`.
+- At most 6 lanes open per session <!-- claim: max_open=6 --> (`[lanes] max_open` in `.agents/agent-registry.toml`).
 - Close each agent as soon as its report is read. An agent that goes idle without a report is a
   FAILED lane: nudge once, then re-dispatch narrower or review directly. Report the roster.
 - Every brief states: repo, file scope, deliverable, definition of done, the reference-repo rule.
 - Roles and output formats: `.agents/agent-registry.toml` (prose in `.agents/bodies/`).
   Coordinator roles only; package lanes carry their package's rules via the brief and that repo's files.
 
+
+## Precedence
+
+The factory's `scripts/lane`, its `reviewer` and `critic`, the `[lanes] max_open` cap and the
+intake tiers win over the superpowers equivalents (`using-git-worktrees`,
+`subagent-driven-development`, `brainstorming`). Plugin skills are used only for brainstorming at T2+ and for executing a plan.
+
+## Writing files under the guard
+
+Change files with Edit/Write, never heredocs or `sed -i`. No bare `cd`: use `(cd dir && cmd)`.
+A probe the guard refuses is reported `NOT RUN`, never routed around. A variable or literal
+spelled like a gated word is refused inside a Bash command: put such text in a file instead.
 
 ## Where things are
 
@@ -108,6 +120,7 @@ julia factory/template/scripts/sync_factory.jl --from factory --to . --profile c
 | `architect` | write | opus | Writes and revises ecosystem ADRs (decisions that span packages) under adr/. |
 | `critic` | read_only | opus | Red-team: attacks a design, a claim, or a test suite's coverage before it is accepted. |
 | `reviewer` | read_only | opus | Read-only review of a lane's diff (in any repo) for correctness, scope, tests and the definition of done. |
+| `verifier` | read_only | inherit | Runs the gates (scripts/ci.jl jobs, dod.jl, the factory suite) on a named checkout (any repo under <root>) through scripts/evidence.jl and reports the counts from the evidence files; never edits. |
 | `contract-steward` | write | inherit | Owns the ecosystem contracts (contracts/) and the request queue (requests/). |
 | `release-manager` | write | inherit | Coordinates a package release across the ecosystem and records it; never tags, registers or pushes without the user. |
 | `factory-maintainer` | write | inherit | Owns factory/ (the development-process template) and its sync into the coordinator. |

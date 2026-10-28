@@ -60,7 +60,7 @@ an ADR in `adr/` and go to the user at the next checkpoint.
 - One lane = one repo, one file scope, one deliverable, its own worktree *of that repo*:
   `scripts/lane new <name>` here, or that repo's own `scripts/lane` (`<repo>/.worktrees/<name>`).
 - Lanes in different repos run in parallel; lanes in one repo need disjoint file scopes.
-- Open lanes per session are capped by `[lanes] max_open` in `.agents/agent-registry.toml`.
+- At most 6 lanes open per session <!-- claim: max_open=6 --> (`[lanes] max_open` in `.agents/agent-registry.toml`).
 - Close each agent as soon as its report is read. An agent that goes idle without a report is a
   FAILED lane: nudge once, then re-dispatch narrower or review directly. Report the roster.
 - Every brief states: repo, file scope, deliverable, definition of done, the reference-repo rule.
@@ -71,17 +71,29 @@ an ADR in `adr/` and go to the user at the next checkpoint.
 Claude Code specifics:
 
 - Agents are generated into `.claude/agents/`; never edit them: edit the registry, run `julia scripts/gen.jl`.
-- Commands: `/intake`, `/lanes`, `/change-review` (coordinator-relevant); `/contract-check`,
+- Commands: `/intake`, `/lanes`, `/change-review`, `/lane-review`, `/ci-triage` (coordinator-relevant); `/contract-check`,
   `/release-check`, `/test-changed` are package-oriented and run inside a package repo.
   Lifecycle rules: the `lane-lifecycle` skill.
 - Hooks (`.claude/settings.json`): `bash_guard`, `write_guard`, `dispatch_limit`, `lane_ledger`,
-  `teammate_idle`, `precompact`, `session_start`. If a hook blocks you, read its message; do not
+  `teammate_idle`, `precompact`, `session_start`, `format_check`, the tdd hooks. If a hook blocks you, read its message; do not
   work around it. Blind spots: `docs/CHECK_COVERAGE.md`. T3 paths (`risk.toml`) need the user's
   `FACTORY_ALLOW_T3=1`.
 - Start sessions in `<root>` (or a worktree of it), never in `factory/template/`: there the
   template's own hooks treat `factory/template` as the repo root.
 - After a compaction, read `.lanes/precompact.md` and `HANDOFF.md` before acting.
 <!-- claude-only:end -->
+
+## Precedence
+
+The factory's `scripts/lane`, its `reviewer` and `critic`, the `[lanes] max_open` cap and the
+intake tiers win over the superpowers equivalents (`using-git-worktrees`,
+`subagent-driven-development`, `brainstorming`). Plugin skills are used only for brainstorming at T2+ and for executing a plan.
+
+## Writing files under the guard
+
+Change files with Edit/Write, never heredocs or `sed -i`. No bare `cd`: use `(cd dir && cmd)`.
+A probe the guard refuses is reported `NOT RUN`, never routed around. A variable or literal
+spelled like a gated word is refused inside a Bash command: put such text in a file instead.
 
 ## Where things are
 

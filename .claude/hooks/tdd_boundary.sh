@@ -1,7 +1,7 @@
 #!/bin/sh
 # shellcheck disable=SC1091,SC2034,SC2154 # eval sets the payload fields; the guard reads AN, AE and CWD_OK
-# tdd_boundary.sh (factory 0.3.0, spec §0.6): PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)
-# and PreToolUse(Agent|Task). The role is the payload's agent_type ONLY (plan Task 0: a named teammate has no
+# tdd_boundary.sh (factory 0.3.0, spec §0.6): PreToolUse(Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor)
+# and PreToolUse(Agent|Task); settings.json runs it behind the 0.4.0 fail-closed wrapper (any non-zero exit blocks). The role is the payload's agent_type ONLY (plan Task 0: a named teammate has no
 # agent_id; the lead is the caller with no agent_type). A test-side role (test_role, _lib.sh: the test-writer and
 # the law/property/differential testers, critic C1) reads and writes only allowlisted paths
 # and runs only allowlisted Bash (_tdd_allow.sh); an implementer writes no test/**; every caller's `git commit`
@@ -10,11 +10,12 @@
 # Exit 2 = deny (logged as tdd-boundary-denied). Fails closed, for every caller, without jq, a library or a
 # parseable payload. Blind spots: docs/CHECK_COVERAGE.md.
 case $0 in */*) d=${0%/*} ;; *) d=. ;; esac
-for _l in _lib.sh _lanes.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
+for _l in _lib.sh _lanes.sh _watchdog.sh _bash_guard_lib.sh _tdd_commit_guard.sh _tdd_allow.sh; do # a missing library must block (exit 2)
     [ -f "$d/$_l" ] || { printf '[factory] %s is missing; tdd_boundary fails closed. Restore it (julia scripts/sync_factory.jl).\n' "$d/$_l" >&2; exit 2; }
 done
 . "$d/_lib.sh"
 . "$d/_lanes.sh"
+. "$d/_watchdog.sh" # fix7 (review m1): the dispatch check's git reads run under the watchdog, as in dispatch_limit
 . "$d/_bash_guard_lib.sh"
 . "$d/_tdd_commit_guard.sh"
 . "$d/_tdd_allow.sh"
@@ -34,6 +35,7 @@ for _f in "$PEND"/*; do # the sweep (§0.5): an entry left by a cancelled call (
 done
 dispatch() { # the lead dispatches a role only on a clean lane worktree with a current tdd-brief (_lanes.sh); the prompt is saved
     tdd_role "$sub" || exit 0
+    watchdog "${FACTORY_WATCHDOG_SECS:-8}"; trap 'watchdog_stop; rm -f "${TD_OUT:-}"' EXIT # a slow git read is killed: deny
     tdd_dispatch "$sub" "$at" || tdeny "$TD_RULE" §0.6 "$TD_MSG"
     _dir="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
     { mkdir -p "$_dir" && printf '%s\n' "$TD_PR" >"$_dir/$(date -u +%Y%m%dT%H%M%SZ)-$sub-$tu.md"; } 2>/dev/null ||
@@ -42,7 +44,7 @@ dispatch() { # the lead dispatches a role only on a clean lane worktree with a c
 
 case $tool in
     Agent | Task) dispatch; exit 0 ;;
-    Bash) ;;
+    Bash | Monitor) ;; # 0.4.0 D9: Monitor's tool_input.command runs like Bash's
     Read | Grep | Glob)
         [ -n "$TW" ] || exit 0
         _t=$fp
@@ -55,7 +57,8 @@ case $tool in
         tdd_role "$at" || exit 0
         co_of "$(abspath "$fp" "$cwd")"
         case /$fp/ in */.[Gg][Ii][Tt]/*) tdeny role-git-path §0.6 "a $at never writes a .git path (it would move the checkout root): $fp" ;; esac
-        if [ -n "$TW" ]; then
+        if [ -n "$TW" ]; then # 0.4.0 _report: its own report, a .md directly in the session root's .lanes/reports/ (write only)
+            [ "$CO" != "$ROOT_P" ] || case $REL in .lanes/reports/*/*) ;; .lanes/reports/?*.md) exit 0 ;; esac
             in_root && case $REL in test/runtests.jl | test/Project.toml) ;; test/?*) exit 0 ;; esac
             tdeny tw-write §0.6 "a $at writes only test/** of a checkout, never the seeded runners test/runtests.jl and test/Project.toml: not $fp"
         fi

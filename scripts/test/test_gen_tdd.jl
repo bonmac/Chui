@@ -32,12 +32,12 @@ end
     # seeded registry: in a synced repo (IN_FACTORY false) they are the repo's own, so the checks
     # that pin template content run only in the factory. Managed files (bodies, skill, command) are
     # checked everywhere.
-    @testset "registry has 13 agents including test-writer" begin
+    @testset "registry has 14 agents including test-writer (and 0.4.0's verifier)" begin
         slugs = [a["slug"] for a in reg["agents"]]
         @test allunique(slugs)
         @test isfile(joinpath(ROOT, ".agents/bodies/test_writer.md"))
         if IN_FACTORY
-            @test length(reg["agents"]) == 13
+            @test length(reg["agents"]) == 14 && "verifier" in slugs
             @test "test_writer" in slugs
             @test isfile(joinpath(ROOT, ".claude/agents/test-writer.md"))
             @test isfile(joinpath(ROOT, ".codex/agents/test_writer.toml"))
@@ -99,12 +99,13 @@ end
         @test issubset(["Agent", "Task", "SendMessage"], fm_list(fm, "disallowedTools"))
     end
 
-    IN_FACTORY && @testset "registry header says 13 roles and cites ADR-0015; AGENTS.md roster lists test-writer" begin
+    IN_FACTORY && @testset "registry header says 14 roles and cites ADR-0015 and ADR-0016; AGENTS.md roster lists test-writer" begin
         txt = readroot(".agents/agent-registry.toml")
         header = join(filter(l -> startswith(l, "#"), split(split(txt, "\nversion = ")[1], '\n')), '\n')
         @test occursin(r"\b13\b|13th|thirteen"i, header)
         @test occursin("ADR-0015", header)
-        @test !occursin("never add a 13th", header)
+        @test !occursin("never add a 13th", header) && !occursin("never add a 14th", header)
+        @test occursin("ADR-0016", header) && occursin("14 roles", header)   # 0.4.0's verifier is the 14th
         agents = readroot("AGENTS.md")
         roster = split(agents, "## Agent roster")[end]
         @test occursin("| `test-writer` | write | inherit |", roster)
@@ -191,9 +192,12 @@ end
     end
 
     if IN_FACTORY
-        @testset "factory VERSION 0.3.2; the 0.3.2, 0.3.1 and 0.3.0 CHANGELOG migration lists (§9.2, §6)" begin
-            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.3.2"
+        @testset "factory VERSION 0.4.0; the 0.4.0, 0.3.2, 0.3.1 and 0.3.0 CHANGELOG migration lists (§9.2, §6)" begin
+            @test strip(read(joinpath(FACTORY, "VERSION"), String)) == "0.4.0"
             cl = read(joinpath(FACTORY, "CHANGELOG.md"), String)
+            sec4 = changelog_section(cl, "0.4.0")
+            @test occursin("**Migration**", sec4) && occursin("julia scripts/gen.jl", sec4) && occursin("ADR-0016", sec4)
+            @test findfirst("## 0.4.0 (", cl) < findfirst("## 0.3.2 (", cl)   # newest first
             sec2 = changelog_section(cl, "0.3.2")
             @test !isempty(sec2)
             @test occursin("**Migration.**", sec2)
