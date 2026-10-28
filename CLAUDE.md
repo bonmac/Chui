@@ -2,7 +2,7 @@
 
 <!-- Seeded by the ecosystem factory (profile `coordinator`, see .factory-version), then tailored.
      This file is the SOURCE: AGENTS.md is generated from it by `julia scripts/gen.jl`.
-     Keep it under 120 lines (ratchets.toml caps it at 150); link out, do not restate. -->
+     Keep it under 130 lines (ratchets.toml caps it at 150); link out, do not restate. -->
 
 **What this repo is:** the coordinator (`<root>` = `~/personal-projects/julia-data-analysis`) for
 the Chui ecosystem: the lead's agent workflow plus the ecosystem coordination. It is not a Julia
