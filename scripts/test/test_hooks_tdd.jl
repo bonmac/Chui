@@ -300,8 +300,9 @@ include("test_hooks_tdd_topo.jl")   # topology (a): tb_repo, tb_pkg_files, tb_wr
     @testset "settings.json registers tdd_boundary (fail closed) and tdd_commit_post on both post events" begin
         s = joinpath(ROOT, ".claude", "settings.json")
         pre(m) = readlines(pipeline(`jq -r --arg m $m '.hooks.PreToolUse[]? | select(.matcher == $m) | .hooks[].command' $s`))
-        for m in ("Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash", "Agent|Task")
+        for m in ("Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor", "Agent|Task")   # 0.4.0 D9: Monitor, no MultiEdit
             @test any(c -> occursin("tdd_boundary.sh", c) && occursin("exit 2", c) && startswith(c, "sh -c '"), pre(m))
+            @test any(c -> occursin("tdd_boundary.sh", c) && occursin("[ \"\$rc\" -eq 0 ] || exit 2", c), pre(m))   # 0.4.0 D1 wrapper
         end
         for ev in ("PostToolUse", "PostToolUseFailure")
             c = readlines(pipeline(`jq -r ".hooks.$ev[]? | select(.matcher | split(\"|\") | index(\"Bash\")) | .hooks[].command" $s`))
@@ -344,7 +345,7 @@ include("test_hooks_tdd_topo.jl")   # topology (a): tb_repo, tb_pkg_files, tb_wr
         @test get(b, "prevented_by", "") == ".claude/hooks/tdd_boundary.sh"
         @test startswith(get(b, "rule", ""), "A test-writer reads and writes only allowlisted paths")
         @test get(b, "runs_in", []) == [
-            "hook PreToolUse(Read|Grep|Glob|Edit|Write|MultiEdit|NotebookEdit|Bash)",
+            "hook PreToolUse(Read|Grep|Glob|Edit|Write|NotebookEdit|Bash|Monitor)",
             "hook PreToolUse(Agent|Task)",
         ]
         @test get(b, "test", "") == "scripts/test/test_hooks_tdd.jl"

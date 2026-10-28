@@ -49,7 +49,7 @@ read_only_check() {
     _n=$1 _dir=$2
     shift 2
     in_read_only "$_dir" || return 0
-    _why="$RO_HIT is a read-only reference root (.agents/factory.toml [bash_guard] read_only_roots): only read-only commands may run there (cat, head, tail, less, grep, rg, find, ls, wc, stat, file, and git log/show/diff/status/blame/ls-files). Read its files with absolute paths from the repo root instead"
+    _why="$RO_HIT is a read-only reference root (.agents/factory.toml [bash_guard] read_only_roots): only read-only commands may run there (cat, head, tail, less, grep, rg, find, ls, wc, stat, file, and git log/show/diff/status/blame/ls-files). Read its files with absolute paths from the repo root instead, or cd back to the repo root first (cd $ROOT)"
     case $RO_CMDS in *" $_n "*) ;; *) [ "$_n" = git ] || deny "\`$_n\` would run in $_dir. $_why." ;; esac
     case $_n in
         git)

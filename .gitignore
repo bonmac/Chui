@@ -42,6 +42,8 @@ coverage/
 /lcov.info
 /coverage/
 /tmp/
+# the tdd test fixture's scratch package (factory 0.4.0 template)
+/scripts/test/fixtures/tdd/scratchpkg/Manifest*.toml
 
 # Machine-local settings and what gen.jl renders from them (private paths are never committed)
 /.agents/factory.local.toml

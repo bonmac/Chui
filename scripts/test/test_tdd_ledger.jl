@@ -198,4 +198,22 @@ ol_jl_owning(checkout) = isdefined(OL_TDD, :owning_ledger) ? getfield(OL_TDD, :o
             end
         end
     end
+
+    # 0.4.0 merge: ledger() appends to the pending file beside the CURRENT LEDGER_FILE and folds under the lock
+    # beside it, so a record for another checkout never drags the session ledger's pending lines along.
+    @testset "a record for another checkout folds that checkout's pending, not the session's" begin
+        t = ol_topo()
+        outer_pending = joinpath(t.S, ".lanes", "ledger.pending.jsonl")
+        write(outer_pending, "{\"ev\":\"marker-outer\"}\n")
+        write(joinpath(t.lane, "test", "t2.jl"), "@testitem \"g\" begin\n    @test true\nend\n")
+        c = "git -C $(t.lane) add test/t2.jl && git -C $(t.lane) commit -q -m \"test: g\" -m \"TDD: red\" --author \"$OL_TW\""
+        f = ol_flow(t, t.S, c; agent_id = "a0123456789abcdef")
+        sha = ol_head(t.lane)
+        @test f.pre.rc == 0 && f.ran
+        @test length(ol_commit_recs(t.pkg_ledger, sha)) == 1          # folded into the package's ledger
+        @test !occursin("marker-outer", read(t.pkg_ledger, String))   # the session's pending stayed out of it
+        @test occursin("marker-outer", read(outer_pending, String))   # and is still the session's
+        @test !isfile(joinpath(t.pkg, ".lanes", "ledger.pending.jsonl"))
+        @test !isdir(joinpath(t.pkg, ".lanes", ".dispatch.lock")) && !isdir(joinpath(t.S, ".lanes", ".dispatch.lock"))
+    end
 end

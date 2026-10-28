@@ -280,3 +280,5 @@ end
         @test occursin("tdd.jl api", win) || (println("C8: a docstring not tied to tdd.jl api near: ", win); false)
     end
 end
+
+include("test_tdd_ledger_pending.jl")   # critic round 3 (fix7) M2: E5 reads the pending ledger files

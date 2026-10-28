@@ -1,5 +1,5 @@
 ---
-description: Check this package's use of upstream ecosystem APIs against test/contracts/, and draft a cross-repo request when something is missing.
+description: "Package repos only: Check this package's use of upstream ecosystem APIs against test/contracts/, and draft a cross-repo request when something is missing."
 argument-hint: [upstream package name]
 ---
 <!-- Factory-managed (see .factory-version). -->

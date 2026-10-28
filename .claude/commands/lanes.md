@@ -4,8 +4,9 @@ allowed-tools: Bash(scripts/lane:*), Bash(julia scripts/lane.jl:*), Bash(git wor
 ---
 <!-- Factory-managed (see .factory-version). -->
 1. Run `scripts/lane list` and paste its output.
-2. Run `git worktree list` and compare: a worktree outside `.worktrees/` is not managed by the
-   lane tool; say so.
+2. Run `git worktree list` and compare: a worktree outside `.worktrees/` (an EnterWorktree lane
+   under `.claude/worktrees/*`, a plain `git worktree add`) is unmanaged by the lane tool; say so
+   (`scripts/lane handoff` prints it as `unmanaged`).
 3. Read the last 20 lines of the lane ledger (`.lanes/ledger.jsonl`, if present). List agents
    with a `start` but no `stop`, and any `idle-unreported` or `dispatch-denied` events.
 4. For each lane, report: name, branch, ahead/behind its base, dirty or clean, and one action:
