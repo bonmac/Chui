@@ -32,7 +32,7 @@ A single Claude Code session, the **lead**, runs the whole effort as a backgroun
 
 ```sh
 cd ~/personal-projects/julia-data-analysis
-CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --bg -n junta --permission-mode acceptEdits \
+CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --bg -n chui --permission-mode acceptEdits \
   "Read prompts/00-lead.md and follow it exactly."
 ```
 
@@ -41,8 +41,8 @@ CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1 claude --bg -n junta --permission-mode ac
 | Command | Does |
 |---|---|
 | `claude agents` | Agent view: lists the background sessions and their state (running or waiting for input). |
-| `claude attach junta` | Open the lead in this terminal, e.g. to answer a ★ checkpoint. Part of the name works too. |
-| `claude logs junta` | Print the lead's recent output without attaching. |
+| `claude attach chui` | Open the lead in this terminal, e.g. to answer a ★ checkpoint. Part of the name works too. |
+| `claude logs chui` | Print the lead's recent output without attaching. |
 | `claude stop <id>` / `claude rm <id>` | Stop the session, or delete it (and its worktree, when that's safe). |
 | `claude --bg --resume <id>` | Continue the same session in the background later. |
 
