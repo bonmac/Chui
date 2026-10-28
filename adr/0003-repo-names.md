@@ -50,8 +50,10 @@ it is one of the "other packages", so **sibling names must also be far apart.**
    `.gitignore` pattern `/Chui*.jl/`. Lane worktrees live in `<root>/<Name>.jl/.worktrees/<lane>/`.
 5. **Personal registry:** repo and registry name `ChuiRegistry` (ADR-0005). It is not a package,
    so the AutoMerge name rules do not apply to it.
-6. **Unchanged:** the background session name `junta` (`claude --bg -n junta`, `claude attach
-   junta`) is an operator handle, not a package name.
+6. **The background session name is `chui`** (`claude --bg -n chui`, `claude attach chui`). It is
+   an operator handle, not a package name. *(Amended 2026-10-28, user decision: the original rule
+   kept the pre-rename handle `junta`; `prompts/README.md` and `prompts/common.md` §5 now say
+   `chui`. A session started as `junta` keeps that name until it is restarted.)*
 
 ## Alternatives rejected
 

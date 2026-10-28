@@ -161,6 +161,6 @@ One Claude Code session, the **lead**, runs the whole effort in the background (
 - **Checkpoints while running in the background:** at each ★ checkpoint, the lead:
   - stops and writes the decision it needs into `<root>/HANDOFF.md`;
   - notifies the user with PushNotification, if that tool is available;
-  - **waits**. The session then shows as waiting in `claude agents`, and the user answers with `claude attach junta`.
+  - **waits**. The session then shows as waiting in `claude agents`, and the user answers with `claude attach chui`.
 - **Handoff:** the lead keeps `<root>/HANDOFF.md` (overall state, open lanes per repo, blockers, decisions waiting) and each repo's `HANDOFF.md` up to date, so `claude --resume <id>` or a fresh lead session can continue.
 - **Escalation:** design disagreements between packages become an ADR in the root repo. If one stays unresolved, it goes to the user at the next checkpoint.
