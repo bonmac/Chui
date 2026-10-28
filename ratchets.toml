@@ -1,6 +1,8 @@
 # One-way limits, checked by `julia scripts/ratchet.jl` against the merge base:
 #   coverage.floor        may only RISE    (percent of lines hit, from lcov.info)
-#   bench.time_tolerance  may only FALL    (allowed median slowdown, 0.10 = 10%)
+#   bench.time_tolerance  may only FALL    (allowed median slowdown, 0.10 = 10%). It only means
+#                         something on a QUIET runner: a loaded machine gave false regressions of
+#                         1.12-1.20x on identical trees (factory 0.2.7). Rerun before believing one.
 #   size[].max_lines      may only FALL, and a size rule may not be deleted
 # Raising a limit the wrong way fails CI; it needs an ADR and a human decision, made by
 # editing this file in a T3 change (ratchets.toml is a protected path).

@@ -1,5 +1,5 @@
 ---
-description: Full pre-release gate for this package. Prepares, never tags or registers.
+description: "Package repos only: Full pre-release gate for this package. Prepares, never tags or registers."
 argument-hint: <proposed version>
 ---
 <!-- Factory-managed (see .factory-version). -->

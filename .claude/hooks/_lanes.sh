@@ -86,9 +86,18 @@ tdd_dispatch() {
     case $_gl in "gitdir: /"*/.git/worktrees/?*) read -r _bk <"${_gl#gitdir: }/gitdir" 2>/dev/null ;; esac
     case $_bk in "$RP/.git" | "$_co/.git") ;; *) td_no brief-checkout "checkout=$_co is not a lane worktree (git worktree add), so it has no main checkout to save the brief in"; return ;; esac
     TD_MAIN=${_gl#gitdir: } && TD_MAIN=${TD_MAIN%/.git/worktrees/*}
-    [ -n "$_he" ] && [ "$(git -C "$RP" rev-parse HEAD 2>/dev/null)" = "$_he" ] ||
+    # fix7 (review m1): the two git reads are `watched` steps (_watchdog.sh: both callers source it and start the watchdog
+    # first), so a slow git is killed and the hook denies in time; a foreground git would hold off the TERM until it returned
+    # 0.4.0 release: a mktemp file, not a predictable $TMPDIR/factory-td.<pid> another process could plant first
+    TD_OUT=$(mktemp "${TMPDIR:-/tmp}/factory-td.XXXXXX" 2>/dev/null) ||
+        { TD_OUT=""; td_no brief-tmp "cannot create a temp file in ${TMPDIR:-/tmp} for the dispatch check's git reads (fails closed)"; return; }
+    _h="" _st=x
+    ! watched "$TD_OUT" git -C "$RP" rev-parse HEAD || _h=$(cat "$TD_OUT" 2>/dev/null)
+    ! watched "$TD_OUT" git -C "$RP" status --porcelain || _st=$(cat "$TD_OUT" 2>/dev/null)
+    rm -f "$TD_OUT"
+    [ -n "$_he" ] && [ "$_h" = "$_he" ] ||
         { td_no brief-head "head=$_he is not the HEAD of $_co: write the brief again (julia scripts/tdd.jl brief)"; return; }
-    [ -z "$(git -C "$RP" status --porcelain 2>/dev/null)" ] || { td_no brief-dirty "$_co has uncommitted changes: commit or clean them before dispatching a $1"; return; }
+    [ -z "$_st" ] || { td_no brief-dirty "$_co has uncommitted changes (or git status failed): commit or clean them before dispatching a $1"; return; }
     # review 2 (iii): the prompt-save step's precondition is checked here too, so dispatch_limit records no lane that
     # tdd_boundary then denies at the save (only a write that fails after this check, e.g. a full disk, still can)
     _sd="$TD_MAIN/.lanes/briefs/$TD_LN/dispatched"
