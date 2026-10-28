@@ -325,7 +325,7 @@ ChuiCore's ci-cov fix: `classes_unit_tests.jl` drops the `:code_coverage_effect`
 5. Seeded hand edits:
    - **CLAUDE.md:** the cap line `<!-- claim: max_open=N -->`, plus the "Precedence" and "Writing files under the guard" sections.
    - **agent-registry.toml (T3):** add the `verifier` agent. Give reviewer and critic `Write` plus `.lanes/reports/**` and `.lanes/scratch/<slug>/**`. Every output_format ends `; at most 80 lines`. Keep the implementer and test_writer stanzas.
-   - **risk.toml (T3):** add `scripts/_lane_stats.jl`.
+   - **risk.toml (T3):** add the T3 glob for the new lane-stats script (template: `factory/template/scripts/_lane_stats.jl`).
 6. Heredocs end only at an exact terminator line (`EOF)` is refused). A `.git` path component is matched case-insensitively.
 7. Ledger appends go through `.lanes/ledger.pending.jsonl`. Use `scripts/lane compact` if a ledger is huge.
 8. New commands: /lane-review and /ci-triage, plus an advisory runic check after edits.
