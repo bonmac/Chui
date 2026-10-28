@@ -301,6 +301,21 @@ ChuiCore's ci-cov fix: `classes_unit_tests.jl` drops the `:code_coverage_effect`
 - The redaction scan found 0 hits on all pushed history, the trees and the unpushed commits. The positive control gave 12.
 - ★ **User:** re-run the script and say "released".
 
+**Coordinator → factory 0.4.0: LANDED 2026-10-28 as main 51f53ac** (lane sync-040, session c8).
+- **Reviews:** MERGE WITH FIXES at 9174e9a, then MAY MERGE at 2ae0ab6. Reports are in `<root>/.lanes/reports/sync-040-review{,--r2}.md`.
+- **Lead checks:**
+  - re-ran the root suite at 2ae0ab6: 4492 pass, 3 broken;
+  - read the CLAUDE.md, registry and risk.toml hand edits;
+  - after the merge: gen --check OK (32) and check_docs OK.
+- Also landed: the lead session handle rename junta → chui (cfe826b, user confirmed 2026-10-28).
+- ★ **User: restart every session now.** Hooks, agents and limits.env load only at start. Start the lead as `claude --bg -n chui` (see prompts/README.md).
+- **Open M1 (factory defect):** in the coordinator, the 0.4.0 read-only guard (`_bash_guard_agents_lib.sh:49` `ro_script`) refuses a nested package repo's gate scripts for reviewer/verifier.
+  - The guard root is CLAUDE_PROJECT_DIR. Real-dispatch evidence (sync-031-coord's write_guard root followed the lead's cwd at spawn) suggests a teammate spawned from a package cwd gets the package as root, so it would be allowed.
+  - **After the restart:** test it with a real reviewer spawned from a package cwd running `scripts/dod.jl --help`, and record the result here.
+  - Until confirmed, package-lane reviews may need gate output from the lead or a writer lane, quoted with its evidence file.
+  - c8 will propose a factory fix lane to the user.
+- **Open n3:** the three kept package commands still say "Factory-managed" on line 5. c8 folds it into the next coordinator change.
+
 **e1 (factory 0.4.0, lane f040). LANDED 2026-10-27 as coordinator main 3e90f8e.**
 - The lead re-ran the suite at aa37741 with T3 set: 4906 pass, 2 broken. The coordinator guard gave 763/0.
 - Four reviews, all MAY MERGE: integrate, release (fixes done), release2 and critic4. The lead reviewed 0eb7d16 (test-only).
